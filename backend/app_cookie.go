@@ -264,7 +264,36 @@ func (a *App) clearStoppedProfileUserData(profile *BrowserProfile) error {
 			return fmt.Errorf("清理实例用户数据失败: %w", err)
 		}
 	}
-	logger.New("Browser").Info("未运行实例用户数据目录已清空", logger.F("profile_id", profile.ProfileId), logger.F("path", userDataDir))
+	if err := a.regenerateStoppedProfileFingerprint(profile.ProfileId); err != nil {
+		return err
+	}
+	logger.New("Browser").Info("未运行实例用户数据目录已清空，指纹已重新生成", logger.F("profile_id", profile.ProfileId), logger.F("path", userDataDir))
+	return nil
+}
+
+func (a *App) regenerateStoppedProfileFingerprint(profileId string) error {
+	if a == nil || a.browserMgr == nil {
+		return fmt.Errorf("browser manager is not initialized")
+	}
+	a.browserMgr.Mutex.Lock()
+	defer a.browserMgr.Mutex.Unlock()
+
+	profile, exists := a.browserMgr.Profiles[profileId]
+	if !exists || profile == nil {
+		return fmt.Errorf("profile not found: %s", profileId)
+	}
+	if profile.Running {
+		return fmt.Errorf("实例已运行，无法在清空用户数据目录后重置指纹")
+	}
+	var defaultFingerprintArgs []string
+	if a.browserMgr.Config != nil {
+		defaultFingerprintArgs = a.browserMgr.Config.Browser.DefaultFingerprintArgs
+	}
+	profile.FingerprintArgs = regenerateFingerprintArgsForProfileReset(profile.FingerprintArgs, defaultFingerprintArgs)
+	profile.UpdatedAt = time.Now().Format(time.RFC3339)
+	if err := a.browserMgr.SaveProfiles(); err != nil {
+		return fmt.Errorf("保存重新生成的实例指纹失败: %w", err)
+	}
 	return nil
 }
 

@@ -88,7 +88,7 @@ func fingerprintArgKey(arg string) string {
 }
 
 func randomHardwareFingerprintArgs(lang string) []string {
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	r := newFingerprintRand()
 	platform := pickString(r, []string{"windows", "windows", "windows", "mac", "linux"})
 	brand := pickString(r, []string{"Chrome", "Chrome", "Edge"})
 	if platform == "mac" {
@@ -117,7 +117,7 @@ func randomHardwareFingerprintArgs(lang string) []string {
 	}
 
 	return []string{
-		fmt.Sprintf("--fingerprint=%d", r.Intn(2147483647)+1),
+		newRandomFingerprintSeedArg(r),
 		fmt.Sprintf("--fingerprint-brand=%s", brand),
 		fmt.Sprintf("--fingerprint-platform=%s", platform),
 		fmt.Sprintf("--window-size=%s", resolution),
@@ -134,6 +134,103 @@ func randomHardwareFingerprintArgs(lang string) []string {
 		fmt.Sprintf("--fingerprint-media-devices=%s", pickString(r, []string{"1,1,1", "2,1,1", "0,1,1"})),
 		fmt.Sprintf("--fingerprint-touch-points=%s", touchPoints),
 	}
+}
+
+func regenerateFingerprintArgsForProfileReset(profileArgs []string, defaultArgs []string) []string {
+	baseArgs := normalizedFingerprintArgs(profileArgs)
+	if len(baseArgs) == 0 {
+		baseArgs = normalizedFingerprintArgs(defaultArgs)
+	}
+	if len(baseArgs) == 0 {
+		return []string{newRandomFingerprintSeedArg(newFingerprintRand())}
+	}
+
+	parsed := parseFingerprintArgs(baseArgs)
+	autoHardware := false
+	lang := ""
+	for _, item := range parsed {
+		if item.key == autoHardwareFingerprintArg && strings.EqualFold(strings.TrimSpace(item.val), "true") {
+			autoHardware = true
+			continue
+		}
+		if item.key == "--lang" {
+			lang = strings.TrimSpace(item.val)
+		}
+	}
+
+	if autoHardware {
+		return regenerateAutoHardwareFingerprintArgs(parsed, lang)
+	}
+
+	out := make([]string, 0, len(baseArgs)+1)
+	seedReplaced := false
+	seedArg := newRandomFingerprintSeedArg(newFingerprintRand())
+	for _, item := range parsed {
+		if item.key == "--fingerprint" {
+			if !seedReplaced {
+				out = append(out, seedArg)
+				seedReplaced = true
+			}
+			continue
+		}
+		out = append(out, item.raw)
+	}
+	if !seedReplaced {
+		out = append([]string{seedArg}, out...)
+	}
+	return out
+}
+
+func regenerateAutoHardwareFingerprintArgs(parsed []fingerprintArg, lang string) []string {
+	randomized := randomHardwareFingerprintArgs(lang)
+	randomizedKeys := make(map[string]struct{}, len(randomized)+1)
+	for _, arg := range randomized {
+		if key := fingerprintArgKey(arg); key != "" {
+			randomizedKeys[key] = struct{}{}
+		}
+	}
+	randomizedKeys[autoHardwareFingerprintArg] = struct{}{}
+
+	out := append([]string{}, randomized...)
+	existing := make(map[string]struct{}, len(randomizedKeys))
+	for key := range randomizedKeys {
+		existing[key] = struct{}{}
+	}
+	for _, item := range parsed {
+		if item.raw == "" {
+			continue
+		}
+		if item.key != "" {
+			if _, replaced := randomizedKeys[item.key]; replaced {
+				continue
+			}
+			if _, duplicate := existing[item.key]; duplicate {
+				continue
+			}
+			existing[item.key] = struct{}{}
+		}
+		out = append(out, item.raw)
+	}
+	return out
+}
+
+func normalizedFingerprintArgs(args []string) []string {
+	out := make([]string, 0, len(args))
+	for _, arg := range args {
+		arg = strings.TrimSpace(arg)
+		if arg != "" {
+			out = append(out, arg)
+		}
+	}
+	return out
+}
+
+func newRandomFingerprintSeedArg(r *rand.Rand) string {
+	return fmt.Sprintf("--fingerprint=%d", r.Intn(2147483647)+1)
+}
+
+func newFingerprintRand() *rand.Rand {
+	return rand.New(rand.NewSource(time.Now().UnixNano()))
 }
 
 func pickString(r *rand.Rand, items []string) string {

@@ -223,7 +223,7 @@ const getCookieActionTitle = (profile: BrowserProfile, action: 'export' | 'clear
     if (!profile.debugReady) return '调试接口就绪后才能导出 Cookie'
     return '导出 Cookie 文本'
   }
-  if (!profile.running) return '清空用户数据目录'
+  if (!profile.running) return '清空用户数据并重置指纹'
   if (!profile.debugReady) return '调试接口就绪后才能清空 Cookie'
   return '清空全部 Cookie'
 }
@@ -948,9 +948,12 @@ export function BrowserListPage() {
     updatePendingIds(setClearingCookieIds, target.profileId, true)
     try {
       await clearBrowserCookies(target.profileId)
-      toast.success(target.running ? `Cookie 已清空：${target.profileName || target.profileId}` : `用户数据已清空：${target.profileName || target.profileId}`)
+      toast.success(target.running ? `Cookie 已清空：${target.profileName || target.profileId}` : `用户数据已清空，指纹已重置：${target.profileName || target.profileId}`)
+      if (!target.running) {
+        await loadProfiles({ silent: true, syncRuntimeState: true })
+      }
     } catch (error: any) {
-      toast.error(error?.message || (target.running ? '清空 Cookie 失败' : '清空用户数据失败'))
+      toast.error(error?.message || (target.running ? '清空 Cookie 失败' : '清空用户数据并重置指纹失败'))
     } finally {
       updatePendingIds(setClearingCookieIds, target.profileId, false)
       setCookieClearTarget(null)
@@ -1638,7 +1641,7 @@ export function BrowserListPage() {
               size="sm"
               variant="ghost"
               onClick={() => setCookieClearTarget(record)}
-              aria-label={record.running ? '清空全部 Cookie' : '清空用户数据'}
+              aria-label={record.running ? '清空全部 Cookie' : '清空用户数据并重置指纹'}
               title={getCookieActionTitle(record, 'clear')}
               loading={isClearingCookies}
               disabled={!canClearCookies || isExportingCookies || (isBusy && !isClearingCookies)}
@@ -1909,7 +1912,7 @@ export function BrowserListPage() {
                           size="sm"
                           variant="ghost"
                           onClick={() => setCookieClearTarget(record)}
-                          aria-label={record.running ? '清空全部 Cookie' : '清空用户数据'}
+                          aria-label={record.running ? '清空全部 Cookie' : '清空用户数据并重置指纹'}
                           title={getCookieActionTitle(record, 'clear')}
                           className="px-3 text-red-500 hover:text-red-600 hover:bg-red-50"
                           loading={isClearingCookies}
@@ -2471,16 +2474,16 @@ export function BrowserListPage() {
         open={!!cookieClearTarget}
         onClose={() => setCookieClearTarget(null)}
         onConfirm={handleConfirmClearCookies}
-        title={cookieClearTarget?.running ? '清空 Cookie' : '清空用户数据'}
+        title={cookieClearTarget?.running ? '清空 Cookie' : '清空用户数据并重置指纹'}
         content={
           <div className="space-y-2">
-            <p>{cookieClearTarget?.running ? `确定清空实例「${cookieClearTarget?.profileName || ''}」的所有 Cookie？` : `确定清空实例「${cookieClearTarget?.profileName || ''}」的用户数据目录？`}</p>
+            <p>{cookieClearTarget?.running ? `确定清空实例「${cookieClearTarget?.profileName || ''}」的所有 Cookie？` : `确定清空实例「${cookieClearTarget?.profileName || ''}」的用户数据目录并重新生成指纹？`}</p>
             <p className="text-sm text-red-500">
-              {cookieClearTarget?.running ? '该操作会删除当前浏览器会话中的全部 Cookie，无法恢复。' : '实例未运行时会删除该用户数据目录下的全部文件，无法恢复。'}
+              {cookieClearTarget?.running ? '该操作会删除当前浏览器会话中的全部 Cookie，无法恢复。' : '实例未运行时会删除该用户数据目录下的全部文件，并按当前指纹配置规则重新生成新指纹，无法恢复。'}
             </p>
           </div>
         }
-        confirmText={cookieClearTarget?.running ? '清空 Cookie' : '清空用户数据'}
+        confirmText={cookieClearTarget?.running ? '清空 Cookie' : '清空并重置指纹'}
         danger
       />
 
