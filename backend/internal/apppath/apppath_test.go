@@ -40,6 +40,20 @@ func TestResolveReadOnlyLinuxInstallUsesUserDataRoot(t *testing.T) {
 	}
 }
 
+func TestDirWritableTreatsDirectoryWithoutWriteBitsAsReadOnly(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0555); err != nil {
+		t.Fatalf("设置只读目录失败: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(dir, 0755)
+	})
+
+	if dirWritable(dir) {
+		t.Fatal("无写位目录不应被识别为可写")
+	}
+}
+
 func TestResolveDarwinAppBundleUsesApplicationSupportStateRoot(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)

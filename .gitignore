@@ -62,6 +62,7 @@ docs/
 !docs/
 docs/*
 !docs/wails3-upgrade-plan.md
+!docs/optimization-roadmap.md
 DEPLOYMENT_GUIDE.md
 plan.md
 pic/

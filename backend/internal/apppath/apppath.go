@@ -188,6 +188,16 @@ func isMacAppBundleRoot(dir string) bool {
 }
 
 func dirWritable(dir string) bool {
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() {
+		return false
+	}
+	// Do not treat root/capability bypasses as writable installs: packaged Linux
+	// layouts without any write bit should still use the detached state root.
+	if info.Mode().Perm()&0222 == 0 {
+		return false
+	}
+
 	file, err := os.CreateTemp(dir, ".ant-browser-write-test-*")
 	if err != nil {
 		return false
