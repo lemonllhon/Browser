@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DragEvent } from 'react'
 import { GripVertical } from 'lucide-react'
 import type { BrowserProfile } from '../types'
+import { naturalCompareText } from '../utils/browserListFormat'
 import {
   PROFILE_ORDER_CHANNEL_NAME,
   PROFILE_ORDER_STORAGE_KEY,
@@ -14,25 +15,6 @@ import {
 
 type ProfileDragLayout = 'table' | 'card'
 type ProfileDragPlacement = 'before' | 'after'
-
-const naturalCompareText = (a: string, b: string): number => {
-  const re = /(\d+)|(\D+)/g
-  const partsA = a.match(re) || []
-  const partsB = b.match(re) || []
-  for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
-    if (i >= partsA.length) return -1
-    if (i >= partsB.length) return 1
-    const pa = partsA[i], pb = partsB[i]
-    const na = Number(pa), nb = Number(pb)
-    if (!isNaN(na) && !isNaN(nb)) {
-      if (na !== nb) return na - nb
-    } else {
-      const cmp = pa.localeCompare(pb, 'zh-CN')
-      if (cmp !== 0) return cmp
-    }
-  }
-  return 0
-}
 
 const getProfileDragPlacement = (event: DragEvent<HTMLElement>, layout: ProfileDragLayout): ProfileDragPlacement => {
   const rect = event.currentTarget.getBoundingClientRect()
