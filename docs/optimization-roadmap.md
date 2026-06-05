@@ -26,7 +26,7 @@
 | --- | --- | --- | --- | --- | --- |
 | 1 | 应用路径与安装布局 | 修复并固化 Linux 只读安装目录识别，避免配置/数据写回安装目录 | `backend/internal/apppath/*` | `go test ./backend/internal/apppath` | 已完成 |
 | 2 | 代理池页面 | 拆分超大页面，把订阅导入、测速/IP 健康检测、表格列配置和批量操作拆为独立组件/Hook | `frontend/src/modules/browser/pages/ProxyPoolPage.tsx` 及新增同目录组件/Hook | `npm run build`，必要时补充组件级人工检查 | 已完成：表格列配置、直连导入解析、Clash/订阅解析、来源元数据、检测缓存、预览过滤、展示模型、来源刷新、刷新配置、导入/预览/编辑/详情弹窗拆分、测速/IP 健康检测 Hook、主工具栏/筛选栏、订阅资源列表、代理主表行操作拆分均已落地 |
-| 3 | 浏览器实例列表 | 拆分筛选、实例操作、批量操作、状态订阅和弹窗管理，降低列表页耦合 | `frontend/src/modules/browser/pages/BrowserListPage.tsx` 及相关组件 | `npm run build`，实例启动/停止/筛选人工检查 | 进行中：已完成表格列配置、拖拽顺序存储、显示列菜单、批量操作工具栏、顶部操作区和统计/筛选区拆分 |
+| 3 | 浏览器实例列表 | 拆分筛选、实例操作、批量操作、状态订阅和弹窗管理，降低列表页耦合 | `frontend/src/modules/browser/pages/BrowserListPage.tsx` 及相关组件 | `npm run build`，实例启动/停止/筛选人工检查 | 进行中：已完成表格列配置、拖拽顺序存储、显示列菜单、批量操作工具栏、顶部操作区、统计/筛选区、实例行操作和卡片操作区拆分 |
 | 4 | 窗口同步后端 | 按状态管理、窗口枚举/布局、事件广播、平台差异拆分，补充核心状态测试 | `backend/window_sync.go` 及拆分后的后端文件 | `go test ./backend/...` 中不依赖 WebView 的子包，新增单测 | 待处理 |
 | 5 | 前端类型与 IPC | 减少 `Record<string, any>` 和重复编解码逻辑，提升 IPC 数据边界类型安全 | `frontend/src/shared/ipc/*`、相关 API 文件 | `npm run build` | 待处理 |
 | 6 | 构建与质量门禁 | 增加独立 lint/typecheck 脚本或文档化现有检查，统一 CI 可执行命令 | `frontend/package.json`、CI/README 相关文件 | `npm run build`，新增脚本自检 | 待处理 |
@@ -230,6 +230,15 @@
 - 落地内容：把页头与筛选统计区域抽到 `BrowserListHeaderPanel.tsx`；页面通过 props 传入统计数量、筛选状态、视图模式、按钮事件和列显示回调；不改变刷新、视图切换、筛选或导航行为。
 - 验证方式：运行 `npm run build`，确认 TypeScript 与 Vite 生产构建通过。
 - 下一步：继续拆分实例行操作和卡片视图操作区，再进入运行状态订阅 Hook 拆分。
+
+### 本轮范围：实例行操作与卡片操作区
+
+- 优化对象：表格行操作按钮、卡片视图操作按钮、启动/停止/重启/切换代理/置顶/关键字/Cookie/配置/克隆/删除入口。
+- 文件范围：`frontend/src/modules/browser/pages/BrowserListPage.tsx`、`frontend/src/modules/browser/components/browser-list/BrowserProfileActions.tsx`。
+- 当前问题：同一组实例操作在表格行和卡片视图中重复维护，按钮状态、同步主控禁用、Cookie 权限和 busy 判断分散在页面渲染函数内。
+- 落地内容：把表格紧凑模式与卡片完整模式统一抽到 `BrowserProfileActions.tsx`；页面继续计算运行态和权限状态，并通过 props 传入已有操作处理函数；不改变任何实例操作行为。
+- 验证方式：运行 `npm run build`，确认 TypeScript 与 Vite 生产构建通过。
+- 下一步：拆分运行状态订阅 Hook，再处理弹窗管理拆分。
 
 ## 下一步执行顺序
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CheckCircle, ChevronDown, ChevronUp, Copy, Download, Edit2, Eraser, Focus, GripVertical, Key, Layers, LayoutGrid, Pencil, Play, Plus, RefreshCw, RotateCcw, Settings, Shuffle, Sliders, Square, Star, Trash2, XCircle } from 'lucide-react'
+import { CheckCircle, ChevronDown, ChevronUp, Copy, Edit2, GripVertical, Layers, LayoutGrid, Pencil, Plus, RefreshCw, Sliders, Star, Trash2, XCircle } from 'lucide-react'
 import { Badge, Button, Card, ConfirmModal, FormItem, Input, Modal, Switch, Table, Textarea, toast } from '../../../shared/components'
 import type { TableColumn } from '../../../shared/components/Table'
 import type { BrowserCore, BrowserCoreInput, BrowserProfile, BrowserProxy, BrowserSettings, BrowserGroupWithCount, WindowSyncCandidate, WindowSyncLayoutSettings, WindowSyncSettings, WindowSyncState } from '../types'
@@ -9,6 +9,7 @@ import type { InstanceFilters } from '../components/InstanceFilterBar'
 import { KeywordsModal } from '../components/KeywordsModal'
 import { BrowserListHeaderPanel } from '../components/browser-list/BrowserListHeaderPanel'
 import { BrowserBatchToolbar } from '../components/browser-list/BrowserBatchToolbar'
+import { BrowserProfileActions } from '../components/browser-list/BrowserProfileActions'
 import { InstanceBackupRestoreModal } from '../components/InstanceBackupRestoreModal'
 import { BatchRandomFingerprintModal } from '../components/BatchRandomFingerprintModal'
 import { onRuntimeEvent } from '../../../shared/backend/runtime'
@@ -1501,54 +1502,32 @@ export function BrowserListPage() {
         const canClearCookies = !record.running || record.debugReady
 
         return (
-          <div className="flex justify-end gap-1">
-            {record.running ? (
-              <Button size="sm" variant="secondary" onClick={() => handleStop(record.profileId)} title={disabledBySync ? '同步状态下无法修改主控窗口' : '停止'} loading={isStopping} disabled={disabledBySync}>
-                {!isStopping && <Square className="w-3.5 h-3.5" />}
-              </Button>
-            ) : (
-              <Button size="sm" onClick={() => handleStart(record.profileId)} title={disabledBySync ? '同步状态下无法修改主控窗口' : '启动'} loading={isStarting} disabled={disabledBySync}>
-                {!isStarting && <Play className="w-3.5 h-3.5 fill-current" />}
-              </Button>
-            )}
-            {record.running && record.autoProxySwitchEnabled && (
-              <Button size="sm" variant="ghost" onClick={() => handleSwitchProxyNow(record.profileId)} title={disabledBySync ? '同步状态下无法修改主控窗口' : '手动切换出口'} loading={isSwitchingProxy} disabled={disabledBySync || (isBusy && !isSwitchingProxy)}>
-                {!isSwitchingProxy && <Shuffle className="w-3.5 h-3.5" />}
-              </Button>
-            )}
-            {record.running && (
-              <Button size="sm" variant="ghost" onClick={() => handlePinCenter(record.profileId)} title="置顶居中" loading={isPinning} disabled={isBusy && !isPinning}>
-                {!isPinning && <Focus className="w-3.5 h-3.5" />}
-              </Button>
-            )}
-            <Button size="sm" variant="ghost" onClick={() => handleRestart(record.profileId)} title={disabledBySync ? '同步状态下无法修改主控窗口' : '重启'} disabled={disabledBySync || isBusy}><RotateCcw className="w-3.5 h-3.5" /></Button>
-            <Button size="sm" variant="ghost" onClick={() => openKwModal(record)} title="关键字" disabled={isBusy}><Key className="w-3.5 h-3.5" /></Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => handleExportCookies(record)}
-              aria-label="导出 Cookie 文本"
-              title={getCookieActionTitle(record, 'export')}
-              loading={isExportingCookies}
-              disabled={!canExportCookies || isClearingCookies || (isBusy && !isExportingCookies)}
-            >
-              {!isExportingCookies && <Download className="w-3.5 h-3.5" />}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setCookieClearTarget(record)}
-              aria-label={record.running ? '清空全部 Cookie' : '清空用户数据'}
-              title={getCookieActionTitle(record, 'clear')}
-              loading={isClearingCookies}
-              disabled={!canClearCookies || isExportingCookies || (isBusy && !isClearingCookies)}
-            >
-              {!isClearingCookies && <Eraser className="w-3.5 h-3.5 text-red-500" />}
-            </Button>
-            <Link to={`/browser/edit/${record.profileId}`}><Button size="sm" variant="ghost" title={disabledBySync ? '同步状态下无法修改主控窗口' : '配置'} disabled={disabledBySync || isBusy}><Settings className="w-3.5 h-3.5" /></Button></Link>
-            <Button size="sm" variant="ghost" onClick={() => openCopyModal(record)} title="克隆" disabled={isBusy}><Copy className="w-3.5 h-3.5" /></Button>
-            <Button size="sm" variant="ghost" onClick={() => handleDelete(record.profileId)} title={disabledBySync ? '同步状态下无法修改主控窗口' : '删除'} disabled={disabledBySync || isBusy}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button>
-          </div>
+          <BrowserProfileActions
+            record={record}
+            mode="table"
+            disabledBySync={disabledBySync}
+            isStarting={isStarting}
+            isStopping={isStopping}
+            isSwitchingProxy={isSwitchingProxy}
+            isPinning={isPinning}
+            isExportingCookies={isExportingCookies}
+            isClearingCookies={isClearingCookies}
+            isBusy={isBusy}
+            canExportCookies={canExportCookies}
+            canClearCookies={canClearCookies}
+            exportCookieTitle={getCookieActionTitle(record, 'export')}
+            clearCookieTitle={getCookieActionTitle(record, 'clear')}
+            onStart={handleStart}
+            onStop={handleStop}
+            onSwitchProxyNow={handleSwitchProxyNow}
+            onPinCenter={handlePinCenter}
+            onRestart={handleRestart}
+            onOpenKeywords={openKwModal}
+            onExportCookies={handleExportCookies}
+            onClearCookies={setCookieClearTarget}
+            onCopy={openCopyModal}
+            onDelete={handleDelete}
+          />
         )
       },
     },
@@ -1710,61 +1689,32 @@ export function BrowserListPage() {
                         </Badge>
                       </div>
 
-                      <div className="flex items-center gap-1 flex-wrap">
-                        {record.running ? (
-                          <Button size="sm" variant="secondary" onClick={() => handleStop(record.profileId)} title={disabledBySync ? '同步状态下无法修改主控窗口' : (isStopping ? '停止中' : '停止')} loading={isStopping} disabled={disabledBySync}>
-                            {!isStopping && <Square className="w-4 h-4 mr-1.5" />}
-                            {isStopping ? '停止中' : '停止'}
-                          </Button>
-                        ) : (
-                          <Button size="sm" onClick={() => handleStart(record.profileId)} title={disabledBySync ? '同步状态下无法修改主控窗口' : (isStarting ? '启动中' : '启动')} loading={isStarting} disabled={disabledBySync}>
-                            {!isStarting && <Play className="w-4 h-4 fill-current mr-1.5" />}
-                            {isStarting ? '启动中' : '启动'}
-                          </Button>
-                        )}
-                        {record.running && record.autoProxySwitchEnabled && (
-                          <Button size="sm" variant="ghost" onClick={() => handleSwitchProxyNow(record.profileId)} title={disabledBySync ? '同步状态下无法修改主控窗口' : '手动切换出口'} className="px-3" loading={isSwitchingProxy} disabled={disabledBySync || (isBusy && !isSwitchingProxy)}>
-                            {!isSwitchingProxy && <Shuffle className="w-4 h-4 mr-1.5" />}
-                            {isSwitchingProxy ? '切换中' : '切换出口'}
-                          </Button>
-                        )}
-                        {record.running && (
-                          <Button size="sm" variant="ghost" onClick={() => handlePinCenter(record.profileId)} title="置顶居中" className="px-3" loading={isPinning} disabled={isBusy && !isPinning}>
-                            {!isPinning && <Focus className="w-4 h-4 mr-1.5" />}
-                            {isPinning ? '定位中' : '置顶居中'}
-                          </Button>
-                        )}
-                        <span className="w-px h-4 bg-[var(--color-border-muted)] mx-1"></span>
-                        <Button size="sm" variant="ghost" onClick={() => handleRestart(record.profileId)} title={disabledBySync ? '同步状态下无法修改主控窗口' : '重启'} className="px-3" disabled={disabledBySync || isBusy}><RotateCcw className="w-4 h-4 mr-1.5" />重启</Button>
-                        <Button size="sm" variant="ghost" onClick={() => openKwModal(record)} title="关键字管理" className="px-3" disabled={isBusy}><Key className="w-4 h-4 mr-1.5" />关键字</Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleExportCookies(record)}
-                          aria-label="导出 Cookie 文本"
-                          title={getCookieActionTitle(record, 'export')}
-                          className="px-3"
-                          loading={isExportingCookies}
-                          disabled={!canExportCookies || isClearingCookies || (isBusy && !isExportingCookies)}
-                        >
-                          {!isExportingCookies && <Download className="w-4 h-4" />}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setCookieClearTarget(record)}
-                          aria-label={record.running ? '清空全部 Cookie' : '清空用户数据'}
-                          title={getCookieActionTitle(record, 'clear')}
-                          className="px-3 text-red-500 hover:text-red-600 hover:bg-red-50"
-                          loading={isClearingCookies}
-                          disabled={!canClearCookies || isExportingCookies || (isBusy && !isClearingCookies)}
-                        >
-                          {!isClearingCookies && <Eraser className="w-4 h-4" />}
-                        </Button>
-                        <Link to={`/browser/edit/${record.profileId}`}><Button size="sm" variant="ghost" title={disabledBySync ? '同步状态下无法修改主控窗口' : '配置'} className="px-3" disabled={disabledBySync || isBusy}><Settings className="w-4 h-4 mr-1.5" />配置</Button></Link>
-                        <Button size="sm" variant="ghost" onClick={() => openCopyModal(record)} title="克隆" className="px-3" disabled={isBusy}><Copy className="w-4 h-4 mr-1.5" />克隆</Button>
-                        <Button size="sm" variant="ghost" onClick={() => handleDelete(record.profileId)} title={disabledBySync ? '同步状态下无法修改主控窗口' : '删除'} className="px-3 text-red-500 hover:text-red-600 hover:bg-red-50" disabled={disabledBySync || isBusy}><Trash2 className="w-4 h-4 mr-1.5" />删除</Button>
-                      </div>
+                      <BrowserProfileActions
+                        record={record}
+                        mode="card"
+                        disabledBySync={disabledBySync}
+                        isStarting={isStarting}
+                        isStopping={isStopping}
+                        isSwitchingProxy={isSwitchingProxy}
+                        isPinning={isPinning}
+                        isExportingCookies={isExportingCookies}
+                        isClearingCookies={isClearingCookies}
+                        isBusy={isBusy}
+                        canExportCookies={canExportCookies}
+                        canClearCookies={canClearCookies}
+                        exportCookieTitle={getCookieActionTitle(record, 'export')}
+                        clearCookieTitle={getCookieActionTitle(record, 'clear')}
+                        onStart={handleStart}
+                        onStop={handleStop}
+                        onSwitchProxyNow={handleSwitchProxyNow}
+                        onPinCenter={handlePinCenter}
+                        onRestart={handleRestart}
+                        onOpenKeywords={openKwModal}
+                        onExportCookies={handleExportCookies}
+                        onClearCookies={setCookieClearTarget}
+                        onCopy={openCopyModal}
+                        onDelete={handleDelete}
+                      />
                     </div>
 
                     {/* Body Grid: Key-Value Pairs */}
