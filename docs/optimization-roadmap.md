@@ -26,7 +26,7 @@
 | --- | --- | --- | --- | --- | --- |
 | 1 | 应用路径与安装布局 | 修复并固化 Linux 只读安装目录识别，避免配置/数据写回安装目录 | `backend/internal/apppath/*` | `go test ./backend/internal/apppath` | 已完成 |
 | 2 | 代理池页面 | 拆分超大页面，把订阅导入、测速/IP 健康检测、表格列配置和批量操作拆为独立组件/Hook | `frontend/src/modules/browser/pages/ProxyPoolPage.tsx` 及新增同目录组件/Hook | `npm run build`，必要时补充组件级人工检查 | 已完成：表格列配置、直连导入解析、Clash/订阅解析、来源元数据、检测缓存、预览过滤、展示模型、来源刷新、刷新配置、导入/预览/编辑/详情弹窗拆分、测速/IP 健康检测 Hook、主工具栏/筛选栏、订阅资源列表、代理主表行操作拆分均已落地 |
-| 3 | 浏览器实例列表 | 拆分筛选、实例操作、批量操作、状态订阅和弹窗管理，降低列表页耦合 | `frontend/src/modules/browser/pages/BrowserListPage.tsx` 及相关组件 | `npm run build`，实例启动/停止/筛选人工检查 | 待处理 |
+| 3 | 浏览器实例列表 | 拆分筛选、实例操作、批量操作、状态订阅和弹窗管理，降低列表页耦合 | `frontend/src/modules/browser/pages/BrowserListPage.tsx` 及相关组件 | `npm run build`，实例启动/停止/筛选人工检查 | 进行中：已完成表格列配置、拖拽顺序存储、显示列菜单和批量操作工具栏拆分 |
 | 4 | 窗口同步后端 | 按状态管理、窗口枚举/布局、事件广播、平台差异拆分，补充核心状态测试 | `backend/window_sync.go` 及拆分后的后端文件 | `go test ./backend/...` 中不依赖 WebView 的子包，新增单测 | 待处理 |
 | 5 | 前端类型与 IPC | 减少 `Record<string, any>` 和重复编解码逻辑，提升 IPC 数据边界类型安全 | `frontend/src/shared/ipc/*`、相关 API 文件 | `npm run build` | 待处理 |
 | 6 | 构建与质量门禁 | 增加独立 lint/typecheck 脚本或文档化现有检查，统一 CI 可执行命令 | `frontend/package.json`、CI/README 相关文件 | `npm run build`，新增脚本自检 | 待处理 |
@@ -210,6 +210,17 @@
 - [ ] 任务 5：前端类型与 IPC，减少 `Record<string, any>` 和重复编解码逻辑，提升 IPC 数据边界类型安全。
 - [ ] 任务 6：构建与质量门禁，增加独立 lint/typecheck 脚本或文档化现有检查，统一 CI 可执行命令。
 - [ ] 任务 7：文档与发布说明，梳理运行时、Linux/macOS/Windows 发布路径和依赖限制，减少环境问题误判。
+
+## 进行中：任务 3 - 浏览器实例列表拆分
+
+### 本轮范围：表格列配置与批量操作工具栏
+
+- 优化对象：实例列表表格显示列配置、列 localStorage 读写、拖拽顺序存储/同步、显示列菜单和批量操作工具栏。
+- 文件范围：`frontend/src/modules/browser/pages/BrowserListPage.tsx`、`frontend/src/modules/browser/config/browserListTable.ts`、`frontend/src/modules/browser/components/browser-list/BrowserColumnVisibilityMenu.tsx`、`frontend/src/modules/browser/components/browser-list/BrowserBatchToolbar.tsx`。
+- 当前问题：列配置、顺序存储和批量工具栏直接堆在 `BrowserListPage.tsx` 中，任务 3 后续拆筛选、实例操作、状态订阅和弹窗管理时容易交叉冲突。
+- 落地内容：把列配置、显示列存储、拖拽顺序存储/广播辅助函数抽到 `browserListTable.ts`；把显示列菜单抽到 `BrowserColumnVisibilityMenu.tsx`；把批量操作工具栏抽到 `BrowserBatchToolbar.tsx`；页面继续保留选择状态和批量启动/停止/删除行为。
+- 验证方式：运行 `npm run build`，确认 TypeScript 与 Vite 生产构建通过。
+- 下一步：继续拆分实例列表顶部操作区和可折叠统计/筛选区，然后再进入实例行操作与状态订阅拆分。
 
 ## 下一步执行顺序
 

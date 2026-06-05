@@ -7,10 +7,13 @@ import type { BrowserCore, BrowserCoreInput, BrowserProfile, BrowserProxy, Brows
 import { InstanceFilterBar, EMPTY_FILTERS } from '../components/InstanceFilterBar'
 import type { InstanceFilters } from '../components/InstanceFilterBar'
 import { KeywordsModal } from '../components/KeywordsModal'
+import { BrowserColumnVisibilityMenu } from '../components/browser-list/BrowserColumnVisibilityMenu'
+import { BrowserBatchToolbar } from '../components/browser-list/BrowserBatchToolbar'
 import { InstanceBackupRestoreModal } from '../components/InstanceBackupRestoreModal'
 import { BatchRandomFingerprintModal } from '../components/BatchRandomFingerprintModal'
 import { onRuntimeEvent } from '../../../shared/backend/runtime'
 import { resolveActionErrorMessage, resolveActionFeedback } from '../utils/actionErrors'
+import { PROFILE_COLUMN_OPTIONS, PROFILE_ORDER_CHANNEL_NAME, PROFILE_ORDER_STORAGE_KEY, areStringArraysEqual, normalizeProfileColumnKeys, parseProfileOrderValue, readStoredProfileColumnKeys, readStoredProfileOrder, sanitizeProfileOrder, writeStoredProfileColumnKeys, writeStoredProfileOrder } from '../config/browserListTable'
 import {
   applyWindowSyncLayout,
   clearBrowserCookies,
@@ -48,62 +51,6 @@ import {
   validateProxyConfig,
 } from '../api'
 
-type ColumnOption = {
-  key: string
-  label: string
-  locked?: boolean
-}
-
-const PROFILE_COLUMN_OPTIONS: ColumnOption[] = [
-  { key: 'selection', label: '选择', locked: true },
-  { key: 'instanceMarkerIndex', label: '窗口标识' },
-  { key: 'profileName', label: '实例名称' },
-  { key: 'running', label: '状态' },
-  { key: 'coreId', label: '核心' },
-  { key: 'proxyId', label: '代理' },
-  { key: 'launchCode', label: '快捷打开码' },
-  { key: 'keywords', label: '关键字' },
-  { key: 'updatedAt', label: '上次更新' },
-  { key: 'actions', label: '操作', locked: true },
-]
-
-const DEFAULT_PROFILE_COLUMN_KEYS = ['selection', 'instanceMarkerIndex', 'profileName', 'running', 'coreId', 'proxyId', 'launchCode', 'actions']
-const PROFILE_COLUMNS_STORAGE_KEY = 'browser:profileTableColumns:v2'
-const PROFILE_ORDER_STORAGE_KEY = 'browser:profileOrder:v1'
-const PROFILE_ORDER_CHANNEL_NAME = 'browser:profileOrder:changed'
-function readStoredColumnKeys(storageKey: string, defaults: string[], allowedKeys: readonly string[]) {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(storageKey) || '[]')
-    if (Array.isArray(parsed)) {
-      const valid = parsed.filter((key): key is string => typeof key === 'string' && allowedKeys.includes(key))
-      if (valid.length > 0) return valid
-    }
-  } catch { /* ignore */ }
-  return defaults
-}
-
-function sanitizeProfileOrder(value: unknown) {
-  if (!Array.isArray(value)) return []
-  return Array.from(new Set(value.filter((item): item is string => typeof item === 'string' && item.length > 0)))
-}
-
-function parseProfileOrderValue(value: string | null) {
-  try {
-    return sanitizeProfileOrder(JSON.parse(value || '[]'))
-  } catch {
-    return []
-  }
-}
-
-function readStoredProfileOrder() {
-  return parseProfileOrderValue(localStorage.getItem(PROFILE_ORDER_STORAGE_KEY))
-}
-
-const areStringArraysEqual = (left: string[], right: string[]) => {
-  if (left.length !== right.length) return false
-  return left.every((item, index) => item === right[index])
-}
-
 const naturalCompareText = (a: string, b: string): number => {
   const re = /(\d+)|(\D+)/g
   const partsA = a.match(re) || []
@@ -121,47 +68,6 @@ const naturalCompareText = (a: string, b: string): number => {
     }
   }
   return 0
-}
-
-// 批量操作工具栏
-function BatchToolbar({
-  selectedCount,
-  totalCount,
-  onSelectAll,
-  onDeselectAll,
-  onBatchStart,
-  onBatchStop,
-  onBatchDelete,
-  batchLoading,
-}: {
-  selectedCount: number
-  totalCount: number
-  onSelectAll: () => void
-  onDeselectAll: () => void
-  onBatchStart: () => void
-  onBatchStop: () => void
-  onBatchDelete: () => void
-  batchLoading: boolean
-}) {
-  if (selectedCount === 0) return null
-  return (
-    <div className="flex items-center gap-3 px-4 py-2.5 bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/20 rounded-lg">
-      <span className="text-sm font-medium text-[var(--color-accent)]">已选 {selectedCount} / {totalCount}</span>
-      <div className="flex gap-1.5 ml-auto">
-        <Button size="sm" variant="ghost" onClick={onSelectAll}>全选</Button>
-        <Button size="sm" variant="ghost" onClick={onDeselectAll}>取消</Button>
-        <Button size="sm" onClick={onBatchStart} loading={batchLoading} title="批量启动">
-          <Play className="w-3.5 h-3.5" />启动
-        </Button>
-        <Button size="sm" variant="secondary" onClick={onBatchStop} loading={batchLoading} title="批量停止">
-          <Square className="w-3.5 h-3.5" />停止
-        </Button>
-        <Button size="sm" variant="ghost" onClick={onBatchDelete} title="批量删除" className="text-red-500 hover:text-red-600">
-          <Trash2 className="w-3.5 h-3.5" />删除
-        </Button>
-      </div>
-    </div>
-  )
 }
 
 const resolveProfileStatus = (running: boolean, debugReady: boolean, starting: boolean, stopping: boolean) => {
@@ -380,12 +286,7 @@ export function BrowserListPage() {
   const [viewMode, setViewMode] = useState<'card' | 'table'>(() => {
     return (localStorage.getItem('browser:viewMode') as 'card' | 'table') || 'table'
   })
-  const [visibleColumnKeys, setVisibleColumnKeys] = useState<string[]>(() => (
-    Array.from(new Set([
-      ...PROFILE_COLUMN_OPTIONS.filter(item => item.locked).map(item => item.key),
-      ...readStoredColumnKeys(PROFILE_COLUMNS_STORAGE_KEY, DEFAULT_PROFILE_COLUMN_KEYS, PROFILE_COLUMN_OPTIONS.map(item => item.key)),
-    ]))
-  ))
+  const [visibleColumnKeys, setVisibleColumnKeys] = useState<string[]>(() => normalizeProfileColumnKeys(readStoredProfileColumnKeys()))
   const [profileOrder, setProfileOrder] = useState<string[]>(readStoredProfileOrder)
   const [draggingProfileId, setDraggingProfileId] = useState<string | null>(null)
   const [dragOverProfileId, setDragOverProfileId] = useState<string | null>(null)
@@ -421,7 +322,7 @@ export function BrowserListPage() {
   }, [viewMode])
 
   useEffect(() => {
-    localStorage.setItem(PROFILE_ORDER_STORAGE_KEY, JSON.stringify(profileOrder))
+    writeStoredProfileOrder(profileOrder)
     profileOrderChannelRef.current?.postMessage(profileOrder)
   }, [profileOrder])
 
@@ -455,8 +356,7 @@ export function BrowserListPage() {
   }, [])
 
   useEffect(() => {
-    const lockedKeys = PROFILE_COLUMN_OPTIONS.filter(item => item.locked).map(item => item.key)
-    localStorage.setItem(PROFILE_COLUMNS_STORAGE_KEY, JSON.stringify(Array.from(new Set([...lockedKeys, ...visibleColumnKeys]))))
+    writeStoredProfileColumnKeys(visibleColumnKeys)
   }, [visibleColumnKeys])
 
   useEffect(() => {
@@ -1467,8 +1367,7 @@ export function BrowserListPage() {
     if (option?.locked) return
     setVisibleColumnKeys(prev => {
       const next = prev.includes(key) ? prev.filter(item => item !== key) : [...prev, key]
-      const lockedKeys = PROFILE_COLUMN_OPTIONS.filter(item => item.locked).map(item => item.key)
-      return Array.from(new Set([...lockedKeys, ...next]))
+      return normalizeProfileColumnKeys(next)
     })
   }
 
@@ -1721,26 +1620,7 @@ export function BrowserListPage() {
               <List className="w-4 h-4" />
             </button>
           </div>
-          <details className="relative shrink-0">
-            <summary className="list-none p-1.5 rounded text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-secondary)] cursor-pointer" title="选择显示列">
-              <Sliders className="w-4 h-4" />
-            </summary>
-            <div className="absolute right-0 top-9 z-20 w-56 rounded-lg border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] shadow-lg p-2">
-              <div className="text-xs font-medium text-[var(--color-text-muted)] px-2 py-1">显示列</div>
-              {PROFILE_COLUMN_OPTIONS.map(option => (
-                <label key={option.key} className="flex items-center gap-2 px-2 py-1.5 text-sm text-[var(--color-text-primary)] rounded hover:bg-[var(--color-bg-secondary)] cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="w-4 h-4 accent-[var(--color-accent)]"
-                    checked={visibleColumnKeys.includes(option.key)}
-                    disabled={option.locked}
-                    onChange={() => toggleVisibleColumn(option.key)}
-                  />
-                  <span>{option.label}</span>
-                </label>
-              ))}
-            </div>
-          </details>
+          <BrowserColumnVisibilityMenu visibleColumnKeys={visibleColumnKeys} onToggleColumn={toggleVisibleColumn} />
           <span className="w-px h-4 bg-[var(--color-border-muted)] mx-1 self-center shrink-0"></span>
           <Link to="/browser/edit/new" className="shrink-0"><Button size="sm" className="shrink-0 whitespace-nowrap"><Play className="w-4 h-4" />新建配置</Button></Link>
         </div>
@@ -1767,7 +1647,7 @@ export function BrowserListPage() {
       )}
 
       {/* 批量操作工具栏 */}
-      <BatchToolbar
+      <BrowserBatchToolbar
         selectedCount={selectedIds.size}
         totalCount={filteredProfiles.length}
         onSelectAll={handleSelectAll}
