@@ -27,7 +27,7 @@
 | 1 | 应用路径与安装布局 | 修复并固化 Linux 只读安装目录识别，避免配置/数据写回安装目录 | `backend/internal/apppath/*` | `go test ./backend/internal/apppath` | 已完成 |
 | 2 | 代理池页面 | 拆分超大页面，把订阅导入、测速/IP 健康检测、表格列配置和批量操作拆为独立组件/Hook | `frontend/src/modules/browser/pages/ProxyPoolPage.tsx` 及新增同目录组件/Hook | `npm run build`，必要时补充组件级人工检查 | 已完成：表格列配置、直连导入解析、Clash/订阅解析、来源元数据、检测缓存、预览过滤、展示模型、来源刷新、刷新配置、导入/预览/编辑/详情弹窗拆分、测速/IP 健康检测 Hook、主工具栏/筛选栏、订阅资源列表、代理主表行操作拆分均已落地 |
 | 3 | 浏览器实例列表 | 拆分筛选、实例操作、批量操作、状态订阅和弹窗管理，降低列表页耦合 | `frontend/src/modules/browser/pages/BrowserListPage.tsx` 及相关组件 | `npm run build`，实例启动/停止/筛选人工检查 | 已完成：表格列配置、拖拽顺序存储、显示列菜单、批量操作工具栏、顶部操作区、统计/筛选区、实例行操作、卡片操作区、运行状态订阅 Hook、基础配置/内核管理弹窗、窗口同步弹窗、轻量反馈/确认弹窗、列表单元格组件、拖拽排序 Hook、列表格式化工具、视图偏好 Hook、列表数据加载 Hook、窗口同步状态 Hook、列表筛选/核心解析工具、基础配置/内核管理 Hook、批量/复制/删除 Hook、单实例运行时动作 Hook 和代理展示工具拆分均已落地 |
-| 4 | 窗口同步后端 | 按状态管理、窗口枚举/布局、事件广播、平台差异拆分，补充核心状态测试 | `backend/window_sync.go` 及拆分后的后端文件 | `go test ./backend/...` 中不依赖 WebView 的子包，新增单测 | 进行中：已完成类型/常量、状态管理、候选窗口/自动启动前置逻辑、布局逻辑、事件/toolbar 边界和 DevTools/输入动作拆分 |
+| 4 | 窗口同步后端 | 按状态管理、窗口枚举/布局、事件广播、平台差异拆分，补充核心状态测试 | `backend/window_sync.go` 及拆分后的后端文件 | `go test ./backend/...` 中不依赖 WebView 的子包，新增单测 | 已完成：类型/常量、状态管理、候选窗口/自动启动前置逻辑、布局、事件/toolbar、DevTools/输入动作、平台窗口边界拆分与补充测试均已落地 |
 | 5 | 前端类型与 IPC | 减少 `Record<string, any>` 和重复编解码逻辑，提升 IPC 数据边界类型安全 | `frontend/src/shared/ipc/*`、相关 API 文件 | `npm run build` | 待处理 |
 | 6 | 构建与质量门禁 | 增加独立 lint/typecheck 脚本或文档化现有检查，统一 CI 可执行命令 | `frontend/package.json`、CI/README 相关文件 | `npm run build`，新增脚本自检 | 待处理 |
 | 7 | 文档与发布说明 | 梳理运行时、Linux/macOS/Windows 发布路径和依赖限制，减少环境问题误判 | `README.md`、`publish/*/README.md`、`docs/*` | 文档链接检查，发布脚本 dry-run（如可用） | 待处理 |
@@ -431,6 +431,15 @@
 - 验证方式：运行 `gofmt`、`git diff --check`、`go test ./backend/internal/apppath ./backend/internal/transport/protoipc`、`npm run build`；顶层 `go test ./...` 仍需桌面依赖环境验证。
 - 下一步：继续任务 4，拆分平台差异逻辑，并补充更多纯函数测试；任务 4 完成后进入任务 5（前端类型与 IPC）。
 
+### 本轮范围：平台窗口边界拆分与测试补充
+
+- 优化对象：窗口同步主控窗口置顶/左上定位、同步窗口显示/恢复、CDP window bounds 组装和平台窗口辅助边界。
+- 文件范围：`backend/window_sync.go`、`backend/window_sync_platform.go`、`backend/window_sync_platform_test.go`。
+- 当前问题：DevTools/输入动作拆分后，主实现文件仍保留少量与平台窗口行为强相关的窗口定位、显示和 bounds 组装逻辑；这些逻辑依赖 `primaryWorkArea`、`browserWindowSizeFromBounds`、平台窗口 bounds 修正等平台边界。
+- 落地内容：新增 `window_sync_platform.go`，抽离 `pinWindowSyncMasterTopLeft`、`showWindowSyncProfile` 和 `windowSyncVisibleWindowBounds`；新增 `window_sync_platform_test.go` 覆盖 window bounds 数值字段复制、非数值忽略和默认 normal bounds。
+- 验证方式：运行 `gofmt`、`git diff --check`、`go test ./backend/internal/apppath ./backend/internal/transport/protoipc`、`npm run build`；顶层 `go test ./...` 仍需桌面依赖环境验证。
+- 下一步：任务 4 本轮拆分计划完成，进入任务 5（前端类型与 IPC）；完整顶层 Go 测试需在具备 GTK/WebKitGTK/pkg-config 的桌面环境补跑。
+
 ### 任务 4 剩余计划
 
 - [x] 状态管理拆分：抽离窗口同步状态读写、clone、默认设置、暂停/恢复、设置保存与状态变更事件触发，并补充 settings/clone 纯函数单测。
@@ -438,18 +447,18 @@
 - [x] 布局拆分：抽离 layout scope、屏幕区域计算、窗口排列、窗口 bounds 应用和 toolbar 启动布局重放逻辑。
 - [x] 事件广播拆分：抽离同步实例停止事件、主控关闭提示 payload、状态变更 emit、toolbar show/update/hide 和 toolbar 适配器桥接逻辑。
 - [x] DevTools/输入动作拆分：抽离批量输入、事件派发、标签页关闭/刷新/URL 打开、目标页发现/创建和注入脚本等 Chrome DevTools 操作。
-- [ ] 平台差异拆分：将窗口定位、置顶、显示、屏幕/toolbar 区域相关平台实现整理成更清晰的边界。
-- [ ] 测试补充：优先为纯状态函数、settings 归一化、layout 归一化、候选排序/过滤和结果聚合补单元测试。
+- [x] 平台差异拆分：将窗口定位、置顶、显示、屏幕/toolbar 区域相关平台实现整理成更清晰的边界。
+- [x] 测试补充：已为状态/settings、候选 ID、layout、事件 payload、DevTools URL/键码和窗口 bounds 辅助逻辑补充纯函数测试。
 
 ### 后续未完成总计划
 
-- 任务 4：窗口同步后端拆分与测试（进行中，剩余项见上）。
+- 任务 4：窗口同步后端拆分与测试（已完成本轮计划，后续仅保留桌面依赖环境下的完整集成验证）。
 - 任务 5：前端类型与 IPC，减少 `Record<string, any>` 和重复编解码逻辑，提升 IPC 数据边界类型安全。
 - 任务 6：构建与质量门禁，增加独立 lint/typecheck 脚本或文档化现有检查，统一 CI 可执行命令。
 - 任务 7：文档与发布说明，梳理运行时、Linux/macOS/Windows 发布路径和依赖限制，减少环境问题误判。
 
 ## 下一步执行顺序
 
-1. 下一步处理 **任务 4：窗口同步后端拆分与测试**，避免前后端同时大范围变更。
-2. 任务 4 完成并验证后，再处理任务 5（前端类型与 IPC）。
-3. 之后依次处理任务 6（构建与质量门禁）和任务 7（文档与发布说明）。
+1. 下一步处理 **任务 5：前端类型与 IPC**，减少 `Record<string, any>` 和重复编解码逻辑。
+2. 任务 5 完成并验证后，再处理任务 6（构建与质量门禁）。
+3. 之后处理任务 7（文档与发布说明），并在具备 GTK/WebKitGTK 的桌面环境补跑顶层 Go 集成测试。
