@@ -26,7 +26,7 @@
 | --- | --- | --- | --- | --- | --- |
 | 1 | 应用路径与安装布局 | 修复并固化 Linux 只读安装目录识别，避免配置/数据写回安装目录 | `backend/internal/apppath/*` | `go test ./backend/internal/apppath` | 已完成 |
 | 2 | 代理池页面 | 拆分超大页面，把订阅导入、测速/IP 健康检测、表格列配置和批量操作拆为独立组件/Hook | `frontend/src/modules/browser/pages/ProxyPoolPage.tsx` 及新增同目录组件/Hook | `npm run build`，必要时补充组件级人工检查 | 已完成：表格列配置、直连导入解析、Clash/订阅解析、来源元数据、检测缓存、预览过滤、展示模型、来源刷新、刷新配置、导入/预览/编辑/详情弹窗拆分、测速/IP 健康检测 Hook、主工具栏/筛选栏、订阅资源列表、代理主表行操作拆分均已落地 |
-| 3 | 浏览器实例列表 | 拆分筛选、实例操作、批量操作、状态订阅和弹窗管理，降低列表页耦合 | `frontend/src/modules/browser/pages/BrowserListPage.tsx` 及相关组件 | `npm run build`，实例启动/停止/筛选人工检查 | 进行中：已完成表格列配置、拖拽顺序存储、显示列菜单、批量操作工具栏、顶部操作区、统计/筛选区、实例行操作、卡片操作区和运行状态订阅 Hook、基础配置/内核管理弹窗、窗口同步弹窗、轻量反馈/确认弹窗、列表单元格组件、拖拽排序 Hook、列表格式化工具、视图偏好 Hook、列表数据加载 Hook、窗口同步状态 Hook、列表筛选/核心解析工具、基础配置/内核管理 Hook 拆分 |
+| 3 | 浏览器实例列表 | 拆分筛选、实例操作、批量操作、状态订阅和弹窗管理，降低列表页耦合 | `frontend/src/modules/browser/pages/BrowserListPage.tsx` 及相关组件 | `npm run build`，实例启动/停止/筛选人工检查 | 进行中：已完成表格列配置、拖拽顺序存储、显示列菜单、批量操作工具栏、顶部操作区、统计/筛选区、实例行操作、卡片操作区和运行状态订阅 Hook、基础配置/内核管理弹窗、窗口同步弹窗、轻量反馈/确认弹窗、列表单元格组件、拖拽排序 Hook、列表格式化工具、视图偏好 Hook、列表数据加载 Hook、窗口同步状态 Hook、列表筛选/核心解析工具、基础配置/内核管理 Hook、批量/复制/删除 Hook 拆分 |
 | 4 | 窗口同步后端 | 按状态管理、窗口枚举/布局、事件广播、平台差异拆分，补充核心状态测试 | `backend/window_sync.go` 及拆分后的后端文件 | `go test ./backend/...` 中不依赖 WebView 的子包，新增单测 | 待处理 |
 | 5 | 前端类型与 IPC | 减少 `Record<string, any>` 和重复编解码逻辑，提升 IPC 数据边界类型安全 | `frontend/src/shared/ipc/*`、相关 API 文件 | `npm run build` | 待处理 |
 | 6 | 构建与质量门禁 | 增加独立 lint/typecheck 脚本或文档化现有检查，统一 CI 可执行命令 | `frontend/package.json`、CI/README 相关文件 | `npm run build`，新增脚本自检 | 待处理 |
@@ -347,6 +347,15 @@
 - 落地内容：新增 `useBrowserCoreSettings`，封装设置加载/保存、内核表单打开、路径校验、保存、删除和设为默认逻辑；页面只保留 Hook 返回值与弹窗组件绑定。
 - 验证方式：运行 `npm run build`，确认 TypeScript 与 Vite 生产构建通过；同时运行 `git diff --check` 检查补丁格式。
 - 下一步：继续复核任务 3 剩余启动/停止/批量/复制/删除等实例业务操作处理函数，按可控范围拆分或确认阶段性收尾。
+
+### 本轮范围：批量选择、复制与删除操作 Hook
+
+- 优化对象：浏览器实例列表里的勾选状态联动、批量启动/停止/删除、复制弹窗状态和单实例删除确认流程。
+- 文件范围：`frontend/src/modules/browser/pages/BrowserListPage.tsx`、`frontend/src/modules/browser/hooks/useBrowserProfileBatchActions.ts`。
+- 当前问题：列表页面仍直接维护批量 loading、复制/删除确认状态，并内联批量启动/停止/删除、复制和选择切换逻辑，和表格/卡片渲染交织。
+- 落地内容：新增 `useBrowserProfileBatchActions`，集中封装选中项批量操作、复制弹窗、删除确认、批量 pending 状态更新和批量结果提示；页面只保留选中 ID 状态并消费 Hook 返回的动作。
+- 验证方式：运行 `npm run build`，确认 TypeScript 与 Vite 生产构建通过；同时运行 `git diff --check` 检查补丁格式。
+- 下一步：继续复核任务 3 剩余单实例启动/停止/重启/代理切换/Cookie/窗口定位等运行时动作，按可控范围拆分或确认阶段性收尾。
 
 ## 下一步执行顺序
 

@@ -19,6 +19,7 @@ import { useBrowserListData } from '../hooks/useBrowserListData'
 import { useBrowserListRuntimeSync } from '../hooks/useBrowserListRuntimeSync'
 import { useBrowserWindowSync } from '../hooks/useBrowserWindowSync'
 import { useBrowserCoreSettings } from '../hooks/useBrowserCoreSettings'
+import { useBrowserProfileBatchActions } from '../hooks/useBrowserProfileBatchActions'
 import { InstanceBackupRestoreModal } from '../components/InstanceBackupRestoreModal'
 import { BatchRandomFingerprintModal } from '../components/BatchRandomFingerprintModal'
 import { resolveActionErrorMessage, resolveActionFeedback } from '../utils/actionErrors'
@@ -26,8 +27,6 @@ import { downloadTextFile, formatInstanceMarkerLabel, formatTime, getCookieActio
 import { filterAndSortBrowserProfiles, getBrowserProfileCoreLabel, resolveBrowserProfileCore } from '../utils/browserListFilters'
 import {
   clearBrowserCookies,
-  copyBrowserProfile,
-  deleteBrowserProfile,
   exportBrowserCookies,
   pinCenterBrowserInstance,
   restartBrowserInstance,
@@ -51,7 +50,6 @@ export function BrowserListPage() {
 
   // 勾选状态
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [batchLoading, setBatchLoading] = useState(false)
 
   const {
     windowSyncModalOpen,
@@ -104,22 +102,6 @@ export function BrowserListPage() {
 
   const openKwModal = (profile: BrowserProfile) => setKwModal({ open: true, profile })
   const closeKwModal = () => setKwModal({ open: false, profile: null })
-
-  // 复制弹窗
-  const [copyModal, setCopyModal] = useState<{ open: boolean; profile: BrowserProfile | null }>({ open: false, profile: null })
-  const [copyName, setCopyName] = useState('')
-  const [copying, setCopying] = useState(false)
-  const [deleteTarget, setDeleteTarget] = useState<BrowserProfile | null>(null)
-  const [batchDeleteConfirmOpen, setBatchDeleteConfirmOpen] = useState(false)
-
-  const openCopyModal = (profile: BrowserProfile) => {
-    setCopyName(profile.profileName + ' (副本)')
-    setCopyModal({ open: true, profile })
-  }
-  const closeCopyModal = () => {
-    setCopyModal({ open: false, profile: null })
-    setCopyName('')
-  }
 
   const {
     profiles,
@@ -235,6 +217,40 @@ export function BrowserListPage() {
 
   const selectedProfileIds = useMemo(() => Array.from(selectedIds), [selectedIds])
   const filteredProfileIds = useMemo(() => filteredProfiles.map(item => item.profileId), [filteredProfiles])
+
+  const {
+    batchLoading,
+    copyModal,
+    copyName,
+    copying,
+    deleteTarget,
+    batchDeleteConfirmOpen,
+    setCopyName,
+    setDeleteTarget,
+    setBatchDeleteConfirmOpen,
+    openCopyModal,
+    closeCopyModal,
+    toggleSelect,
+    handleSelectAll,
+    handleDeselectAll,
+    handleDelete,
+    handleConfirmDelete,
+    handleBatchStart,
+    handleBatchStop,
+    handleBatchDelete,
+    handleConfirmBatchDelete,
+    handleCopy,
+  } = useBrowserProfileBatchActions({
+    profiles,
+    filteredProfiles,
+    selectedIds,
+    setSelectedIds,
+    setStartingIds,
+    setStoppingIds,
+    mergeProfileState,
+    loadProfiles,
+    setOpError,
+  })
 
   const handleStart = async (profileId: string) => {
     const profile = profiles.find(p => p.profileId === profileId)
@@ -380,149 +396,6 @@ export function BrowserListPage() {
     } finally {
       updatePendingIds(setClearingCookieIds, target.profileId, false)
       setCookieClearTarget(null)
-    }
-  }
-
-  const handleDelete = async (profileId: string) => {
-    const profile = profiles.find(item => item.profileId === profileId)
-    if (!profile) {
-      toast.error('实例不存在或已被删除')
-      return
-    }
-    setDeleteTarget(profile)
-  }
-
-  const handleConfirmDelete = async () => {
-    if (!deleteTarget) return
-    await deleteBrowserProfile(deleteTarget.profileId)
-    toast.success('实例和用户数据目录已删除')
-    setDeleteTarget(null)
-    await loadProfiles()
-  }
-
-  // 批量操作
-  const toggleSelect = (profileId: string) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev)
-      next.has(profileId) ? next.delete(profileId) : next.add(profileId)
-      return next
-    })
-  }
-
-  const handleSelectAll = () => {
-    setSelectedIds(new Set(filteredProfiles.map(p => p.profileId)))
-  }
-
-  const handleDeselectAll = () => {
-    setSelectedIds(new Set())
-  }
-
-  const handleBatchStart = async () => {
-    const ids = Array.from(selectedIds)
-    if (ids.length === 0) return
-    setBatchLoading(true)
-    let success = 0, pending = 0, failed = 0
-    const pendingMessages: string[] = []
-    const failureMessages: string[] = []
-    for (const id of ids) {
-      const profile = profiles.find(p => p.profileId === id)
-      if (!profile || profile.running) continue
-      updatePendingIds(setStartingIds, id, true)
-      try {
-        const startedProfile = await startBrowserInstance(id)
-        mergeProfileState(startedProfile)
-        success++
-      } catch (error: any) {
-        const feedback = resolveActionFeedback(error, '实例启动失败')
-        if (feedback.pendingAttach) {
-          pending++
-          pendingMessages.push(`${profile.profileName}：${feedback.message}`)
-        } else {
-          failed++
-          failureMessages.push(`${profile.profileName}：${feedback.message}`)
-        }
-      } finally {
-        updatePendingIds(setStartingIds, id, false)
-      }
-    }
-    setBatchLoading(false)
-    const summary = [`成功 ${success}`]
-    if (pending > 0) summary.push(`待接管 ${pending}`)
-    if (failed > 0) summary.push(`失败 ${failed}`)
-    toast.success(`批量启动完成：${summary.join('，')}`)
-    if (pendingMessages.length > 0) {
-      const preview = pendingMessages.slice(0, 3)
-      const more = pendingMessages.length > preview.length ? `\n另有 ${pendingMessages.length - preview.length} 个实例已打开窗口，仍在后台接管。` : ''
-      toast.warning(`以下实例已打开窗口，仍在后台接管：\n${preview.join('\n')}${more}`)
-    }
-    if (failureMessages.length > 0) {
-      const preview = failureMessages.slice(0, 3)
-      const more = failureMessages.length > preview.length ? `\n另有 ${failureMessages.length - preview.length} 个实例启动失败，请逐个检查。` : ''
-      toast.error(`以下实例启动失败：\n${preview.join('\n')}${more}`)
-    }
-    loadProfiles()
-  }
-
-  const handleBatchStop = async () => {
-    const ids = Array.from(selectedIds)
-    if (ids.length === 0) return
-    setBatchLoading(true)
-    let success = 0, failed = 0
-    for (const id of ids) {
-      const profile = profiles.find(p => p.profileId === id)
-      if (!profile || !profile.running) continue
-      updatePendingIds(setStoppingIds, id, true)
-      try {
-        const stoppedProfile = await stopBrowserInstance(id)
-        mergeProfileState(stoppedProfile)
-        success++
-      } catch {
-        failed++
-      } finally {
-        updatePendingIds(setStoppingIds, id, false)
-      }
-    }
-    setBatchLoading(false)
-    toast.success(`批量停止完成：成功 ${success}${failed > 0 ? `，失败 ${failed}` : ''}`)
-    loadProfiles()
-  }
-
-  const handleBatchDelete = async () => {
-    const ids = Array.from(selectedIds)
-    if (ids.length === 0) return
-    setBatchDeleteConfirmOpen(true)
-  }
-
-  const handleConfirmBatchDelete = async () => {
-    const ids = Array.from(selectedIds)
-    if (ids.length === 0) return
-    setBatchDeleteConfirmOpen(false)
-    setBatchLoading(true)
-    try {
-      for (const id of ids) {
-        await deleteBrowserProfile(id)
-      }
-      setSelectedIds(new Set())
-      toast.success(`已删除 ${ids.length} 个实例`)
-      await loadProfiles()
-    } finally {
-      setBatchLoading(false)
-    }
-  }
-
-  const handleCopy = async (profileId: string) => {
-    if (!copyModal.profile) return
-    setCopying(true)
-    try {
-      await copyBrowserProfile(profileId, copyName)
-      toast.success('实例已复制')
-      closeCopyModal()
-      loadProfiles()
-    } catch (error: any) {
-      closeCopyModal()
-      setOpError(typeof error === 'string' ? error : error?.message || '复制失败')
-    } finally {
-      setCopying(false)
     }
   }
 
