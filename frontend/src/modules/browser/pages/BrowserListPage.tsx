@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CheckCircle, ChevronDown, ChevronUp, Copy, Edit2, GripVertical, Layers, LayoutGrid, Pencil, Plus, RefreshCw, Sliders, Star, Trash2, XCircle } from 'lucide-react'
-import { Badge, Button, Card, ConfirmModal, FormItem, Input, Modal, Switch, Table, Textarea, toast } from '../../../shared/components'
+import { ChevronDown, ChevronUp, Copy, Edit2, GripVertical, Layers, LayoutGrid, Pencil, RefreshCw, Sliders, Star, Trash2, XCircle } from 'lucide-react'
+import { Badge, Button, Card, ConfirmModal, FormItem, Input, Modal, Switch, Table, toast } from '../../../shared/components'
 import type { TableColumn } from '../../../shared/components/Table'
 import type { BrowserCore, BrowserCoreInput, BrowserProfile, BrowserProxy, BrowserSettings, BrowserGroupWithCount, WindowSyncCandidate, WindowSyncLayoutSettings, WindowSyncSettings, WindowSyncState } from '../types'
 import { EMPTY_FILTERS } from '../components/InstanceFilterBar'
 import type { InstanceFilters } from '../components/InstanceFilterBar'
 import { KeywordsModal } from '../components/KeywordsModal'
 import { BrowserListHeaderPanel } from '../components/browser-list/BrowserListHeaderPanel'
+import { BrowserListSettingsModal } from '../components/browser-list/BrowserListSettingsModal'
+import { BrowserCoreEditModal } from '../components/browser-list/BrowserCoreEditModal'
 import { BrowserBatchToolbar } from '../components/browser-list/BrowserBatchToolbar'
 import { BrowserProfileActions } from '../components/browser-list/BrowserProfileActions'
 import { useBrowserListRuntimeSync } from '../hooks/useBrowserListRuntimeSync'
@@ -1707,60 +1709,21 @@ export function BrowserListPage() {
         }}
       />
 
-      {/* 基础配置弹窗 */}
-      <Modal open={settingsModalOpen} onClose={() => setSettingsModalOpen(false)} title="基础配置" width="700px"
-        footer={<><Button variant="secondary" onClick={() => setSettingsModalOpen(false)}>取消</Button><Button onClick={handleSaveSettings} loading={savingSettings}>保存</Button></>}>
-        <div className="space-y-6">
-          {/* 内核管理 */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-[var(--color-text-primary)]">内核管理</span>
-              <div className="flex gap-2">
-                <Button size="sm" onClick={() => handleOpenCoreModal()}><Plus className="w-4 h-4" />新增内核</Button>
-              </div>
-            </div>
-            <Card padding="none">
-              <Table columns={coreColumns} data={cores} rowKey="coreId" />
-            </Card>
-          </div>
-
-          {/* 其他设置 */}
-          <FormItem label="用户数据根目录">
-            <Input value={settings.userDataRoot} onChange={e => setSettings(prev => ({ ...prev, userDataRoot: e.target.value }))} placeholder="data" />
-          </FormItem>
-          <FormItem label="默认指纹参数（每行一个）">
-            <Textarea value={fingerprintText} onChange={e => setFingerprintText(e.target.value)} rows={3} placeholder="--fingerprint-brand=Chrome" />
-          </FormItem>
-          <FormItem label="默认启动参数（每行一个）">
-            <Textarea value={launchText} onChange={e => setLaunchText(e.target.value)} rows={3} placeholder="--disable-sync" />
-          </FormItem>
-          <FormItem label="默认代理">
-            <Input value={settings.defaultProxy} onChange={e => setSettings(prev => ({ ...prev, defaultProxy: e.target.value }))} placeholder="http://127.0.0.1:7890" />
-          </FormItem>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <FormItem label="启动就绪超时（毫秒）" hint="默认 3000，慢机器可调到 5000-10000">
-              <Input
-                type="number"
-                min={1000}
-                step={500}
-                value={settings.startReadyTimeoutMs}
-                onChange={e => setSettings(prev => ({ ...prev, startReadyTimeoutMs: Math.max(1000, Number(e.target.value) || 3000) }))}
-                placeholder="3000"
-              />
-            </FormItem>
-            <FormItem label="启动稳定窗口（毫秒）" hint="建议 1200-3000">
-              <Input
-                type="number"
-                min={0}
-                step={100}
-                value={settings.startStableWindowMs}
-                onChange={e => setSettings(prev => ({ ...prev, startStableWindowMs: Math.max(0, Number(e.target.value) || 1200) }))}
-                placeholder="1200"
-              />
-            </FormItem>
-          </div>
-        </div>
-      </Modal>
+      <BrowserListSettingsModal
+        open={settingsModalOpen}
+        settings={settings}
+        fingerprintText={fingerprintText}
+        launchText={launchText}
+        saving={savingSettings}
+        cores={cores}
+        coreColumns={coreColumns}
+        onClose={() => setSettingsModalOpen(false)}
+        onSave={handleSaveSettings}
+        onSettingsChange={setSettings}
+        onFingerprintTextChange={setFingerprintText}
+        onLaunchTextChange={setLaunchText}
+        onOpenCoreModal={() => handleOpenCoreModal()}
+      />
 
       {/* 窗口同步弹窗 */}
       <Modal
@@ -2055,27 +2018,17 @@ export function BrowserListPage() {
         </div>
       </Modal>
 
-      {/* 内核编辑弹窗 */}
-      <Modal open={coreModalOpen} onClose={() => setCoreModalOpen(false)} title={coreForm.coreId ? '编辑内核' : '新增内核'} width="500px"
-        footer={<><Button variant="secondary" onClick={() => setCoreModalOpen(false)}>取消</Button><Button onClick={handleSaveCore} loading={savingCore}>保存</Button></>}>
-        <div className="space-y-4">
-          <FormItem label="内核名称" required>
-            <Input value={coreForm.coreName} onChange={e => setCoreForm(prev => ({ ...prev, coreName: e.target.value }))} placeholder="Chrome 142" />
-          </FormItem>
-          <FormItem label="内核路径" required>
-            <div className="flex gap-2">
-              <Input value={coreForm.corePath} onChange={e => { setCoreForm(prev => ({ ...prev, corePath: e.target.value })); setCoreValidation(null) }} placeholder="chrome 或 D:/browsers/chrome-120" className="flex-1" />
-              <Button variant="secondary" onClick={handleValidateCorePath}>验证</Button>
-            </div>
-            {coreValidation && (
-              <div className={`flex items-center gap-1 mt-1 text-sm ${coreValidation.valid ? 'text-green-600' : 'text-red-600'}`}>
-                {coreValidation.valid ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
-                {coreValidation.message}
-              </div>
-            )}
-          </FormItem>
-        </div>
-      </Modal>
+      <BrowserCoreEditModal
+        open={coreModalOpen}
+        form={coreForm}
+        validation={coreValidation}
+        saving={savingCore}
+        onClose={() => setCoreModalOpen(false)}
+        onSave={handleSaveCore}
+        onValidatePath={handleValidateCorePath}
+        onFormChange={setCoreForm}
+        onValidationReset={() => setCoreValidation(null)}
+      />
 
       {/* 代理不支持弹窗 */}
       <Modal
