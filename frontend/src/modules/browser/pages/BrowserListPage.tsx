@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Activity, CheckCircle, ChevronDown, ChevronRight, ChevronUp, Copy, Download, Edit2, Eraser, FileText, Focus, GripVertical, Key, Layers, Pencil, Play, Plus, RefreshCw, RotateCcw, Settings, Shuffle, Sliders, Square, Star, Trash2, XCircle, LayoutGrid, List, MonitorUp, Wand2 } from 'lucide-react'
-import { Badge, Button, Card, ConfirmModal, FormItem, Input, Modal, StatCard, Switch, Table, Textarea, toast } from '../../../shared/components'
+import { CheckCircle, ChevronDown, ChevronUp, Copy, Download, Edit2, Eraser, Focus, GripVertical, Key, Layers, LayoutGrid, Pencil, Play, Plus, RefreshCw, RotateCcw, Settings, Shuffle, Sliders, Square, Star, Trash2, XCircle } from 'lucide-react'
+import { Badge, Button, Card, ConfirmModal, FormItem, Input, Modal, Switch, Table, Textarea, toast } from '../../../shared/components'
 import type { TableColumn } from '../../../shared/components/Table'
 import type { BrowserCore, BrowserCoreInput, BrowserProfile, BrowserProxy, BrowserSettings, BrowserGroupWithCount, WindowSyncCandidate, WindowSyncLayoutSettings, WindowSyncSettings, WindowSyncState } from '../types'
-import { InstanceFilterBar, EMPTY_FILTERS } from '../components/InstanceFilterBar'
+import { EMPTY_FILTERS } from '../components/InstanceFilterBar'
 import type { InstanceFilters } from '../components/InstanceFilterBar'
 import { KeywordsModal } from '../components/KeywordsModal'
-import { BrowserColumnVisibilityMenu } from '../components/browser-list/BrowserColumnVisibilityMenu'
+import { BrowserListHeaderPanel } from '../components/browser-list/BrowserListHeaderPanel'
 import { BrowserBatchToolbar } from '../components/browser-list/BrowserBatchToolbar'
 import { InstanceBackupRestoreModal } from '../components/InstanceBackupRestoreModal'
 import { BatchRandomFingerprintModal } from '../components/BatchRandomFingerprintModal'
@@ -1585,66 +1585,29 @@ export function BrowserListPage() {
 
   return (
     <div className="overflow-auto p-5 space-y-5 animate-fade-in h-full">
-      {/* 页头 */}
-      <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-start 2xl:justify-between">
-        <div className="shrink-0">
-          <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">实例列表</h1>
-          <p className="text-sm text-[var(--color-text-muted)] mt-1">
-            当前配置总数 {profiles.length}
-            {filteredProfiles.length !== profiles.length && <span className="ml-1 text-[var(--color-accent)]">（已筛选 {filteredProfiles.length}）</span>}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center justify-start 2xl:justify-end gap-2 min-w-0">
-          <Button variant="secondary" size="sm" className="shrink-0 whitespace-nowrap" onClick={() => setHeaderCollapsed(prev => !prev)}>{headerCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}{headerCollapsed ? '展开面板' : '收起面板'}</Button>
-          <Button variant="secondary" size="sm" className="shrink-0 whitespace-nowrap" onClick={() => { void loadProfiles() }}><RefreshCw className="w-4 h-4" />刷新</Button>
-          <Button variant="secondary" size="sm" className="shrink-0 whitespace-nowrap" onClick={() => setBatchRandomModalOpen(true)}><Wand2 className="w-4 h-4" />批量生成</Button>
-          <Button variant="secondary" size="sm" className="shrink-0 whitespace-nowrap" onClick={() => setBackupModalOpen(true)}><Download className="w-4 h-4" />实例备份与恢复</Button>
-          <Button variant="secondary" size="sm" className="shrink-0 whitespace-nowrap" onClick={handleOpenWindowSyncModal}><MonitorUp className="w-4 h-4" />窗口同步</Button>
-          <Button variant="secondary" size="sm" className="shrink-0 whitespace-nowrap" onClick={handleOpenSettings}><Sliders className="w-4 h-4" />基础配置</Button>
-          <Button variant="secondary" size="sm" onClick={() => setExpandModalOpen(true)} className="shrink-0 whitespace-nowrap text-[var(--color-primary)] border-[var(--color-primary)] hover:bg-[var(--color-primary)]/10">
-            <Plus className="w-4 h-4" />扩容情况
-          </Button>
-          <div className="flex shrink-0 items-center bg-[var(--color-bg-secondary)] rounded-md border border-[var(--color-border-default)] p-0.5">
-            <button
-              className={`p-1.5 rounded text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors ${viewMode === 'card' ? 'bg-[var(--color-bg-surface)] shadow-sm text-[var(--color-accent)]' : ''}`}
-              onClick={() => setViewMode('card')}
-              title="卡片视图"
-            >
-              <LayoutGrid className="w-4 h-4" />
-            </button>
-            <button
-              className={`p-1.5 rounded text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors ${viewMode === 'table' ? 'bg-[var(--color-bg-surface)] shadow-sm text-[var(--color-accent)]' : ''}`}
-              onClick={() => setViewMode('table')}
-              title="表格视图"
-            >
-              <List className="w-4 h-4" />
-            </button>
-          </div>
-          <BrowserColumnVisibilityMenu visibleColumnKeys={visibleColumnKeys} onToggleColumn={toggleVisibleColumn} />
-          <span className="w-px h-4 bg-[var(--color-border-muted)] mx-1 self-center shrink-0"></span>
-          <Link to="/browser/edit/new" className="shrink-0"><Button size="sm" className="shrink-0 whitespace-nowrap"><Play className="w-4 h-4" />新建配置</Button></Link>
-        </div>
-      </div>
-
-      {/* 可折叠的统计+筛选区 */}
-      {!headerCollapsed && (
-        <>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <StatCard title="配置总数" value={`${profiles.length}`} icon={<FileText className="w-5 h-5" />} />
-            <StatCard title="运行中实例" value={`${runningCount}`} icon={<Activity className="w-5 h-5" />} />
-            <StatCard title="停止实例" value={`${profiles.length - runningCount}`} icon={<Square className="w-5 h-5 text-gray-400" />} />
-          </div>
-
-          <InstanceFilterBar
-            filters={filters}
-            onChange={setFilters}
-            proxies={proxies}
-            cores={cores}
-            allTags={allTags}
-            groups={groups}
-          />
-        </>
-      )}
+      <BrowserListHeaderPanel
+        profilesCount={profiles.length}
+        filteredCount={filteredProfiles.length}
+        runningCount={runningCount}
+        headerCollapsed={headerCollapsed}
+        viewMode={viewMode}
+        visibleColumnKeys={visibleColumnKeys}
+        filters={filters}
+        proxies={proxies}
+        cores={cores}
+        allTags={allTags}
+        groups={groups}
+        onToggleHeaderCollapsed={() => setHeaderCollapsed(prev => !prev)}
+        onRefresh={() => { void loadProfiles() }}
+        onOpenBatchRandom={() => setBatchRandomModalOpen(true)}
+        onOpenBackup={() => setBackupModalOpen(true)}
+        onOpenWindowSync={handleOpenWindowSyncModal}
+        onOpenSettings={handleOpenSettings}
+        onOpenExpand={() => setExpandModalOpen(true)}
+        onViewModeChange={setViewMode}
+        onToggleColumn={toggleVisibleColumn}
+        onFiltersChange={setFilters}
+      />
 
       {/* 批量操作工具栏 */}
       <BrowserBatchToolbar
