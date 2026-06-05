@@ -27,7 +27,7 @@
 | 1 | 应用路径与安装布局 | 修复并固化 Linux 只读安装目录识别，避免配置/数据写回安装目录 | `backend/internal/apppath/*` | `go test ./backend/internal/apppath` | 已完成 |
 | 2 | 代理池页面 | 拆分超大页面，把订阅导入、测速/IP 健康检测、表格列配置和批量操作拆为独立组件/Hook | `frontend/src/modules/browser/pages/ProxyPoolPage.tsx` 及新增同目录组件/Hook | `npm run build`，必要时补充组件级人工检查 | 已完成：表格列配置、直连导入解析、Clash/订阅解析、来源元数据、检测缓存、预览过滤、展示模型、来源刷新、刷新配置、导入/预览/编辑/详情弹窗拆分、测速/IP 健康检测 Hook、主工具栏/筛选栏、订阅资源列表、代理主表行操作拆分均已落地 |
 | 3 | 浏览器实例列表 | 拆分筛选、实例操作、批量操作、状态订阅和弹窗管理，降低列表页耦合 | `frontend/src/modules/browser/pages/BrowserListPage.tsx` 及相关组件 | `npm run build`，实例启动/停止/筛选人工检查 | 已完成：表格列配置、拖拽顺序存储、显示列菜单、批量操作工具栏、顶部操作区、统计/筛选区、实例行操作、卡片操作区、运行状态订阅 Hook、基础配置/内核管理弹窗、窗口同步弹窗、轻量反馈/确认弹窗、列表单元格组件、拖拽排序 Hook、列表格式化工具、视图偏好 Hook、列表数据加载 Hook、窗口同步状态 Hook、列表筛选/核心解析工具、基础配置/内核管理 Hook、批量/复制/删除 Hook、单实例运行时动作 Hook 和代理展示工具拆分均已落地 |
-| 4 | 窗口同步后端 | 按状态管理、窗口枚举/布局、事件广播、平台差异拆分，补充核心状态测试 | `backend/window_sync.go` 及拆分后的后端文件 | `go test ./backend/...` 中不依赖 WebView 的子包，新增单测 | 进行中：已完成类型/常量拆分到 `window_sync_types.go` |
+| 4 | 窗口同步后端 | 按状态管理、窗口枚举/布局、事件广播、平台差异拆分，补充核心状态测试 | `backend/window_sync.go` 及拆分后的后端文件 | `go test ./backend/...` 中不依赖 WebView 的子包，新增单测 | 进行中：已完成类型/常量拆分与状态管理拆分，新增状态纯函数单测 |
 | 5 | 前端类型与 IPC | 减少 `Record<string, any>` 和重复编解码逻辑，提升 IPC 数据边界类型安全 | `frontend/src/shared/ipc/*`、相关 API 文件 | `npm run build` | 待处理 |
 | 6 | 构建与质量门禁 | 增加独立 lint/typecheck 脚本或文档化现有检查，统一 CI 可执行命令 | `frontend/package.json`、CI/README 相关文件 | `npm run build`，新增脚本自检 | 待处理 |
 | 7 | 文档与发布说明 | 梳理运行时、Linux/macOS/Windows 发布路径和依赖限制，减少环境问题误判 | `README.md`、`publish/*/README.md`、`docs/*` | 文档链接检查，发布脚本 dry-run（如可用） | 待处理 |
@@ -206,7 +206,7 @@
 ### 后续全局任务（任务 2 完成后）
 
 - [ ] 任务 3：浏览器实例列表拆分，按筛选、实例操作、批量操作、状态订阅和弹窗管理拆分 `BrowserListPage.tsx`。
-- [ ] 任务 4：窗口同步后端拆分与测试，按状态管理、窗口枚举/布局、事件广播、平台差异拆分并补充核心状态测试。当前已完成类型/常量拆分。
+- [ ] 任务 4：窗口同步后端拆分与测试，按状态管理、窗口枚举/布局、事件广播、平台差异拆分并补充核心状态测试。当前已完成类型/常量拆分与状态管理拆分。
 - [ ] 任务 5：前端类型与 IPC，减少 `Record<string, any>` 和重复编解码逻辑，提升 IPC 数据边界类型安全。
 - [ ] 任务 6：构建与质量门禁，增加独立 lint/typecheck 脚本或文档化现有检查，统一 CI 可执行命令。
 - [ ] 任务 7：文档与发布说明，梳理运行时、Linux/macOS/Windows 发布路径和依赖限制，减少环境问题误判。
@@ -386,9 +386,18 @@
 - 验证方式：运行 `gofmt`、`git diff --check`、`go test ./backend/internal/apppath` 和不依赖桌面环境的窗口同步相关包测试；顶层 `go test ./...` 仍需桌面依赖环境验证。
 - 下一步：继续任务 4，优先拆分窗口同步状态管理函数（`WindowSyncGetState`、`WindowSyncStop`、设置保存、暂停/恢复、状态 clone/默认设置等），并补充纯状态单测。
 
+### 本轮范围：窗口同步状态管理拆分与纯函数测试
+
+- 优化对象：窗口同步状态读取/停止、设置读取/保存、暂停/恢复、运行态状态要求、默认设置、设置归一化、主控颜色归一化和状态 clone。
+- 文件范围：`backend/window_sync.go`、`backend/window_sync_state.go`、`backend/window_sync_state_test.go`。
+- 当前问题：类型/常量拆分后，主实现文件仍承载状态生命周期和纯状态辅助函数；这些逻辑和候选窗口枚举、布局、事件广播、DevTools 操作混在同一文件里，不便于优先补单测。
+- 落地内容：新增 `window_sync_state.go`，抽离 `WindowSyncGetState`、`WindowSyncStop`、`WindowSyncGetSettings`、`WindowSyncSaveSettings`、`WindowSyncPause`、`WindowSyncResume`、`requireWindowSyncState`、settings 归一化和 `cloneWindowSyncState`；新增 `window_sync_state_test.go` 覆盖颜色归一化、默认颜色回退和 clone slice 深拷贝。
+- 验证方式：运行 `gofmt`、`git diff --check`、`go test ./backend`、`go test ./backend/internal/apppath ./backend/internal/transport/protoipc`；顶层 `go test ./...` 仍需桌面依赖环境验证。
+- 下一步：继续任务 4，拆分候选窗口枚举和调试端口可达性检测，随后拆 layout、事件广播、DevTools/输入动作和平台差异逻辑。
+
 ### 任务 4 剩余计划
 
-- [ ] 状态管理拆分：抽离窗口同步状态读写、clone、默认设置、暂停/恢复、设置保存与状态变更事件触发。
+- [x] 状态管理拆分：抽离窗口同步状态读写、clone、默认设置、暂停/恢复、设置保存与状态变更事件触发，并补充 settings/clone 纯函数单测。
 - [ ] 候选窗口枚举拆分：抽离候选实例扫描、调试端口可达性检测和自动启动前置检查。
 - [ ] 布局拆分：抽离 layout scope、屏幕区域计算、窗口排列和工具栏尺寸更新逻辑。
 - [ ] 事件广播拆分：抽离前端事件绑定、状态变更 emit、toolbar 更新/隐藏等事件侧逻辑。

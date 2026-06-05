@@ -155,3 +155,56 @@ func testWindowSyncState(profileIds []string, masterProfileId string) *WindowSyn
 		Layout:          defaultWindowSyncLayoutSettings(),
 	}
 }
+
+func TestNormalizeWindowSyncSettings(t *testing.T) {
+	settings := normalizeWindowSyncSettings(WindowSyncSettings{
+		MasterColor:  "abc",
+		SyncKeyboard: false,
+		SyncMouse:    true,
+	})
+
+	if settings.MasterColor != "#aabbcc" {
+		t.Fatalf("expected short hex color normalized, got %q", settings.MasterColor)
+	}
+	if settings.SyncKeyboard {
+		t.Fatalf("expected SyncKeyboard to preserve false")
+	}
+	if !settings.SyncMouse {
+		t.Fatalf("expected SyncMouse to preserve true")
+	}
+}
+
+func TestNormalizeWindowSyncSettingsFallsBackToDefaultColor(t *testing.T) {
+	settings := normalizeWindowSyncSettings(WindowSyncSettings{MasterColor: "not-a-color"})
+
+	if settings.MasterColor != defaultWindowSyncMasterColor {
+		t.Fatalf("expected invalid color to fall back to %q, got %q", defaultWindowSyncMasterColor, settings.MasterColor)
+	}
+}
+
+func TestCloneWindowSyncStateCopiesSlices(t *testing.T) {
+	original := &WindowSyncState{
+		SessionId:       "session-1",
+		Active:          true,
+		MasterProfileId: "p1",
+		ProfileIds:      []string{"p1", "p2"},
+		Windows: []WindowSyncCandidate{
+			{ProfileId: "p1", ProfileName: "Master", Master: true},
+			{ProfileId: "p2", ProfileName: "Follower"},
+		},
+	}
+
+	cloned := cloneWindowSyncState(original)
+	if cloned == nil {
+		t.Fatalf("expected cloned state")
+	}
+	cloned.ProfileIds[0] = "changed"
+	cloned.Windows[0].ProfileName = "Changed"
+
+	if original.ProfileIds[0] != "p1" {
+		t.Fatalf("expected ProfileIds slice to be copied, original was mutated to %q", original.ProfileIds[0])
+	}
+	if original.Windows[0].ProfileName != "Master" {
+		t.Fatalf("expected Windows slice to be copied, original was mutated to %q", original.Windows[0].ProfileName)
+	}
+}
