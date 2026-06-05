@@ -21,7 +21,8 @@ import { useBrowserWindowSync } from '../hooks/useBrowserWindowSync'
 import { InstanceBackupRestoreModal } from '../components/InstanceBackupRestoreModal'
 import { BatchRandomFingerprintModal } from '../components/BatchRandomFingerprintModal'
 import { resolveActionErrorMessage, resolveActionFeedback } from '../utils/actionErrors'
-import { downloadTextFile, formatInstanceMarkerLabel, formatTime, getCookieActionTitle, naturalCompareText, sanitizeFilenamePart, resolveProfileStatus } from '../utils/browserListFormat'
+import { downloadTextFile, formatInstanceMarkerLabel, formatTime, getCookieActionTitle, sanitizeFilenamePart, resolveProfileStatus } from '../utils/browserListFormat'
+import { filterAndSortBrowserProfiles, getBrowserProfileCoreLabel, resolveBrowserProfileCore } from '../utils/browserListFilters'
 import {
   clearBrowserCookies,
   copyBrowserProfile,
@@ -198,26 +199,8 @@ export function BrowserListPage() {
     return cores.find(core => core.isDefault) || cores[0] || null
   }, [cores])
 
-  const resolveProfileCore = (profile: BrowserProfile) => {
-    const coreId = (profile.coreId || '').trim()
-    if (coreId && !/^default$/i.test(coreId)) {
-      return cores.find(core => core.coreId === coreId) || null
-    }
-    return defaultCore
-  }
-
-  const getProfileCoreLabel = (profile: BrowserProfile) => {
-    const resolvedCore = resolveProfileCore(profile)
-    if (resolvedCore) {
-      return resolvedCore.coreName
-    }
-
-    const coreId = (profile.coreId || '').trim()
-    if (!coreId || /^default$/i.test(coreId)) {
-      return '使用默认内核'
-    }
-    return coreId
-  }
+  const resolveProfileCore = (profile: BrowserProfile) => resolveBrowserProfileCore(profile, cores, defaultCore)
+  const getProfileCoreLabel = (profile: BrowserProfile) => getBrowserProfileCoreLabel(profile, cores, defaultCore)
 
   const isProfileStarting = (profileId: string) => startingIds.has(profileId)
   const isProfileStopping = (profileId: string) => stoppingIds.has(profileId)
@@ -241,40 +224,13 @@ export function BrowserListPage() {
     renderProfileDragHandle,
   } = useBrowserProfileOrderDnD({ profiles })
 
-  const filteredProfiles = useMemo(() => {
-    const profileOrderIndex = new Map(profileOrder.map((profileId, index) => [profileId, index]))
-    return profiles.filter(p => {
-      // 分组筛选
-      if (filters.groupId === '__ungrouped__' && p.groupId) return false
-      if (filters.groupId && filters.groupId !== '__ungrouped__' && p.groupId !== filters.groupId) return false
-
-      if (filters.keyword && !p.profileName.toLowerCase().includes(filters.keyword.toLowerCase())) return false
-      if (filters.status === 'running' && !p.running) return false
-      if (filters.status === 'stopped' && p.running) return false
-      if (filters.proxyId === '__none__' && (p.proxyId || p.proxyConfig)) return false
-      if (filters.proxyId && filters.proxyId !== '__none__' && p.proxyId !== filters.proxyId) return false
-      if (filters.coreId) {
-        const effectiveCore = resolveProfileCore(p)
-        if (!effectiveCore || effectiveCore.coreId !== filters.coreId) return false
-      }
-      if (filters.tags.size > 0 && !p.tags?.some(t => filters.tags.has(t))) return false
-      if (filters.kwSearch) {
-        const q = filters.kwSearch.toLowerCase()
-        const hit = p.keywords?.some(v => v.toLowerCase().includes(q))
-        if (!hit) return false
-      }
-      return true
-    }).sort((a, b) => {
-      const orderA = profileOrderIndex.get(a.profileId)
-      const orderB = profileOrderIndex.get(b.profileId)
-      if (orderA !== undefined || orderB !== undefined) {
-        if (orderA === undefined) return 1
-        if (orderB === undefined) return -1
-        if (orderA !== orderB) return orderA - orderB
-      }
-      return naturalCompareText(a.profileName, b.profileName)
-    })
-  }, [profiles, filters, defaultCore, cores, profileOrder])
+  const filteredProfiles = useMemo(() => filterAndSortBrowserProfiles({
+    profiles,
+    filters,
+    profileOrder,
+    cores,
+    defaultCore,
+  }), [profiles, filters, defaultCore, cores, profileOrder])
 
   const selectedProfileIds = useMemo(() => Array.from(selectedIds), [selectedIds])
   const filteredProfileIds = useMemo(() => filteredProfiles.map(item => item.profileId), [filteredProfiles])
