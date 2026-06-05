@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ChevronDown, ChevronUp, Copy, Edit2, GripVertical, Layers, LayoutGrid, Pencil, RefreshCw, Sliders, Star, Trash2, XCircle } from 'lucide-react'
-import { Badge, Button, Card, ConfirmModal, FormItem, Input, Modal, Switch, Table, toast } from '../../../shared/components'
+import { ChevronDown, ChevronUp, Copy, Edit2, GripVertical, Pencil, RefreshCw, Star, Trash2, XCircle } from 'lucide-react'
+import { Badge, Button, Card, ConfirmModal, FormItem, Input, Modal, Table, toast } from '../../../shared/components'
 import type { TableColumn } from '../../../shared/components/Table'
 import type { BrowserCore, BrowserCoreInput, BrowserProfile, BrowserProxy, BrowserSettings, BrowserGroupWithCount, WindowSyncCandidate, WindowSyncLayoutSettings, WindowSyncSettings, WindowSyncState } from '../types'
 import { EMPTY_FILTERS } from '../components/InstanceFilterBar'
@@ -10,6 +10,7 @@ import { KeywordsModal } from '../components/KeywordsModal'
 import { BrowserListHeaderPanel } from '../components/browser-list/BrowserListHeaderPanel'
 import { BrowserListSettingsModal } from '../components/browser-list/BrowserListSettingsModal'
 import { BrowserCoreEditModal } from '../components/browser-list/BrowserCoreEditModal'
+import { BrowserWindowSyncLayoutModal, BrowserWindowSyncModal, BrowserWindowSyncSettingsModal } from '../components/browser-list/BrowserWindowSyncModals'
 import { BrowserBatchToolbar } from '../components/browser-list/BrowserBatchToolbar'
 import { BrowserProfileActions } from '../components/browser-list/BrowserProfileActions'
 import { useBrowserListRuntimeSync } from '../hooks/useBrowserListRuntimeSync'
@@ -1725,298 +1726,41 @@ export function BrowserListPage() {
         onOpenCoreModal={() => handleOpenCoreModal()}
       />
 
-      {/* 窗口同步弹窗 */}
-      <Modal
+      <BrowserWindowSyncModal
         open={windowSyncModalOpen}
+        state={windowSyncState}
+        candidates={windowSyncCandidates}
+        selectedIds={windowSyncSelectedIds}
+        masterId={windowSyncMasterId}
+        loading={windowSyncLoading}
         onClose={() => setWindowSyncModalOpen(false)}
-        title="窗口同步"
-        width="760px"
-        footer={
-          <>
-            {windowSyncState?.active && (
-              <Button variant="secondary" onClick={handleStopWindowSync} loading={windowSyncLoading}>
-                停止同步
-              </Button>
-            )}
-            <Button variant="secondary" onClick={() => setWindowSyncModalOpen(false)}>取消</Button>
-            {!windowSyncState?.active && (
-              <Button onClick={handleStartWindowSync} loading={windowSyncLoading}>
-                开始同步窗口
-              </Button>
-            )}
-          </>
-        }
-      >
-        <div className="space-y-4">
-          {windowSyncState?.active && (
-            <div className="rounded-lg border border-[var(--color-accent)]/25 bg-[var(--color-accent)]/10 px-3 py-2">
-              <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--color-text-primary)]">
-                <Badge variant="info" dot dotClassName="w-2 h-2">同步中</Badge>
-                <span>主控窗口：{windowSyncState.windows.find(item => item.profileId === windowSyncState.masterProfileId)?.profileName || windowSyncState.masterProfileId}</span>
-                <span className="text-[var(--color-text-muted)]">同步状态下无法修改主控窗口。</span>
-              </div>
-            </div>
-          )}
+        onStop={handleStopWindowSync}
+        onStart={handleStartWindowSync}
+        onSelectAll={selectAllWindowSyncCandidates}
+        onClear={clearWindowSyncCandidates}
+        onRefresh={loadWindowSyncCandidates}
+        onToggleCandidate={toggleWindowSyncCandidate}
+        onMasterChange={setWindowSyncMasterId}
+      />
 
-          <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-[var(--color-text-primary)]">选择需要同时操控的窗口</p>
-              <p className="text-xs text-[var(--color-text-muted)] mt-1">已运行实例会立即加入同步；未运行实例可勾选，并在开始同步时自动启动。</p>
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <Button size="sm" variant="secondary" onClick={selectAllWindowSyncCandidates} disabled={!!windowSyncState?.active || windowSyncCandidates.length === 0}>
-                全选
-              </Button>
-              <Button size="sm" variant="ghost" onClick={clearWindowSyncCandidates} disabled={!!windowSyncState?.active || windowSyncSelectedIds.size === 0}>
-                清空
-              </Button>
-              <Button size="sm" variant="secondary" onClick={loadWindowSyncCandidates} loading={windowSyncLoading}>
-                <RefreshCw className="w-4 h-4" />刷新
-              </Button>
-            </div>
-          </div>
-
-          <div className="border border-[var(--color-border-default)] rounded-lg overflow-hidden">
-            <div className="grid grid-cols-[44px_1.4fr_120px_120px_96px] gap-3 bg-[var(--color-bg-secondary)] px-3 py-2 text-xs font-medium text-[var(--color-text-muted)]">
-              <span>选择</span>
-              <span>窗口</span>
-              <span>状态</span>
-              <span>主控窗口</span>
-              <span>调试端口</span>
-            </div>
-            <div className="max-h-[360px] overflow-y-auto divide-y divide-[var(--color-border-muted)]">
-              {windowSyncCandidates.length === 0 ? (
-                <div className="px-3 py-10 text-center text-sm text-[var(--color-text-muted)]">
-                  {windowSyncLoading ? '正在加载窗口...' : '暂无可同步窗口，请先启动至少 2 个实例。'}
-                </div>
-              ) : (
-                windowSyncCandidates.map(candidate => {
-                  const checked = windowSyncSelectedIds.has(candidate.profileId)
-                  const isMaster = windowSyncMasterId === candidate.profileId
-                  const selectable = candidate.canSync || !!candidate.canAutoStart
-                  const statusLabel = candidate.canSync ? '可同步' : candidate.canAutoStart ? '将启动' : '不可用'
-                  const statusVariant = candidate.canSync ? 'success' : candidate.canAutoStart ? 'info' : 'warning'
-                  return (
-                    <div
-                      key={candidate.profileId}
-                      className={`grid grid-cols-[44px_1.4fr_120px_120px_96px] gap-3 items-center px-3 py-2 text-sm ${selectable ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-muted)] bg-[var(--color-bg-muted)]/30'}`}
-                    >
-                      <input
-                        type="checkbox"
-                        className="w-4 h-4 accent-[var(--color-accent)]"
-                        checked={checked}
-                        disabled={!selectable || !!windowSyncState?.active}
-                        onChange={() => toggleWindowSyncCandidate(candidate.profileId)}
-                      />
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="truncate font-medium">{candidate.profileName}</span>
-                          {candidate.master && <Badge variant="info" size="sm">当前主控</Badge>}
-                        </div>
-                        {!candidate.canSync && candidate.unavailable && (
-                          <div className={`text-xs mt-0.5 ${candidate.canAutoStart ? 'text-[var(--color-text-muted)]' : 'text-[var(--color-error)]'}`}>{candidate.unavailable}</div>
-                        )}
-                      </div>
-                      <Badge variant={statusVariant} size="sm" dot>
-                        {statusLabel}
-                      </Badge>
-                      <label className="inline-flex items-center gap-2">
-                        <input
-                          type="radio"
-                          name="window-sync-master"
-                          className="w-4 h-4 accent-[var(--color-accent)]"
-                          checked={isMaster}
-                          disabled={!selectable || !checked || !!windowSyncState?.active}
-                          onChange={() => setWindowSyncMasterId(candidate.profileId)}
-                        />
-                        <span className="text-xs">{isMaster ? '主控' : '设为主控'}</span>
-                      </label>
-                      <span className="text-xs font-mono text-[var(--color-text-muted)]">{candidate.debugPort || '-'}</span>
-                    </div>
-                  )
-                })
-              )}
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--color-text-muted)]">
-            <span>已选 {windowSyncSelectedIds.size} 个窗口</span>
-            <span>主控：{windowSyncCandidates.find(item => item.profileId === windowSyncMasterId)?.profileName || '未选择'}</span>
-          </div>
-        </div>
-      </Modal>
-
-      {/* 窗口布局弹窗 */}
-      <Modal
+      <BrowserWindowSyncLayoutModal
         open={windowSyncLayoutModalOpen}
+        layout={windowSyncLayout}
+        loading={windowSyncLoading}
         onClose={() => setWindowSyncLayoutModalOpen(false)}
-        title="窗口布局"
-        width="560px"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setWindowSyncLayoutModalOpen(false)}>关闭</Button>
-            <Button
-              onClick={() => {
-                void handleApplyWindowSyncLayout()
-                setWindowSyncLayoutModalOpen(false)
-              }}
-              loading={windowSyncLoading}
-            >
-              应用布局
-            </Button>
-          </>
-        }
-      >
-        <div className="space-y-5">
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { mode: 'grid', label: '宫格布局', icon: <LayoutGrid className="w-4 h-4" /> },
-              { mode: 'stack', label: '堆叠布局', icon: <Layers className="w-4 h-4" /> },
-              { mode: 'custom', label: '自定义', icon: <Sliders className="w-4 h-4" /> },
-            ].map(item => (
-              <Button
-                key={item.mode}
-                size="sm"
-                variant={windowSyncLayout.mode === item.mode ? 'primary' : 'secondary'}
-                onClick={() => {
-                  const next = { ...windowSyncLayout, mode: item.mode }
-                  setWindowSyncLayout(next)
-                  if (item.mode !== 'custom') {
-                    void handleApplyWindowSyncLayout(next)
-                    setWindowSyncLayoutModalOpen(false)
-                  }
-                }}
-                loading={windowSyncLoading && windowSyncLayout.mode === item.mode}
-              >
-                {item.icon}{item.label}
-              </Button>
-            ))}
-          </div>
+        onApply={handleApplyWindowSyncLayout}
+        onLayoutChange={setWindowSyncLayout}
+        onLayoutPatch={updateWindowSyncLayout}
+      />
 
-          <div className="rounded-lg border border-[var(--color-border-default)] bg-[var(--color-bg-secondary)] px-3 py-2">
-            <p className="text-sm font-medium text-[var(--color-text-primary)]">
-              {windowSyncLayout.mode === 'stack' ? '堆叠布局' : windowSyncLayout.mode === 'custom' ? '自定义布局' : '宫格布局'}
-            </p>
-            <p className="text-xs text-[var(--color-text-muted)] mt-1">
-              {windowSyncLayout.mode === 'stack'
-                ? '所有同步窗口撑满主屏，主控窗口保持在最上层。'
-                : windowSyncLayout.mode === 'custom'
-                  ? '按尺寸、间距和每行数量排列，允许窗口溢出主屏。'
-                  : '所有同步窗口会在主屏工作区自动平铺排列。'}
-            </p>
-          </div>
-
-          <div className={windowSyncLayout.mode === 'custom' ? 'space-y-4' : 'space-y-4 opacity-60'}>
-            <div className="grid grid-cols-2 gap-4">
-              <FormItem label="窗口宽度">
-                <Input
-                  type="number"
-                  min={320}
-                  step={10}
-                  disabled={windowSyncLayout.mode !== 'custom'}
-                  value={windowSyncLayout.width}
-                  onChange={e => updateWindowSyncLayout({ width: Math.max(320, Number(e.target.value) || 1500) })}
-                />
-              </FormItem>
-              <FormItem label="窗口高度">
-                <Input
-                  type="number"
-                  min={240}
-                  step={10}
-                  disabled={windowSyncLayout.mode !== 'custom'}
-                  value={windowSyncLayout.height}
-                  onChange={e => updateWindowSyncLayout({ height: Math.max(240, Number(e.target.value) || 500) })}
-                />
-              </FormItem>
-              <FormItem label="水平间距">
-                <Input
-                  type="number"
-                  min={0}
-                  step={1}
-                  disabled={windowSyncLayout.mode !== 'custom'}
-                  value={windowSyncLayout.gapX}
-                  onChange={e => updateWindowSyncLayout({ gapX: Math.max(0, Number(e.target.value) || 0) })}
-                />
-              </FormItem>
-              <FormItem label="垂直间距">
-                <Input
-                  type="number"
-                  min={0}
-                  step={1}
-                  disabled={windowSyncLayout.mode !== 'custom'}
-                  value={windowSyncLayout.gapY}
-                  onChange={e => updateWindowSyncLayout({ gapY: Math.max(0, Number(e.target.value) || 0) })}
-                />
-              </FormItem>
-            </div>
-            <FormItem label="每行数量">
-              <Input
-                type="number"
-                min={1}
-                step={1}
-                disabled={windowSyncLayout.mode !== 'custom'}
-                value={windowSyncLayout.perRow}
-                onChange={e => updateWindowSyncLayout({ perRow: Math.max(1, Number(e.target.value) || 2) })}
-              />
-            </FormItem>
-          </div>
-        </div>
-      </Modal>
-
-      {/* 窗口同步基础设置弹窗 */}
-      <Modal
+      <BrowserWindowSyncSettingsModal
         open={windowSyncSettingsModalOpen}
+        settings={windowSyncSettings}
+        loading={windowSyncLoading}
         onClose={() => setWindowSyncSettingsModalOpen(false)}
-        title="窗口同步设置"
-        width="460px"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setWindowSyncSettingsModalOpen(false)}>取消</Button>
-            <Button onClick={handleSaveWindowSyncSettings} loading={windowSyncLoading}>保存</Button>
-          </>
-        }
-      >
-        <div className="space-y-5">
-          <FormItem label="主控窗口颜色">
-            <div className="flex items-center gap-3">
-              <input
-                type="color"
-                value={windowSyncSettings.masterColor || '#2563eb'}
-                onChange={e => updateWindowSyncSettings({ masterColor: e.target.value })}
-                className="h-9 w-12 rounded border border-[var(--color-border-default)] bg-transparent"
-              />
-              <Input
-                value={windowSyncSettings.masterColor || '#2563eb'}
-                onChange={e => updateWindowSyncSettings({ masterColor: e.target.value })}
-                placeholder="#2563eb"
-              />
-            </div>
-          </FormItem>
-
-          <div className="space-y-3">
-            <div className="flex items-center justify-between rounded-lg border border-[var(--color-border-default)] px-3 py-3">
-              <div>
-                <p className="text-sm font-medium text-[var(--color-text-primary)]">同步键盘输入</p>
-                <p className="text-xs text-[var(--color-text-muted)] mt-1">开启后，主控窗口的按键会发送到被控窗口。</p>
-              </div>
-              <Switch
-                checked={windowSyncSettings.syncKeyboard}
-                onChange={checked => updateWindowSyncSettings({ syncKeyboard: checked })}
-              />
-            </div>
-            <div className="flex items-center justify-between rounded-lg border border-[var(--color-border-default)] px-3 py-3">
-              <div>
-                <p className="text-sm font-medium text-[var(--color-text-primary)]">同步鼠标输入</p>
-                <p className="text-xs text-[var(--color-text-muted)] mt-1">开启后，点击和滚动会发送到被控窗口。</p>
-              </div>
-              <Switch
-                checked={windowSyncSettings.syncMouse}
-                onChange={checked => updateWindowSyncSettings({ syncMouse: checked })}
-              />
-            </div>
-          </div>
-        </div>
-      </Modal>
+        onSave={handleSaveWindowSyncSettings}
+        onSettingsChange={updateWindowSyncSettings}
+      />
 
       <BrowserCoreEditModal
         open={coreModalOpen}
