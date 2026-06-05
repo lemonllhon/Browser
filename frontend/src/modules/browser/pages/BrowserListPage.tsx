@@ -4,8 +4,6 @@ import { Edit2, Star, Trash2 } from 'lucide-react'
 import { Badge, Button, Card, Table, toast } from '../../../shared/components'
 import type { TableColumn } from '../../../shared/components/Table'
 import type { BrowserCore, BrowserCoreInput, BrowserProfile, BrowserProxy, BrowserSettings, BrowserGroupWithCount, WindowSyncCandidate, WindowSyncLayoutSettings, WindowSyncSettings, WindowSyncState } from '../types'
-import { EMPTY_FILTERS } from '../components/InstanceFilterBar'
-import type { InstanceFilters } from '../components/InstanceFilterBar'
 import { KeywordsModal } from '../components/KeywordsModal'
 import { BrowserListHeaderPanel } from '../components/browser-list/BrowserListHeaderPanel'
 import { BrowserListSettingsModal } from '../components/browser-list/BrowserListSettingsModal'
@@ -16,12 +14,12 @@ import { CopyProfileNameButton, KeywordInlineRow, LaunchCodeCell } from '../comp
 import { BrowserBatchToolbar } from '../components/browser-list/BrowserBatchToolbar'
 import { BrowserProfileActions } from '../components/browser-list/BrowserProfileActions'
 import { useBrowserProfileOrderDnD } from '../hooks/useBrowserProfileOrderDnD'
+import { useBrowserListViewState } from '../hooks/useBrowserListViewState'
 import { useBrowserListRuntimeSync } from '../hooks/useBrowserListRuntimeSync'
 import { InstanceBackupRestoreModal } from '../components/InstanceBackupRestoreModal'
 import { BatchRandomFingerprintModal } from '../components/BatchRandomFingerprintModal'
 import { resolveActionErrorMessage, resolveActionFeedback } from '../utils/actionErrors'
 import { downloadTextFile, formatInstanceMarkerLabel, formatTime, getCookieActionTitle, naturalCompareText, normalizeWindowSyncColor, sanitizeFilenamePart, resolveProfileStatus } from '../utils/browserListFormat'
-import { PROFILE_COLUMN_OPTIONS, normalizeProfileColumnKeys, readStoredProfileColumnKeys, writeStoredProfileColumnKeys } from '../config/browserListTable'
 import {
   applyWindowSyncLayout,
   clearBrowserCookies,
@@ -59,48 +57,20 @@ export function BrowserListPage() {
   const [proxies, setProxies] = useState<BrowserProxy[]>([])
   const [groups, setGroups] = useState<BrowserGroupWithCount[]>([])
 
-  // 视图模式
-  const [viewMode, setViewMode] = useState<'card' | 'table'>(() => {
-    return (localStorage.getItem('browser:viewMode') as 'card' | 'table') || 'table'
-  })
-  const [visibleColumnKeys, setVisibleColumnKeys] = useState<string[]>(() => normalizeProfileColumnKeys(readStoredProfileColumnKeys()))
+  const {
+    viewMode,
+    setViewMode,
+    visibleColumnKeys,
+    filters,
+    setFilters,
+    headerCollapsed,
+    toggleHeaderCollapsed,
+    toggleVisibleColumn,
+  } = useBrowserListViewState()
 
   // 勾选状态
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [batchLoading, setBatchLoading] = useState(false)
-
-  // 筛选状态（从 localStorage 恢复）
-  const [filters, setFilters] = useState<InstanceFilters>(() => {
-    try {
-      const saved = localStorage.getItem('browser:filters')
-      if (saved) {
-        const parsed = JSON.parse(saved)
-        return { ...EMPTY_FILTERS, ...parsed, tags: new Set(parsed.tags || []) }
-      }
-    } catch { /* ignore */ }
-    return EMPTY_FILTERS
-  })
-  const [headerCollapsed, setHeaderCollapsed] = useState(() => {
-    return localStorage.getItem('browser:headerCollapsed') === 'true'
-  })
-
-  // 持久化筛选状态
-  useEffect(() => {
-    const serializable = { ...filters, tags: Array.from(filters.tags) }
-    localStorage.setItem('browser:filters', JSON.stringify(serializable))
-  }, [filters])
-
-  useEffect(() => {
-    localStorage.setItem('browser:viewMode', viewMode)
-  }, [viewMode])
-
-  useEffect(() => {
-    writeStoredProfileColumnKeys(visibleColumnKeys)
-  }, [visibleColumnKeys])
-
-  useEffect(() => {
-    localStorage.setItem('browser:headerCollapsed', String(headerCollapsed))
-  }, [headerCollapsed])
 
   // 代理不支持弹窗
   const [proxyErrorModal, setProxyErrorModal] = useState(false)
@@ -913,15 +883,6 @@ export function BrowserListPage() {
     loadCores()
   }
 
-  const toggleVisibleColumn = (key: string) => {
-    const option = PROFILE_COLUMN_OPTIONS.find(item => item.key === key)
-    if (option?.locked) return
-    setVisibleColumnKeys(prev => {
-      const next = prev.includes(key) ? prev.filter(item => item !== key) : [...prev, key]
-      return normalizeProfileColumnKeys(next)
-    })
-  }
-
   const allColumns: TableColumn<BrowserProfile>[] = [
     {
       key: 'selection',
@@ -1126,7 +1087,7 @@ export function BrowserListPage() {
         cores={cores}
         allTags={allTags}
         groups={groups}
-        onToggleHeaderCollapsed={() => setHeaderCollapsed(prev => !prev)}
+        onToggleHeaderCollapsed={toggleHeaderCollapsed}
         onRefresh={() => { void loadProfiles() }}
         onOpenBatchRandom={() => setBatchRandomModalOpen(true)}
         onOpenBackup={() => setBackupModalOpen(true)}
