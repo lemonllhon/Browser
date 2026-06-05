@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Edit2, Star, Trash2 } from 'lucide-react'
-import { Badge, Button, Card, Table, toast } from '../../../shared/components'
+import { Badge, Button, Card, Table } from '../../../shared/components'
 import type { TableColumn } from '../../../shared/components/Table'
 import type { BrowserCore, BrowserProfile } from '../types'
 import { KeywordsModal } from '../components/KeywordsModal'
@@ -20,22 +20,11 @@ import { useBrowserListRuntimeSync } from '../hooks/useBrowserListRuntimeSync'
 import { useBrowserWindowSync } from '../hooks/useBrowserWindowSync'
 import { useBrowserCoreSettings } from '../hooks/useBrowserCoreSettings'
 import { useBrowserProfileBatchActions } from '../hooks/useBrowserProfileBatchActions'
+import { useBrowserProfileRuntimeActions } from '../hooks/useBrowserProfileRuntimeActions'
 import { InstanceBackupRestoreModal } from '../components/InstanceBackupRestoreModal'
 import { BatchRandomFingerprintModal } from '../components/BatchRandomFingerprintModal'
-import { resolveActionErrorMessage, resolveActionFeedback } from '../utils/actionErrors'
-import { downloadTextFile, formatInstanceMarkerLabel, formatTime, getCookieActionTitle, sanitizeFilenamePart, resolveProfileStatus } from '../utils/browserListFormat'
+import { formatInstanceMarkerLabel, formatTime, getCookieActionTitle, resolveProfileStatus } from '../utils/browserListFormat'
 import { filterAndSortBrowserProfiles, getBrowserProfileCoreLabel, resolveBrowserProfileCore } from '../utils/browserListFilters'
-import {
-  clearBrowserCookies,
-  exportBrowserCookies,
-  pinCenterBrowserInstance,
-  restartBrowserInstance,
-  startBrowserInstance,
-  stopBrowserInstance,
-  switchBrowserProfileProxyNow,
-  validateProxyConfig,
-} from '../api'
-
 export function BrowserListPage() {
   const {
     viewMode,
@@ -83,17 +72,9 @@ export function BrowserListPage() {
   } = useBrowserWindowSync({ selectedIds })
 
   // 代理不支持弹窗
-  const [proxyErrorModal, setProxyErrorModal] = useState(false)
-  const [proxyErrorMsg, setProxyErrorMsg] = useState('')
   const [opError, setOpError] = useState('')
-  const [pendingStartId, setPendingStartId] = useState<string | null>(null)
   const [startingIds, setStartingIds] = useState<Set<string>>(new Set())
   const [stoppingIds, setStoppingIds] = useState<Set<string>>(new Set())
-  const [switchingProxyIds, setSwitchingProxyIds] = useState<Set<string>>(new Set())
-  const [pinningIds, setPinningIds] = useState<Set<string>>(new Set())
-  const [exportingCookieIds, setExportingCookieIds] = useState<Set<string>>(new Set())
-  const [clearingCookieIds, setClearingCookieIds] = useState<Set<string>>(new Set())
-  const [cookieClearTarget, setCookieClearTarget] = useState<BrowserProfile | null>(null)
   const [backupModalOpen, setBackupModalOpen] = useState(false)
   const [batchRandomModalOpen, setBatchRandomModalOpen] = useState(false)
 
@@ -145,22 +126,6 @@ export function BrowserListPage() {
   // 扩容管理
   const [expandModalOpen, setExpandModalOpen] = useState(false)
 
-  const updatePendingIds = (
-    setter: React.Dispatch<React.SetStateAction<Set<string>>>,
-    profileId: string,
-    active: boolean
-  ) => {
-    setter(prev => {
-      const next = new Set(prev)
-      if (active) {
-        next.add(profileId)
-      } else {
-        next.delete(profileId)
-      }
-      return next
-    })
-  }
-
   useBrowserListRuntimeSync({
     loadProfiles,
     loadGroups,
@@ -187,10 +152,34 @@ export function BrowserListPage() {
 
   const isProfileStarting = (profileId: string) => startingIds.has(profileId)
   const isProfileStopping = (profileId: string) => stoppingIds.has(profileId)
-  const isProfileSwitchingProxy = (profileId: string) => switchingProxyIds.has(profileId)
-  const isProfilePinning = (profileId: string) => pinningIds.has(profileId)
-  const isProfileExportingCookies = (profileId: string) => exportingCookieIds.has(profileId)
-  const isProfileClearingCookies = (profileId: string) => clearingCookieIds.has(profileId)
+  const {
+    proxyErrorModal,
+    proxyErrorMsg,
+    pendingStartId,
+    cookieClearTarget,
+    setCookieClearTarget,
+    closeProxyError,
+    isProfileSwitchingProxy,
+    isProfilePinning,
+    isProfileExportingCookies,
+    isProfileClearingCookies,
+    handleStart,
+    handleStop,
+    handleRestart,
+    handleSwitchProxyNow,
+    handlePinCenter,
+    handleExportCookies,
+    handleConfirmClearCookies,
+  } = useBrowserProfileRuntimeActions({
+    profiles,
+    proxies,
+    setStartingIds,
+    setStoppingIds,
+    mergeProfileState,
+    loadProfiles,
+    setOpError,
+  })
+
   const isProfileBusy = (profileId: string) => isProfileStarting(profileId) || isProfileStopping(profileId) || isProfileSwitchingProxy(profileId) || isProfilePinning(profileId)
   const isWindowSyncMaster = (profileId: string) => !!windowSyncState?.active && windowSyncState.masterProfileId === profileId
 
@@ -252,76 +241,6 @@ export function BrowserListPage() {
     setOpError,
   })
 
-  const handleStart = async (profileId: string) => {
-    const profile = profiles.find(p => p.profileId === profileId)
-    updatePendingIds(setStartingIds, profileId, true)
-    try {
-      if (profile) {
-        const result = await validateProxyConfig(profile.proxyConfig || '', profile.proxyId || '')
-        if (!result.supported) {
-          setProxyErrorMsg(result.errorMsg)
-          setPendingStartId(profileId)
-          setProxyErrorModal(true)
-          return
-        }
-      }
-
-      const startedProfile = await startBrowserInstance(profileId)
-      mergeProfileState(startedProfile)
-      if (startedProfile?.running && !startedProfile.debugReady && startedProfile.runtimeWarning) {
-        toast.warning(startedProfile.runtimeWarning)
-      } else {
-        toast.success(`实例已启动${startedProfile?.profileName ? `：${startedProfile.profileName}` : ''}`)
-      }
-      await loadProfiles({ silent: true, syncRuntimeState: true })
-    } catch (error: any) {
-      const feedback = resolveActionFeedback(error, '实例启动失败')
-      if (feedback.tone === 'warning') {
-        toast.warning(feedback.message)
-      } else {
-        toast.error(feedback.message)
-      }
-      await loadProfiles({ silent: true, syncRuntimeState: true })
-    } finally {
-      updatePendingIds(setStartingIds, profileId, false)
-    }
-  }
-
-  const handleStop = async (profileId: string) => {
-    updatePendingIds(setStoppingIds, profileId, true)
-    try {
-      const stoppedProfile = await stopBrowserInstance(profileId)
-      mergeProfileState(stoppedProfile)
-      toast.success('实例已停止')
-      await loadProfiles({ silent: true, syncRuntimeState: true })
-    } catch (error: any) {
-      toast.error(resolveActionErrorMessage(error, '实例停止失败'))
-      await loadProfiles({ silent: true, syncRuntimeState: true })
-    } finally {
-      updatePendingIds(setStoppingIds, profileId, false)
-    }
-  }
-
-  const handleRestart = async (profileId: string) => {
-    updatePendingIds(setStoppingIds, profileId, true)
-    try {
-      const restartedProfile = await restartBrowserInstance(profileId)
-      mergeProfileState(restartedProfile)
-      toast.success(`实例已重启${restartedProfile?.profileName ? `：${restartedProfile.profileName}` : ''}`)
-      await loadProfiles({ silent: true, syncRuntimeState: true })
-    } catch (error: any) {
-      const feedback = resolveActionFeedback(error, '实例重启失败')
-      if (feedback.tone === 'warning') {
-        toast.warning(feedback.message)
-      } else {
-        setOpError(feedback.message)
-      }
-      await loadProfiles({ silent: true, syncRuntimeState: true })
-    } finally {
-      updatePendingIds(setStoppingIds, profileId, false)
-    }
-  }
-
   const getProxyDisplayName = (profile: BrowserProfile) => {
     if (profile.autoProxySwitchEnabled) {
       const proxy = proxies.find(p => p.proxyId === profile.autoProxySwitchLastProxyId)
@@ -331,72 +250,6 @@ export function BrowserListPage() {
     }
     const proxy = proxies.find(p => p.proxyId === profile.proxyId)
     return proxy ? proxy.proxyName : profile.proxyId || profile.proxyConfig || '-'
-  }
-
-  const handleSwitchProxyNow = async (profileId: string) => {
-    updatePendingIds(setSwitchingProxyIds, profileId, true)
-    try {
-      const updatedProfile = await switchBrowserProfileProxyNow(profileId)
-      mergeProfileState(updatedProfile)
-      const proxy = proxies.find(p => p.proxyId === updatedProfile?.autoProxySwitchLastProxyId)
-      toast.success(`出口已切换${proxy?.proxyName ? `：${proxy.proxyName}` : ''}`)
-      await loadProfiles({ silent: true, syncRuntimeState: true })
-    } catch (error: any) {
-      toast.error(error?.message || '手动切换出口失败')
-    } finally {
-      updatePendingIds(setSwitchingProxyIds, profileId, false)
-    }
-  }
-
-  const handlePinCenter = async (profileId: string) => {
-    updatePendingIds(setPinningIds, profileId, true)
-    try {
-      await pinCenterBrowserInstance(profileId)
-      toast.success('实例窗口已置顶居中')
-    } catch (error: any) {
-      toast.error(error?.message || '置顶居中失败')
-    } finally {
-      updatePendingIds(setPinningIds, profileId, false)
-    }
-  }
-
-  const handleExportCookies = async (profile: BrowserProfile) => {
-    if (!profile.running || !profile.debugReady) {
-      toast.warning(getCookieActionTitle(profile, 'export'))
-      return
-    }
-    updatePendingIds(setExportingCookieIds, profile.profileId, true)
-    try {
-      const content = await exportBrowserCookies(profile.profileId)
-      const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-      const filename = `cookies_${sanitizeFilenamePart(profile.profileName || profile.profileId)}_${stamp}.txt`
-      downloadTextFile(filename, content)
-      toast.success(`Cookie 已导出：${profile.profileName || profile.profileId}`)
-    } catch (error: any) {
-      toast.error(error?.message || '导出 Cookie 失败')
-    } finally {
-      updatePendingIds(setExportingCookieIds, profile.profileId, false)
-    }
-  }
-
-  const handleConfirmClearCookies = async () => {
-    const target = cookieClearTarget
-    if (!target) return
-    if (target.running && !target.debugReady) {
-      toast.warning(getCookieActionTitle(target, 'clear'))
-      return
-    }
-    updatePendingIds(setClearingCookieIds, target.profileId, true)
-    try {
-      await clearBrowserCookies(target.profileId)
-      toast.success(target.running ? `Cookie 已清空：${target.profileName || target.profileId}` : `用户数据已清空，指纹已重置：${target.profileName || target.profileId}`)
-      await loadProfiles({ silent: true, syncRuntimeState: true })
-    } catch (error: any) {
-      toast.error(error?.message || (target.running ? '清空 Cookie 失败' : '清空用户数据失败'))
-    } finally {
-      updatePendingIds(setClearingCookieIds, target.profileId, false)
-      setCookieClearTarget(null)
-    }
   }
 
   const allColumns: TableColumn<BrowserProfile>[] = [
@@ -874,7 +727,7 @@ export function BrowserListPage() {
         proxyErrorOpen={proxyErrorModal}
         proxyErrorMessage={proxyErrorMsg}
         pendingStartId={pendingStartId}
-        onCloseProxyError={() => { setProxyErrorModal(false); setPendingStartId(null) }}
+        onCloseProxyError={closeProxyError}
         expandOpen={expandModalOpen}
         profileCount={profiles.length}
         onCloseExpand={() => setExpandModalOpen(false)}
