@@ -10,9 +10,9 @@ import { KeywordsModal } from '../components/KeywordsModal'
 import { BrowserListHeaderPanel } from '../components/browser-list/BrowserListHeaderPanel'
 import { BrowserBatchToolbar } from '../components/browser-list/BrowserBatchToolbar'
 import { BrowserProfileActions } from '../components/browser-list/BrowserProfileActions'
+import { useBrowserListRuntimeSync } from '../hooks/useBrowserListRuntimeSync'
 import { InstanceBackupRestoreModal } from '../components/InstanceBackupRestoreModal'
 import { BatchRandomFingerprintModal } from '../components/BatchRandomFingerprintModal'
-import { onRuntimeEvent } from '../../../shared/backend/runtime'
 import { resolveActionErrorMessage, resolveActionFeedback } from '../utils/actionErrors'
 import { PROFILE_COLUMN_OPTIONS, PROFILE_ORDER_CHANNEL_NAME, PROFILE_ORDER_STORAGE_KEY, areStringArraysEqual, normalizeProfileColumnKeys, parseProfileOrderValue, readStoredProfileColumnKeys, readStoredProfileOrder, sanitizeProfileOrder, writeStoredProfileColumnKeys, writeStoredProfileOrder } from '../config/browserListTable'
 import {
@@ -29,11 +29,7 @@ import {
   fetchBrowserProxies,
   fetchBrowserSettings,
   fetchGroups,
-  getWindowSyncState,
-  getWindowSyncLayoutSettings,
-  getWindowSyncSettings,
   listWindowSyncCandidates,
-  onWindowSyncStateChanged,
   pinCenterBrowserInstance,
   regenerateBrowserProfileCode,
   restartBrowserInstance,
@@ -549,85 +545,17 @@ export function BrowserListPage() {
     loadGroups()
     fetchBrowserProxies().then(setProxies)
     fetchBrowserCores().then(setCores)
-
-    // 监听浏览器实例生命周期事件，自动更新状态
-    const offStarted = onRuntimeEvent('browser:instance:started', (payload: any) => {
-      const profileId = typeof payload === 'string' ? payload : payload?.profileId
-      if (profileId) {
-        updatePendingIds(setStartingIds, profileId, false)
-        updatePendingIds(setStoppingIds, profileId, false)
-      }
-      void loadProfiles({ silent: true, syncRuntimeState: true })
-    })
-    const offUpdated = onRuntimeEvent('browser:instance:updated', () => {
-      void loadProfiles({ silent: true, syncRuntimeState: true })
-    })
-    const offProfilesUpdated = onRuntimeEvent('browser:profiles:updated', () => {
-      void loadProfiles({ silent: true, syncRuntimeState: true })
-    })
-    const offGroupsUpdated = onRuntimeEvent('browser:groups:updated', () => {
-      void loadGroups()
-    })
-    const offStopped = onRuntimeEvent('browser:instance:stopped', (payload: any) => {
-      const profileId = typeof payload === 'string' ? payload : payload?.profileId
-      if (profileId) {
-        updatePendingIds(setStartingIds, profileId, false)
-        updatePendingIds(setStoppingIds, profileId, false)
-      }
-      void loadProfiles({ silent: true, syncRuntimeState: true })
-    })
-    const offCrashed = onRuntimeEvent('browser:instance:crashed', (payload: any) => {
-      const profileId = typeof payload === 'string' ? payload : payload?.profileId
-      if (profileId) {
-        updatePendingIds(setStartingIds, profileId, false)
-        updatePendingIds(setStoppingIds, profileId, false)
-      }
-      void loadProfiles({ silent: true, syncRuntimeState: true })
-    })
-    const offWindowSyncChanged = onWindowSyncStateChanged(state => {
-      setWindowSyncState(state?.active ? state : null)
-      if (state?.active) {
-        setWindowSyncSettings({
-          masterColor: state.masterColor || '#2563eb',
-          syncKeyboard: state.syncKeyboard !== false,
-          syncMouse: state.syncMouse !== false,
-        })
-      }
-    })
-
-    void getWindowSyncState().then(state => {
-      setWindowSyncState(state?.active ? state : null)
-      if (state?.layout) {
-        setWindowSyncLayout(state.layout)
-      }
-      if (state?.active) {
-        setWindowSyncSettings({
-          masterColor: state.masterColor || '#2563eb',
-          syncKeyboard: state.syncKeyboard !== false,
-          syncMouse: state.syncMouse !== false,
-        })
-      }
-    })
-    void getWindowSyncLayoutSettings().then(setWindowSyncLayout)
-    void getWindowSyncSettings().then(setWindowSyncSettings)
-
-    const timer = window.setInterval(() => {
-      if (document.visibilityState !== 'visible') return
-      void loadProfiles({ silent: true, syncRuntimeState: true })
-      void loadGroups()
-    }, 2000)
-
-    return () => {
-      window.clearInterval(timer)
-      offStarted?.()
-      offUpdated?.()
-      offProfilesUpdated?.()
-      offGroupsUpdated?.()
-      offStopped?.()
-      offCrashed?.()
-      offWindowSyncChanged?.()
-    }
   }, [])
+
+  useBrowserListRuntimeSync({
+    loadProfiles,
+    loadGroups,
+    setStartingIds,
+    setStoppingIds,
+    setWindowSyncState,
+    setWindowSyncSettings,
+    setWindowSyncLayout,
+  })
 
   const runningCount = useMemo(() => profiles.filter(p => p.running).length, [profiles])
   const allTags = useMemo(() => {

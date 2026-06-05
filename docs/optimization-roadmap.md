@@ -26,7 +26,7 @@
 | --- | --- | --- | --- | --- | --- |
 | 1 | 应用路径与安装布局 | 修复并固化 Linux 只读安装目录识别，避免配置/数据写回安装目录 | `backend/internal/apppath/*` | `go test ./backend/internal/apppath` | 已完成 |
 | 2 | 代理池页面 | 拆分超大页面，把订阅导入、测速/IP 健康检测、表格列配置和批量操作拆为独立组件/Hook | `frontend/src/modules/browser/pages/ProxyPoolPage.tsx` 及新增同目录组件/Hook | `npm run build`，必要时补充组件级人工检查 | 已完成：表格列配置、直连导入解析、Clash/订阅解析、来源元数据、检测缓存、预览过滤、展示模型、来源刷新、刷新配置、导入/预览/编辑/详情弹窗拆分、测速/IP 健康检测 Hook、主工具栏/筛选栏、订阅资源列表、代理主表行操作拆分均已落地 |
-| 3 | 浏览器实例列表 | 拆分筛选、实例操作、批量操作、状态订阅和弹窗管理，降低列表页耦合 | `frontend/src/modules/browser/pages/BrowserListPage.tsx` 及相关组件 | `npm run build`，实例启动/停止/筛选人工检查 | 进行中：已完成表格列配置、拖拽顺序存储、显示列菜单、批量操作工具栏、顶部操作区、统计/筛选区、实例行操作和卡片操作区拆分 |
+| 3 | 浏览器实例列表 | 拆分筛选、实例操作、批量操作、状态订阅和弹窗管理，降低列表页耦合 | `frontend/src/modules/browser/pages/BrowserListPage.tsx` 及相关组件 | `npm run build`，实例启动/停止/筛选人工检查 | 进行中：已完成表格列配置、拖拽顺序存储、显示列菜单、批量操作工具栏、顶部操作区、统计/筛选区、实例行操作、卡片操作区和运行状态订阅 Hook 拆分 |
 | 4 | 窗口同步后端 | 按状态管理、窗口枚举/布局、事件广播、平台差异拆分，补充核心状态测试 | `backend/window_sync.go` 及拆分后的后端文件 | `go test ./backend/...` 中不依赖 WebView 的子包，新增单测 | 待处理 |
 | 5 | 前端类型与 IPC | 减少 `Record<string, any>` 和重复编解码逻辑，提升 IPC 数据边界类型安全 | `frontend/src/shared/ipc/*`、相关 API 文件 | `npm run build` | 待处理 |
 | 6 | 构建与质量门禁 | 增加独立 lint/typecheck 脚本或文档化现有检查，统一 CI 可执行命令 | `frontend/package.json`、CI/README 相关文件 | `npm run build`，新增脚本自检 | 待处理 |
@@ -239,6 +239,15 @@
 - 落地内容：把表格紧凑模式与卡片完整模式统一抽到 `BrowserProfileActions.tsx`；页面继续计算运行态和权限状态，并通过 props 传入已有操作处理函数；不改变任何实例操作行为。
 - 验证方式：运行 `npm run build`，确认 TypeScript 与 Vite 生产构建通过。
 - 下一步：拆分运行状态订阅 Hook，再处理弹窗管理拆分。
+
+### 本轮范围：运行状态订阅 Hook
+
+- 优化对象：浏览器实例生命周期事件订阅、profiles/groups 静默刷新、启动/停止 pending 状态清理、窗口同步状态订阅和轮询刷新。
+- 文件范围：`frontend/src/modules/browser/pages/BrowserListPage.tsx`、`frontend/src/modules/browser/hooks/useBrowserListRuntimeSync.ts`。
+- 当前问题：运行状态订阅和窗口同步监听直接写在页面初始化 effect 中，和初始数据加载、筛选、表格渲染混在一起，后续拆弹窗管理时仍会牵扯运行态刷新逻辑。
+- 落地内容：把 runtime event、window sync state change、初始窗口同步配置读取和可见状态轮询抽到 `useBrowserListRuntimeSync`；页面保留初始 profiles/groups/proxies/cores 加载和传入必要 setter/刷新函数。
+- 验证方式：运行 `npm run build`，确认 TypeScript 与 Vite 生产构建通过。
+- 下一步：继续拆分弹窗管理，优先处理基础配置/内核管理弹窗。
 
 ## 下一步执行顺序
 
