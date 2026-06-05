@@ -26,7 +26,7 @@
 | --- | --- | --- | --- | --- | --- |
 | 1 | 应用路径与安装布局 | 修复并固化 Linux 只读安装目录识别，避免配置/数据写回安装目录 | `backend/internal/apppath/*` | `go test ./backend/internal/apppath` | 已完成 |
 | 2 | 代理池页面 | 拆分超大页面，把订阅导入、测速/IP 健康检测、表格列配置和批量操作拆为独立组件/Hook | `frontend/src/modules/browser/pages/ProxyPoolPage.tsx` 及新增同目录组件/Hook | `npm run build`，必要时补充组件级人工检查 | 已完成：表格列配置、直连导入解析、Clash/订阅解析、来源元数据、检测缓存、预览过滤、展示模型、来源刷新、刷新配置、导入/预览/编辑/详情弹窗拆分、测速/IP 健康检测 Hook、主工具栏/筛选栏、订阅资源列表、代理主表行操作拆分均已落地 |
-| 3 | 浏览器实例列表 | 拆分筛选、实例操作、批量操作、状态订阅和弹窗管理，降低列表页耦合 | `frontend/src/modules/browser/pages/BrowserListPage.tsx` 及相关组件 | `npm run build`，实例启动/停止/筛选人工检查 | 进行中：已完成表格列配置、拖拽顺序存储、显示列菜单、批量操作工具栏、顶部操作区、统计/筛选区、实例行操作、卡片操作区和运行状态订阅 Hook、基础配置/内核管理弹窗、窗口同步弹窗拆分 |
+| 3 | 浏览器实例列表 | 拆分筛选、实例操作、批量操作、状态订阅和弹窗管理，降低列表页耦合 | `frontend/src/modules/browser/pages/BrowserListPage.tsx` 及相关组件 | `npm run build`，实例启动/停止/筛选人工检查 | 进行中：已完成表格列配置、拖拽顺序存储、显示列菜单、批量操作工具栏、顶部操作区、统计/筛选区、实例行操作、卡片操作区和运行状态订阅 Hook、基础配置/内核管理弹窗、窗口同步弹窗、轻量反馈/确认弹窗拆分 |
 | 4 | 窗口同步后端 | 按状态管理、窗口枚举/布局、事件广播、平台差异拆分，补充核心状态测试 | `backend/window_sync.go` 及拆分后的后端文件 | `go test ./backend/...` 中不依赖 WebView 的子包，新增单测 | 待处理 |
 | 5 | 前端类型与 IPC | 减少 `Record<string, any>` 和重复编解码逻辑，提升 IPC 数据边界类型安全 | `frontend/src/shared/ipc/*`、相关 API 文件 | `npm run build` | 待处理 |
 | 6 | 构建与质量门禁 | 增加独立 lint/typecheck 脚本或文档化现有检查，统一 CI 可执行命令 | `frontend/package.json`、CI/README 相关文件 | `npm run build`，新增脚本自检 | 待处理 |
@@ -266,6 +266,15 @@
 - 落地内容：新增 `BrowserWindowSyncModal`、`BrowserWindowSyncLayoutModal` 和 `BrowserWindowSyncSettingsModal`，把三类窗口同步弹窗 UI 收拢到同一业务组件文件；页面保留候选窗口加载、开始/停止同步、布局应用和设置保存等业务逻辑，并通过 props 连接。
 - 验证方式：运行 `npm run build`，确认 TypeScript 与 Vite 生产构建通过；同时运行 `git diff --check` 检查补丁格式。
 - 下一步：继续处理任务 3 剩余轻量弹窗，优先收敛复制实例弹窗、代理错误提示和删除/清理确认弹窗。
+
+### 本轮范围：轻量反馈与确认弹窗
+
+- 优化对象：浏览器实例列表里的代理错误提示、扩容说明、复制实例、操作失败提示、Cookie/用户数据清理确认、单个删除确认和批量删除确认弹窗。
+- 文件范围：`frontend/src/modules/browser/pages/BrowserListPage.tsx`、`frontend/src/modules/browser/components/browser-list/BrowserListFeedbackModals.tsx`。
+- 当前问题：任务 3 的主要弹窗拆分后，页面底部仍保留多组轻量 `Modal` / `ConfirmModal`，这些弹窗虽然逻辑较轻，但持续占用页面主体并让复制/删除/错误反馈状态和 UI 混在一起。
+- 落地内容：新增 `BrowserListFeedbackModals.tsx`，统一承载轻量反馈与确认弹窗；页面只保留目标状态、确认处理函数和关闭回调，并通过 props 连接。
+- 验证方式：运行 `npm run build`，确认 TypeScript 与 Vite 生产构建通过；同时运行 `git diff --check` 检查补丁格式。
+- 下一步：复核 `BrowserListPage.tsx` 剩余内联 UI 与辅助函数，评估是否继续拆分 LaunchCode/名称复制单元格等小组件，或在任务 3 收尾后转入任务 4。
 
 ## 下一步执行顺序
 

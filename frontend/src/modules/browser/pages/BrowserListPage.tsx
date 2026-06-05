@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ChevronDown, ChevronUp, Copy, Edit2, GripVertical, Pencil, RefreshCw, Star, Trash2, XCircle } from 'lucide-react'
-import { Badge, Button, Card, ConfirmModal, FormItem, Input, Modal, Table, toast } from '../../../shared/components'
+import { ChevronDown, ChevronUp, Copy, Edit2, GripVertical, Pencil, RefreshCw, Star, Trash2 } from 'lucide-react'
+import { Badge, Button, Card, Table, toast } from '../../../shared/components'
 import type { TableColumn } from '../../../shared/components/Table'
 import type { BrowserCore, BrowserCoreInput, BrowserProfile, BrowserProxy, BrowserSettings, BrowserGroupWithCount, WindowSyncCandidate, WindowSyncLayoutSettings, WindowSyncSettings, WindowSyncState } from '../types'
 import { EMPTY_FILTERS } from '../components/InstanceFilterBar'
@@ -11,6 +11,7 @@ import { BrowserListHeaderPanel } from '../components/browser-list/BrowserListHe
 import { BrowserListSettingsModal } from '../components/browser-list/BrowserListSettingsModal'
 import { BrowserCoreEditModal } from '../components/browser-list/BrowserCoreEditModal'
 import { BrowserWindowSyncLayoutModal, BrowserWindowSyncModal, BrowserWindowSyncSettingsModal } from '../components/browser-list/BrowserWindowSyncModals'
+import { BrowserListFeedbackModals } from '../components/browser-list/BrowserListFeedbackModals'
 import { BrowserBatchToolbar } from '../components/browser-list/BrowserBatchToolbar'
 import { BrowserProfileActions } from '../components/browser-list/BrowserProfileActions'
 import { useBrowserListRuntimeSync } from '../hooks/useBrowserListRuntimeSync'
@@ -1774,31 +1775,33 @@ export function BrowserListPage() {
         onValidationReset={() => setCoreValidation(null)}
       />
 
-      {/* 代理不支持弹窗 */}
-      <Modal
-        open={proxyErrorModal}
-        onClose={() => { setProxyErrorModal(false); setPendingStartId(null) }}
-        title="代理链路不可用"
-        width="420px"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => { setProxyErrorModal(false); setPendingStartId(null) }}>取消</Button>
-            {pendingStartId && (
-              <Link to={`/browser/edit/${pendingStartId}`}>
-                <Button onClick={() => setProxyErrorModal(false)}>去修改代理</Button>
-              </Link>
-            )}
-          </>
-        }
-      >
-        <div className="space-y-3">
-          <div className="flex items-start gap-3 p-3 rounded-lg bg-[var(--color-bg-secondary)]">
-            <XCircle className="w-5 h-5 text-red-500 mt-0.5 shrink-0" />
-            <p className="text-sm text-[var(--color-text-primary)]">{proxyErrorMsg}</p>
-          </div>
-          <p className="text-sm text-[var(--color-text-muted)]">请前往编辑页面重新选择可用链路；如果是订阅导入，先刷新订阅并确认该节点仍存在。</p>
-        </div>
-      </Modal>
+      <BrowserListFeedbackModals
+        proxyErrorOpen={proxyErrorModal}
+        proxyErrorMessage={proxyErrorMsg}
+        pendingStartId={pendingStartId}
+        onCloseProxyError={() => { setProxyErrorModal(false); setPendingStartId(null) }}
+        expandOpen={expandModalOpen}
+        profileCount={profiles.length}
+        onCloseExpand={() => setExpandModalOpen(false)}
+        copyModal={copyModal}
+        copyName={copyName}
+        copying={copying}
+        onCloseCopy={closeCopyModal}
+        onCopyNameChange={setCopyName}
+        onConfirmCopy={profileId => handleCopy(profileId)}
+        operationError={opError}
+        onCloseOperationError={() => setOpError('')}
+        cookieClearTarget={cookieClearTarget}
+        onCloseCookieClear={() => setCookieClearTarget(null)}
+        onConfirmCookieClear={handleConfirmClearCookies}
+        deleteTarget={deleteTarget}
+        onCloseDelete={() => setDeleteTarget(null)}
+        onConfirmDelete={handleConfirmDelete}
+        batchDeleteOpen={batchDeleteConfirmOpen}
+        selectedCount={selectedIds.size}
+        onCloseBatchDelete={() => setBatchDeleteConfirmOpen(false)}
+        onConfirmBatchDelete={handleConfirmBatchDelete}
+      />
 
       {/* 关键字弹窗 */}
       {kwModal.profile && (
@@ -1816,123 +1819,6 @@ export function BrowserListPage() {
         />
       )}
 
-      {/* 扩容弹窗 */}
-      <Modal
-        open={expandModalOpen}
-        onClose={() => setExpandModalOpen(false)}
-        title="实例扩容情况"
-        width="480px"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setExpandModalOpen(false)}>关闭</Button>
-          </>
-        }
-      >
-        <div className="space-y-4">
-          <div className="bg-[var(--color-bg-secondary)] p-4 rounded-lg flex items-center justify-between border border-[var(--color-border-default)]">
-            <div>
-              <p className="text-sm font-medium text-[var(--color-text-primary)]">当前使用情况</p>
-              <p className="text-xs text-[var(--color-text-muted)] mt-1">实例数量不再设置固定上限</p>
-            </div>
-            <div className="text-right">
-              <span className="text-2xl font-semibold text-[var(--color-success)]">
-                {profiles.length}
-              </span>
-              <span className="text-sm text-[var(--color-text-muted)] ml-1">/ 无限制</span>
-            </div>
-          </div>
-
-          <div className="mt-4 p-3 bg-[var(--color-success)]/10 border border-[var(--color-success)]/20 rounded-lg">
-            <p className="text-sm text-[var(--color-text-primary)]">当前为无限制扩容模式，无需兑换码即可继续创建或复制实例。</p>
-          </div>
-        </div>
-      </Modal>
-
-      {/* 复制实例弹窗 */}
-      <Modal
-        open={copyModal.open}
-        onClose={closeCopyModal}
-        title="复制实例"
-        width="420px"
-        footer={
-          <>
-            <Button variant="secondary" onClick={closeCopyModal}>取消</Button>
-            <Button onClick={() => copyModal.profile && handleCopy(copyModal.profile.profileId)} loading={copying}>确认复制</Button>
-          </>
-        }
-      >
-        <div className="space-y-4">
-          <p className="text-sm text-[var(--color-text-muted)]">
-            复制实例将保留原有的代理、内核、启动参数、标签等配置，但会生成新的指纹种子。
-          </p>
-          <FormItem label="新实例名称" required>
-            <Input
-              value={copyName}
-              onChange={e => setCopyName(e.target.value)}
-              placeholder="请输入新实例名称"
-              autoFocus
-            />
-          </FormItem>
-        </div>
-      </Modal>
-
-      {/* 操作错误弹窗 */}
-      <Modal
-        open={!!opError}
-        onClose={() => setOpError('')}
-        title="操作失败"
-        width="420px"
-        footer={<Button onClick={() => setOpError('')}>知道了</Button>}
-      >
-        <div className="text-[var(--color-text-secondary)] whitespace-pre-line">{opError}</div>
-      </Modal>
-
-      <ConfirmModal
-        open={!!cookieClearTarget}
-        onClose={() => setCookieClearTarget(null)}
-        onConfirm={handleConfirmClearCookies}
-        title={cookieClearTarget?.running ? '清空 Cookie' : '清空用户数据'}
-        content={
-          <div className="space-y-2">
-            <p>{cookieClearTarget?.running ? `确定清空实例「${cookieClearTarget?.profileName || ''}」的所有 Cookie？` : `确定清空实例「${cookieClearTarget?.profileName || ''}」的用户数据目录？`}</p>
-            <p className="text-sm text-red-500">
-              {cookieClearTarget?.running ? '该操作会删除当前浏览器会话中的全部 Cookie，无法恢复。' : '实例未运行时会删除该用户数据目录下的全部文件，无法恢复。'}
-            </p>
-          </div>
-        }
-        confirmText={cookieClearTarget?.running ? '清空 Cookie' : '清空用户数据'}
-        danger
-      />
-
-      <ConfirmModal
-        open={!!deleteTarget}
-        onClose={() => setDeleteTarget(null)}
-        onConfirm={handleConfirmDelete}
-        title="删除实例"
-        content={
-          <div className="space-y-2">
-            <p>确定删除实例「{deleteTarget?.profileName || ''}」？</p>
-            <p className="text-sm text-red-500">该操作会同时删除这个实例的用户数据目录，无法恢复。</p>
-          </div>
-        }
-        confirmText="删除实例"
-        danger
-      />
-
-      <ConfirmModal
-        open={batchDeleteConfirmOpen}
-        onClose={() => setBatchDeleteConfirmOpen(false)}
-        onConfirm={handleConfirmBatchDelete}
-        title="批量删除实例"
-        content={
-          <div className="space-y-2">
-            <p>确定删除选中的 {selectedIds.size} 个实例？</p>
-            <p className="text-sm text-red-500">该操作会同时删除这些实例的用户数据目录，无法恢复。</p>
-          </div>
-        }
-        confirmText="删除所选"
-        danger
-      />
     </div>
   )
 }
