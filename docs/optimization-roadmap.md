@@ -26,7 +26,7 @@
 | --- | --- | --- | --- | --- | --- |
 | 1 | 应用路径与安装布局 | 修复并固化 Linux 只读安装目录识别，避免配置/数据写回安装目录 | `backend/internal/apppath/*` | `go test ./backend/internal/apppath` | 已完成 |
 | 2 | 代理池页面 | 拆分超大页面，把订阅导入、测速/IP 健康检测、表格列配置和批量操作拆为独立组件/Hook | `frontend/src/modules/browser/pages/ProxyPoolPage.tsx` 及新增同目录组件/Hook | `npm run build`，必要时补充组件级人工检查 | 已完成：表格列配置、直连导入解析、Clash/订阅解析、来源元数据、检测缓存、预览过滤、展示模型、来源刷新、刷新配置、导入/预览/编辑/详情弹窗拆分、测速/IP 健康检测 Hook、主工具栏/筛选栏、订阅资源列表、代理主表行操作拆分均已落地 |
-| 3 | 浏览器实例列表 | 拆分筛选、实例操作、批量操作、状态订阅和弹窗管理，降低列表页耦合 | `frontend/src/modules/browser/pages/BrowserListPage.tsx` 及相关组件 | `npm run build`，实例启动/停止/筛选人工检查 | 进行中：已完成表格列配置、拖拽顺序存储、显示列菜单、批量操作工具栏、顶部操作区、统计/筛选区、实例行操作、卡片操作区和运行状态订阅 Hook、基础配置/内核管理弹窗、窗口同步弹窗、轻量反馈/确认弹窗、列表单元格组件、拖拽排序 Hook、列表格式化工具、视图偏好 Hook 拆分 |
+| 3 | 浏览器实例列表 | 拆分筛选、实例操作、批量操作、状态订阅和弹窗管理，降低列表页耦合 | `frontend/src/modules/browser/pages/BrowserListPage.tsx` 及相关组件 | `npm run build`，实例启动/停止/筛选人工检查 | 进行中：已完成表格列配置、拖拽顺序存储、显示列菜单、批量操作工具栏、顶部操作区、统计/筛选区、实例行操作、卡片操作区和运行状态订阅 Hook、基础配置/内核管理弹窗、窗口同步弹窗、轻量反馈/确认弹窗、列表单元格组件、拖拽排序 Hook、列表格式化工具、视图偏好 Hook、列表数据加载 Hook 拆分 |
 | 4 | 窗口同步后端 | 按状态管理、窗口枚举/布局、事件广播、平台差异拆分，补充核心状态测试 | `backend/window_sync.go` 及拆分后的后端文件 | `go test ./backend/...` 中不依赖 WebView 的子包，新增单测 | 待处理 |
 | 5 | 前端类型与 IPC | 减少 `Record<string, any>` 和重复编解码逻辑，提升 IPC 数据边界类型安全 | `frontend/src/shared/ipc/*`、相关 API 文件 | `npm run build` | 待处理 |
 | 6 | 构建与质量门禁 | 增加独立 lint/typecheck 脚本或文档化现有检查，统一 CI 可执行命令 | `frontend/package.json`、CI/README 相关文件 | `npm run build`，新增脚本自检 | 待处理 |
@@ -311,6 +311,15 @@
 - 落地内容：新增 `useBrowserListViewState`，统一封装视图模式、显示列、筛选条件、面板折叠状态及其持久化，并内置显示列锁定/归一化切换逻辑；页面只消费 Hook 返回的状态和回调。
 - 验证方式：运行 `npm run build`，确认 TypeScript 与 Vite 生产构建通过；同时运行 `git diff --check` 检查补丁格式。
 - 下一步：复核任务 3 剩余业务操作状态（启动/停止/批量/窗口同步数据加载），确认是否继续拆业务操作 Hook 或阶段性收尾任务 3。
+
+### 本轮范围：列表数据加载 Hook
+
+- 优化对象：浏览器实例列表里的 profiles/proxies/groups/cores 数据加载、静默刷新去重、profiles ref 同步和运行态刷新时的启动/停止 pending 状态清理。
+- 文件范围：`frontend/src/modules/browser/pages/BrowserListPage.tsx`、`frontend/src/modules/browser/hooks/useBrowserListData.ts`、`frontend/src/modules/browser/hooks/useBrowserProfileOrderDnD.tsx`。
+- 当前问题：页面仍直接维护 profiles、proxies、groups、cores、loading、静默刷新 ref 和 profiles 状态合并逻辑；这些逻辑和启动/停止/批量操作、运行状态订阅交织在一起，页面状态边界仍偏大。
+- 落地内容：新增 `useBrowserListData`，封装列表数据状态、初始加载、profiles 合并/替换、静默刷新去重、运行态刷新 pending 清理、groups/proxies/cores 加载；拖拽排序 Hook 改为根据 `profiles` 自行 reconcile 顺序。
+- 验证方式：运行 `npm run build`，确认 TypeScript 与 Vite 生产构建通过；同时运行 `git diff --check` 检查补丁格式。
+- 下一步：复核任务 3 剩余业务操作处理函数，如继续拆分收益不大，则将浏览器实例列表拆分标记为阶段性完成并转入任务 4。
 
 ## 下一步执行顺序
 

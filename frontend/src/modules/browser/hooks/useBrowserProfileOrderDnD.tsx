@@ -86,6 +86,10 @@ export function useBrowserProfileOrderDnD({ profiles }: UseBrowserProfileOrderDn
     })
   }, [])
 
+  useEffect(() => {
+    reconcileProfileOrder(profiles)
+  }, [profiles, reconcileProfileOrder])
+
   const reorderProfileOrder = useCallback((sourceId: string, targetId: string, placement: ProfileDragPlacement, visibleProfiles: BrowserProfile[]) => {
     if (sourceId === targetId) return
     const visibleIds = visibleProfiles.map(item => item.profileId)
@@ -191,7 +195,6 @@ export function useBrowserProfileOrderDnD({ profiles }: UseBrowserProfileOrderDn
 
   return {
     profileOrder,
-    reconcileProfileOrder,
     handleProfileDragOver,
     handleProfileDragLeave,
     handleProfileDrop,

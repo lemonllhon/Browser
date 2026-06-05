@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Edit2, Star, Trash2 } from 'lucide-react'
 import { Badge, Button, Card, Table, toast } from '../../../shared/components'
 import type { TableColumn } from '../../../shared/components/Table'
-import type { BrowserCore, BrowserCoreInput, BrowserProfile, BrowserProxy, BrowserSettings, BrowserGroupWithCount, WindowSyncCandidate, WindowSyncLayoutSettings, WindowSyncSettings, WindowSyncState } from '../types'
+import type { BrowserCore, BrowserCoreInput, BrowserProfile, BrowserSettings, WindowSyncCandidate, WindowSyncLayoutSettings, WindowSyncSettings, WindowSyncState } from '../types'
 import { KeywordsModal } from '../components/KeywordsModal'
 import { BrowserListHeaderPanel } from '../components/browser-list/BrowserListHeaderPanel'
 import { BrowserListSettingsModal } from '../components/browser-list/BrowserListSettingsModal'
@@ -15,6 +15,7 @@ import { BrowserBatchToolbar } from '../components/browser-list/BrowserBatchTool
 import { BrowserProfileActions } from '../components/browser-list/BrowserProfileActions'
 import { useBrowserProfileOrderDnD } from '../hooks/useBrowserProfileOrderDnD'
 import { useBrowserListViewState } from '../hooks/useBrowserListViewState'
+import { useBrowserListData } from '../hooks/useBrowserListData'
 import { useBrowserListRuntimeSync } from '../hooks/useBrowserListRuntimeSync'
 import { InstanceBackupRestoreModal } from '../components/InstanceBackupRestoreModal'
 import { BatchRandomFingerprintModal } from '../components/BatchRandomFingerprintModal'
@@ -29,11 +30,7 @@ import {
   defaultWindowSyncSettings,
   defaultWindowSyncLayoutSettings,
   exportBrowserCookies,
-  fetchBrowserCores,
-  fetchBrowserProfiles,
-  fetchBrowserProxies,
   fetchBrowserSettings,
-  fetchGroups,
   listWindowSyncCandidates,
   pinCenterBrowserInstance,
   restartBrowserInstance,
@@ -52,11 +49,6 @@ import {
 } from '../api'
 
 export function BrowserListPage() {
-  const [profiles, setProfiles] = useState<BrowserProfile[]>([])
-  const [loading, setLoading] = useState(true)
-  const [proxies, setProxies] = useState<BrowserProxy[]>([])
-  const [groups, setGroups] = useState<BrowserGroupWithCount[]>([])
-
   const {
     viewMode,
     setViewMode,
@@ -86,8 +78,6 @@ export function BrowserListPage() {
   const [cookieClearTarget, setCookieClearTarget] = useState<BrowserProfile | null>(null)
   const [backupModalOpen, setBackupModalOpen] = useState(false)
   const [batchRandomModalOpen, setBatchRandomModalOpen] = useState(false)
-  const profilesRef = useRef<BrowserProfile[]>([])
-  const silentRefreshInFlightRef = useRef(false)
 
   // 窗口同步
   const [windowSyncModalOpen, setWindowSyncModalOpen] = useState(false)
@@ -138,11 +128,23 @@ export function BrowserListPage() {
   const [savingSettings, setSavingSettings] = useState(false)
 
   // 内核管理
-  const [cores, setCores] = useState<BrowserCore[]>([])
   const [coreModalOpen, setCoreModalOpen] = useState(false)
   const [coreForm, setCoreForm] = useState<BrowserCoreInput>({ coreId: '', coreName: '', corePath: '', isDefault: false })
   const [coreValidation, setCoreValidation] = useState<{ valid: boolean; message: string } | null>(null)
   const [savingCore, setSavingCore] = useState(false)
+
+  const {
+    profiles,
+    loading,
+    proxies,
+    groups,
+    cores,
+    updateProfilesState,
+    mergeProfileState,
+    loadProfiles,
+    loadGroups,
+    loadCores,
+  } = useBrowserListData({ setStartingIds, setStoppingIds })
 
   // 扩容管理
   const [expandModalOpen, setExpandModalOpen] = useState(false)
@@ -162,87 +164,6 @@ export function BrowserListPage() {
       return next
     })
   }
-
-  const replaceProfilesState = (items: BrowserProfile[]) => {
-    profilesRef.current = items
-    setProfiles(items)
-  }
-
-  const updateProfilesState = (updater: (items: BrowserProfile[]) => BrowserProfile[]) => {
-    const next = updater(profilesRef.current)
-    profilesRef.current = next
-    setProfiles(next)
-  }
-
-  const mergeProfileState = (profile: BrowserProfile | null | undefined) => {
-    if (!profile) return
-    updateProfilesState(prev => prev.map(item => (
-      item.profileId === profile.profileId ? { ...item, ...profile } : item
-    )))
-  }
-
-  const syncProfiles = (items: BrowserProfile[], syncRuntimeState: boolean) => {
-    if (syncRuntimeState) {
-      const previousById = new Map(profilesRef.current.map(item => [item.profileId, item]))
-      const newlyRunning = items.find(item => item.running && !previousById.get(item.profileId)?.running)
-      if (newlyRunning) {
-        updatePendingIds(setStartingIds, newlyRunning.profileId, false)
-        updatePendingIds(setStoppingIds, newlyRunning.profileId, false)
-      }
-      items.forEach(item => {
-        if (!item.running && previousById.get(item.profileId)?.running) {
-          updatePendingIds(setStartingIds, item.profileId, false)
-          updatePendingIds(setStoppingIds, item.profileId, false)
-        }
-      })
-    }
-    replaceProfilesState(items)
-    reconcileProfileOrder(items)
-  }
-
-  const loadProfiles = async ({ silent = false, syncRuntimeState = false }: { silent?: boolean; syncRuntimeState?: boolean } = {}) => {
-    if (silent && silentRefreshInFlightRef.current) {
-      return profilesRef.current
-    }
-    if (!silent) {
-      setLoading(true)
-    } else {
-      silentRefreshInFlightRef.current = true
-    }
-    try {
-      const items = await fetchBrowserProfiles()
-      syncProfiles(items, syncRuntimeState)
-      return items
-    } finally {
-      if (silent) {
-        silentRefreshInFlightRef.current = false
-      } else {
-        setLoading(false)
-      }
-    }
-  }
-
-  const loadGroups = async () => {
-    setGroups(await fetchGroups())
-  }
-
-  const loadSettings = async () => {
-    const data = await fetchBrowserSettings()
-    setSettings(data)
-    setFingerprintText((data.defaultFingerprintArgs || []).join('\n'))
-    setLaunchText((data.defaultLaunchArgs || []).join('\n'))
-  }
-
-  const loadCores = async () => {
-    setCores(await fetchBrowserCores())
-  }
-
-  useEffect(() => {
-    void loadProfiles()
-    loadGroups()
-    fetchBrowserProxies().then(setProxies)
-    fetchBrowserCores().then(setCores)
-  }, [])
 
   useBrowserListRuntimeSync({
     loadProfiles,
@@ -301,7 +222,6 @@ export function BrowserListPage() {
 
   const {
     profileOrder,
-    reconcileProfileOrder,
     handleProfileDragOver,
     handleProfileDragLeave,
     handleProfileDrop,
@@ -805,6 +725,13 @@ export function BrowserListPage() {
     } finally {
       setCopying(false)
     }
+  }
+
+  const loadSettings = async () => {
+    const data = await fetchBrowserSettings()
+    setSettings(data)
+    setFingerprintText((data.defaultFingerprintArgs || []).join('\n'))
+    setLaunchText((data.defaultLaunchArgs || []).join('\n'))
   }
 
   const handleOpenSettings = async () => {
