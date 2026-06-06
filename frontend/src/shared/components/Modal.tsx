@@ -1,6 +1,72 @@
-import { ReactNode, useEffect } from 'react'
+import { ReactNode, useLayoutEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { Button } from './Button'
+
+let nextModalId = 1
+const modalStack: number[] = []
+const modalStackListeners = new Set<() => void>()
+
+function getTopModalId() {
+  return modalStack.length > 0 ? modalStack[modalStack.length - 1] : null
+}
+
+function syncModalBodyLock() {
+  document.body.style.overflow = modalStack.length > 0 ? 'hidden' : ''
+}
+
+function notifyModalStack() {
+  syncModalBodyLock()
+  modalStackListeners.forEach(listener => listener())
+}
+
+function addModalToStack(id: number) {
+  if (!modalStack.includes(id)) {
+    modalStack.push(id)
+    notifyModalStack()
+  }
+}
+
+function removeModalFromStack(id: number) {
+  const index = modalStack.indexOf(id)
+  if (index >= 0) {
+    modalStack.splice(index, 1)
+    notifyModalStack()
+  }
+}
+
+function useModalStack(open: boolean) {
+  const idRef = useRef(0)
+  const [topModalId, setTopModalId] = useState<number | null>(() => getTopModalId())
+
+  if (idRef.current === 0) {
+    idRef.current = nextModalId
+    nextModalId += 1
+  }
+
+  useLayoutEffect(() => {
+    const listener = () => {
+      setTopModalId(getTopModalId())
+    }
+    modalStackListeners.add(listener)
+    return () => {
+      modalStackListeners.delete(listener)
+    }
+  }, [])
+
+  useLayoutEffect(() => {
+    const id = idRef.current
+    if (!open) {
+      removeModalFromStack(id)
+      return
+    }
+    addModalToStack(id)
+    return () => {
+      removeModalFromStack(id)
+    }
+  }, [open])
+
+  return topModalId === idRef.current
+}
 
 interface ModalProps {
   open: boolean
@@ -21,26 +87,22 @@ export function Modal({
   width = '500px',
   closable = true,
 }: ModalProps) {
-  useEffect(() => {
-    if (open) {
-      document.body.style.overflow = 'hidden'
-    } else {
-      document.body.style.overflow = ''
-    }
-    return () => {
-      document.body.style.overflow = ''
-    }
-  }, [open])
+  const isTopModal = useModalStack(open)
 
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div
+      className={`fixed inset-0 z-50 flex items-center justify-center${isTopModal ? '' : ' invisible pointer-events-none'}`}
+      aria-hidden={isTopModal ? undefined : true}
+    >
       {/* 遮罩层 */}
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-fade-in"
-        onClick={closable ? onClose : undefined}
-      />
+      {isTopModal && (
+        <div
+          className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-fade-in"
+          onClick={closable ? onClose : undefined}
+        />
+      )}
 
       {/* 弹窗内容 */}
       <div
