@@ -811,6 +811,7 @@ func (a *App) clearProfileAuthProxyBridges() {
 // ============================================================================
 
 func (a *App) GetDashboardStats() map[string]interface{} {
+	a.reconcileBrowserProfileRuntimeStates()
 	profiles := a.browserMgr.List()
 	totalInstances := len(profiles)
 	runningInstances := 0
@@ -873,6 +874,7 @@ func (a *App) ClearAppLogs() {
 
 // GetRunningInstances 获取运行中实例的详细信息
 func (a *App) GetRunningInstances() []BrowserProfile {
+	a.reconcileBrowserProfileRuntimeStates()
 	all := a.browserMgr.List()
 	result := make([]BrowserProfile, 0)
 	for _, p := range all {
@@ -965,7 +967,7 @@ func (a *App) BrowserProfileUpdate(profileId string, input BrowserProfileInput) 
 }
 
 func (a *App) BrowserProfileDelete(profileId string) error {
-	a.refreshBrowserProfileConfigCacheFromStore()
+	a.reconcileBrowserProfileRuntimeStates()
 	if err := a.ensureWindowSyncProfileMutable(profileId); err != nil {
 		return err
 	}

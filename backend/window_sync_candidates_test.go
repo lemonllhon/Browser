@@ -24,3 +24,23 @@ func TestWindowSyncStartupLaunchArgs(t *testing.T) {
 		t.Fatalf("expected nil launch args for invalid rect, got %#v", args)
 	}
 }
+
+func TestWindowSyncListCandidatesClearsStaleRuntimeState(t *testing.T) {
+	app := newRuntimeStateTestApp(t.TempDir())
+	app.browserMgr.Profiles["profile-1"] = &BrowserProfile{
+		ProfileId:   "profile-1",
+		ProfileName: "Profile 1",
+		Running:     true,
+		DebugReady:  true,
+		DebugPort:   9,
+	}
+
+	candidates := app.WindowSyncListCandidates()
+	if len(candidates) != 1 {
+		t.Fatalf("expected one candidate, got %#v", candidates)
+	}
+	got := candidates[0]
+	if got.Running || got.CanSync || !got.CanAutoStart {
+		t.Fatalf("expected stale running state to be cleared for auto-start candidate, got %#v", got)
+	}
+}

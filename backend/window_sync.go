@@ -15,6 +15,7 @@ func (a *App) WindowSyncStart(input WindowSyncStartInput) (*WindowSyncState, err
 	if a == nil || a.browserMgr == nil {
 		return nil, fmt.Errorf("浏览器管理器未就绪")
 	}
+	a.reconcileBrowserProfileRuntimeStates()
 
 	profileIds := normalizeWindowSyncProfileIds(input.ProfileIds)
 	if len(profileIds) < 2 {
@@ -203,7 +204,7 @@ func (a *App) runWindowSyncListener(seq int, cancel <-chan struct{}) {
 		default:
 		}
 
-		state := a.WindowSyncGetState()
+		state := a.windowSyncGetState(false)
 		if state == nil || !state.Active {
 			return
 		}
@@ -353,7 +354,7 @@ func (a *App) handleWindowSyncPayload(seq int, payload string) {
 	if err := json.Unmarshal([]byte(payload), &event); err != nil {
 		return
 	}
-	state := a.WindowSyncGetState()
+	state := a.windowSyncGetState(false)
 	if state == nil || !state.Active || state.Paused {
 		return
 	}
@@ -393,7 +394,7 @@ func (a *App) handleWindowSyncPayload(seq int, payload string) {
 }
 
 func (a *App) syncWindowSyncTabs(seq int, masterDebugPort int, lastActiveTab *string) {
-	state := a.WindowSyncGetState()
+	state := a.windowSyncGetState(false)
 	if state == nil || !state.Active || state.Paused || !state.SyncMouse {
 		return
 	}

@@ -7,8 +7,15 @@ import (
 )
 
 func (a *App) WindowSyncGetState() *WindowSyncState {
+	return a.windowSyncGetState(true)
+}
+
+func (a *App) windowSyncGetState(refreshRuntime bool) *WindowSyncState {
 	if a == nil {
 		return nil
+	}
+	if refreshRuntime {
+		a.reconcileBrowserProfileRuntimeStates()
 	}
 	a.windowSyncMu.Lock()
 	state := cloneWindowSyncState(a.windowSyncState)
@@ -106,15 +113,24 @@ func (a *App) updateWindowSyncPaused(paused bool) (*WindowSyncState, error) {
 }
 
 func (a *App) requireWindowSyncState() (*WindowSyncState, error) {
+	return a.requireWindowSyncStateWithRefresh(true)
+}
+
+func (a *App) requireWindowSyncStateWithRefresh(refreshRuntime bool) (*WindowSyncState, error) {
 	if a == nil {
 		return nil, fmt.Errorf("窗口同步未启动")
 	}
+	if refreshRuntime {
+		a.reconcileBrowserProfileRuntimeStates()
+	}
 	a.windowSyncMu.Lock()
-	defer a.windowSyncMu.Unlock()
 	if a.windowSyncState == nil || !a.windowSyncState.Active {
+		a.windowSyncMu.Unlock()
 		return nil, fmt.Errorf("窗口同步未启动")
 	}
-	return cloneWindowSyncState(a.windowSyncState), nil
+	state := cloneWindowSyncState(a.windowSyncState)
+	a.windowSyncMu.Unlock()
+	return a.refreshWindowSyncRuntimeState(state), nil
 }
 
 func defaultWindowSyncSettings() WindowSyncSettings {

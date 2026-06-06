@@ -18,13 +18,13 @@ import (
 // ============================================================================
 
 func (a *App) BrowserInstanceStart(profileId string) (*BrowserProfile, error) {
-	a.refreshBrowserProfileConfigCacheFromStore()
+	a.reconcileBrowserProfileRuntimeStates()
 	return a.browserInstanceStartInternal(profileId, nil, nil, false, false)
 }
 
 // BrowserInstanceStartWithParams 通过额外参数启动实例（仅本次启动生效，不落库）
 func (a *App) BrowserInstanceStartWithParams(profileId string, extraLaunchArgs []string, startURLs []string, skipDefaultStartURLs bool) (*BrowserProfile, error) {
-	a.refreshBrowserProfileConfigCacheFromStore()
+	a.reconcileBrowserProfileRuntimeStates()
 	return a.browserInstanceStartInternal(profileId, extraLaunchArgs, startURLs, skipDefaultStartURLs, true)
 }
 
@@ -418,7 +418,7 @@ func (a *App) browserInstanceStartInternal(profileId string, extraLaunchArgs []s
 }
 
 func (a *App) BrowserInstanceStop(profileId string) (*BrowserProfile, error) {
-	a.refreshBrowserProfileConfigCacheFromStore()
+	a.reconcileBrowserProfileRuntimeStates()
 	log := logger.New("Browser")
 	a.browserMgr.Mutex.Lock()
 	autoSyncAfterStop := false
@@ -652,6 +652,7 @@ func (a *App) BrowserInstanceStatus(profileId string) (*BrowserProfile, error) {
 }
 
 func (a *App) BrowserInstanceOpenUrl(profileId string, targetUrl string) bool {
+	a.reconcileBrowserProfileRuntimeStates()
 	a.browserMgr.Mutex.Lock()
 	profile, exists := a.browserMgr.Profiles[profileId]
 	a.browserMgr.Mutex.Unlock()

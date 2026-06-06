@@ -11,8 +11,9 @@ func (a *App) WindowSyncListCandidates() []WindowSyncCandidate {
 	if a == nil || a.browserMgr == nil {
 		return []WindowSyncCandidate{}
 	}
+	a.reconcileBrowserProfileRuntimeStates()
 
-	activeState := a.WindowSyncGetState()
+	activeState := a.windowSyncGetState(false)
 	activeById := make(map[string]WindowSyncCandidate)
 	if activeState != nil && activeState.Active {
 		for _, item := range activeState.Windows {

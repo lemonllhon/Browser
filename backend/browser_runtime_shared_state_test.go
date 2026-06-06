@@ -54,6 +54,29 @@ func TestBrowserProfileListClearsStaleSharedRuntimeState(t *testing.T) {
 	}
 }
 
+func TestDashboardAndRunningInstancesReconcileSharedRuntimeState(t *testing.T) {
+	ln := mustListenLoopback(t)
+	defer ln.Close()
+
+	appRoot := t.TempDir()
+	app1 := newRuntimeStateTestApp(appRoot)
+	app1.browserMgr.Profiles["profile-1"] = &BrowserProfile{ProfileId: "profile-1", ProfileName: "Profile 1"}
+	app1.markProfileRunningLocked("profile-1", app1.browserMgr.Profiles["profile-1"], nil, 0, listenerPort(t, ln), true, "")
+
+	app2 := newRuntimeStateTestApp(appRoot)
+	app2.browserMgr.Profiles["profile-1"] = &BrowserProfile{ProfileId: "profile-1", ProfileName: "Profile 1"}
+
+	stats := app2.GetDashboardStats()
+	if stats["totalInstances"] != 1 || stats["runningInstances"] != 1 {
+		t.Fatalf("expected dashboard stats to include shared runtime state, got %#v", stats)
+	}
+
+	running := app2.GetRunningInstances()
+	if len(running) != 1 || !running[0].Running || running[0].DebugPort != listenerPort(t, ln) {
+		t.Fatalf("expected running instances to include shared runtime state, got %#v", running)
+	}
+}
+
 func TestBrowserProfileListRefreshesProfileConfigFromStore(t *testing.T) {
 	ln := mustListenLoopback(t)
 	defer ln.Close()

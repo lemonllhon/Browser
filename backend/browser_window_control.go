@@ -22,6 +22,7 @@ func (a *App) BrowserInstancePinCenter(profileId string) error {
 		return fmt.Errorf("profile id is required")
 	}
 
+	a.reconcileBrowserProfileRuntimeStates()
 	a.browserMgr.Mutex.Lock()
 	profile, exists := a.browserMgr.Profiles[profileId]
 	if !exists || profile == nil {
