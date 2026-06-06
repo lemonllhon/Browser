@@ -475,6 +475,38 @@ func TestListGroupsCountsFromSharedProfileCacheWithoutProfileDAO(t *testing.T) {
 	}
 }
 
+func TestBrowserProfileBatchTagsPersistConfigFallback(t *testing.T) {
+	app := newRuntimeStateTestApp(t.TempDir())
+	app.browserMgr.ProfileDAO = nil
+	app.browserMgr.Profiles["profile-1"] = &BrowserProfile{
+		ProfileId:   "profile-1",
+		ProfileName: "Profile 1",
+		Tags:        []string{"old"},
+	}
+
+	if err := app.BrowserProfileBatchSetTags([]string{"profile-1"}, []string{"new"}, false); err != nil {
+		t.Fatalf("BrowserProfileBatchSetTags failed: %v", err)
+	}
+	loaded, err := config.Load(app.resolveAppPath("config.yaml"))
+	if err != nil {
+		t.Fatalf("load saved config after batch set failed: %v", err)
+	}
+	if len(loaded.Browser.Profiles) != 1 || !stringSliceContains(loaded.Browser.Profiles[0].Tags, "old") || !stringSliceContains(loaded.Browser.Profiles[0].Tags, "new") {
+		t.Fatalf("expected batch set tags to persist to config fallback, got %#v", loaded.Browser.Profiles)
+	}
+
+	if err := app.BrowserProfileBatchRemoveTags([]string{"profile-1"}, []string{"old"}); err != nil {
+		t.Fatalf("BrowserProfileBatchRemoveTags failed: %v", err)
+	}
+	loaded, err = config.Load(app.resolveAppPath("config.yaml"))
+	if err != nil {
+		t.Fatalf("load saved config after batch remove failed: %v", err)
+	}
+	if len(loaded.Browser.Profiles) != 1 || stringSliceContains(loaded.Browser.Profiles[0].Tags, "old") || !stringSliceContains(loaded.Browser.Profiles[0].Tags, "new") {
+		t.Fatalf("expected batch remove tags to persist to config fallback, got %#v", loaded.Browser.Profiles)
+	}
+}
+
 func TestBrowserProfileSwitchProxyNowUsesSharedSwitchBridge(t *testing.T) {
 	ln := mustListenLoopback(t)
 	defer ln.Close()
@@ -524,6 +556,15 @@ func newRuntimeStateTestApp(appRoot string) *App {
 	app.browserMgr.Profiles = map[string]*BrowserProfile{}
 	app.browserMgr.BrowserProcesses = map[string]*exec.Cmd{}
 	return app
+}
+
+func stringSliceContains(items []string, target string) bool {
+	for _, item := range items {
+		if item == target {
+			return true
+		}
+	}
+	return false
 }
 
 type profileDAOListStub struct {

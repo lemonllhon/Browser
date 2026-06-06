@@ -537,6 +537,11 @@ func (a *App) BrowserProfileBatchSetTags(profileIds []string, tags []string, rep
 			}
 		}
 	}
+	if shouldEmitProfileUpdate && a.browserMgr.ProfileDAO == nil {
+		if err := a.browserMgr.SaveProfiles(); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -577,6 +582,11 @@ func (a *App) BrowserProfileBatchRemoveTags(profileIds []string, tags []string) 
 				log.Error("批量移除标签失败", logger.F("profile_id", profileId), logger.F("error", err))
 				return err
 			}
+		}
+	}
+	if shouldEmitProfileUpdate && a.browserMgr.ProfileDAO == nil {
+		if err := a.browserMgr.SaveProfiles(); err != nil {
+			return err
 		}
 	}
 	return nil
