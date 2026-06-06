@@ -30,6 +30,7 @@ import { appendSourceIgnoredProxyNames, applyIgnoredProxyNamesForSource, buildIm
 import { normalizeRefreshIntervalM, parseTimestampMs, readGlobalRefreshConfig, writeGlobalRefreshConfig } from '../utils/proxyRefreshConfig'
 import { useProxyProbeState } from '../hooks/useProxyProbeState'
 import { useProxyPreviewProbeState } from '../hooks/useProxyPreviewProbeState'
+import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
 import { resolveActionErrorMessage } from '../utils/actionErrors'
 
 type ProxyImportMode = 'clash' | 'direct'
@@ -157,7 +158,6 @@ export function ProxyPoolPage() {
 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
-  const proxiesRef = useRef<BrowserProxy[]>([])
   const sourceArchiveRef = useRef<URLImportSourceMeta[]>(sourceArchive)
   const refreshingSourceIdsRef = useRef<Set<string>>(new Set())
 
@@ -198,6 +198,11 @@ export function ProxyPoolPage() {
     return interval > 0 ? interval : 60
   }, [globalRefreshIntervalM])
 
+  const fetchLatestProxyList = useCallback(async () => {
+    const raw = await fetchBrowserProxies()
+    return ensureBuiltinProxies(raw)
+  }, [])
+
   useEffect(() => {
     const cfg = readGlobalRefreshConfig()
     setGlobalAutoRefreshEnabled(cfg.enabled)
@@ -213,10 +218,6 @@ export function ProxyPoolPage() {
   useEffect(() => {
     writeGlobalRefreshConfig(globalAutoRefreshEnabled, globalRefreshInterval)
   }, [globalAutoRefreshEnabled, globalRefreshInterval])
-
-  useEffect(() => {
-    proxiesRef.current = proxies
-  }, [proxies])
 
   useEffect(() => {
     sourceArchiveRef.current = sourceArchive
@@ -236,8 +237,7 @@ export function ProxyPoolPage() {
       setLoading(true)
     }
     try {
-      const raw = await fetchBrowserProxies()
-      const proxyList = ensureBuiltinProxies(raw)
+      const proxyList = await fetchLatestProxyList()
       const validProxyIds = new Set(proxyList.map(proxy => proxy.proxyId))
       const persistedLatency: Record<string, number> = {}
       const persistedIPHealth: Record<string, ProxyIPHealthResult> = {}
@@ -292,6 +292,22 @@ export function ProxyPoolPage() {
     }
   }, [])
 
+  const canVisibleRefreshProxies = !saving &&
+    !importing &&
+    !fetchingImportUrl &&
+    !refreshingAllSources &&
+    refreshingSourceIds.size === 0 &&
+    !editModalOpen &&
+    !sourceEditModalOpen &&
+    !importModalOpen &&
+    !previewModalOpen &&
+    !deleteConfirmOpen &&
+    !batchDeleteConfirmOpen &&
+    !deleteTimeoutConfirmOpen &&
+    !sourceDeleteConfirmOpen
+
+  useVisibleRefresh(() => loadProxies(true), 2000, canVisibleRefreshProxies)
+
   const updateSourceArchive = useCallback((updater: (current: URLImportSourceMeta[]) => URLImportSourceMeta[]) => {
     const next = updater(sourceArchiveRef.current)
     sourceArchiveRef.current = next
@@ -300,22 +316,29 @@ export function ProxyPoolPage() {
     return next
   }, [])
 
-  // 直接保存完整列表，内置代理保护由后端负责
   const saveProxies = useCallback(async (list: BrowserProxy[]) => {
-    await saveBrowserProxies(list)
-    updateSourceArchive(current => collectURLImportSources(list, current))
-    setProxies(list)
-    setDisplayList(toDisplayList(list))
+    const nextList = ensureBuiltinProxies(list)
+    await saveBrowserProxies(nextList)
+    updateSourceArchive(current => collectURLImportSources(nextList, current))
+    setProxies(nextList)
+    setDisplayList(toDisplayList(nextList))
     // 刷新分组列表（可能有新分组加入）
     const grps = await fetchBrowserProxyGroups()
     setGroups(grps)
   }, [updateSourceArchive])
 
+  const saveLatestProxies = useCallback(async (updater: (latest: BrowserProxy[]) => BrowserProxy[] | Promise<BrowserProxy[]>) => {
+    const latest = await fetchLatestProxyList()
+    const next = await updater(latest)
+    await saveProxies(next)
+    return next
+  }, [fetchLatestProxyList, saveProxies])
+
   const sourceMetas = useMemo(() => collectURLImportSources(proxies, sourceArchive), [proxies, sourceArchive])
   const hasURLImportSources = sourceMetas.length > 0
 
   const refreshSingleSource = useCallback(async (sourceId: string, silent: boolean) => {
-    const currentList = proxiesRef.current
+    const currentList = await fetchLatestProxyList()
     const metas = collectURLImportSources(currentList, sourceArchiveRef.current)
     const meta = metas.find(item => item.sourceId === sourceId)
     if (!meta) return false
@@ -346,14 +369,15 @@ export function ProxyPoolPage() {
         throw new Error('刷新后没有符合当前订阅筛选的节点，已保留原有节点')
       }
 
-      const latest = proxiesRef.current
+      const latest = await fetchLatestProxyList()
+      const latestMeta = collectURLImportSources(latest, sourceArchiveRef.current).find(item => item.sourceId === sourceId) || meta
       const oldSourceProxies = latest.filter(item => (item.sourceId || '').trim() === sourceId)
       const refreshedAt = new Date().toISOString()
       const effectiveMeta: URLImportSourceMeta = {
-        ...meta,
+        ...latestMeta,
         sourceAutoRefresh: globalAutoRefreshEnabled,
         sourceRefreshIntervalM: globalRefreshInterval,
-        proxyCount: meta.proxyCount,
+        proxyCount: latestMeta.proxyCount,
       }
       const refreshedSourceProxies = buildRefreshedSourceProxies(filteredParsed, oldSourceProxies, effectiveMeta, refreshedAt)
 
@@ -378,10 +402,11 @@ export function ProxyPoolPage() {
         return next
       })
     }
-  }, [globalAutoRefreshEnabled, globalRefreshInterval, saveProxies])
+  }, [fetchLatestProxyList, globalAutoRefreshEnabled, globalRefreshInterval, saveProxies])
 
   const handleRefreshAllSources = useCallback(async (silent = false) => {
-    const metas = collectURLImportSources(proxiesRef.current, sourceArchiveRef.current)
+    const latest = await fetchLatestProxyList()
+    const metas = collectURLImportSources(latest, sourceArchiveRef.current)
     if (metas.length === 0) {
       if (!silent) {
         toast.info('当前没有 URL 导入订阅')
@@ -406,7 +431,7 @@ export function ProxyPoolPage() {
         toast.warning(`订阅刷新完成：成功 ${successCount}/${metas.length}`)
       }
     }
-  }, [refreshSingleSource])
+  }, [fetchLatestProxyList, refreshSingleSource])
 
   useEffect(() => {
     const runAutoRefresh = async () => {
@@ -417,7 +442,8 @@ export function ProxyPoolPage() {
         return
       }
       const intervalMs = globalRefreshInterval * 60 * 1000
-      const metas = collectURLImportSources(proxiesRef.current, sourceArchiveRef.current).filter(meta => {
+      const latest = await fetchLatestProxyList()
+      const metas = collectURLImportSources(latest, sourceArchiveRef.current).filter(meta => {
         if (!isRefreshableSourceURL(meta.sourceUrl)) return false
         const last = parseTimestampMs(meta.sourceLastRefreshAt)
         return last <= 0 || Date.now() - last >= intervalMs
@@ -445,7 +471,7 @@ export function ProxyPoolPage() {
     return () => {
       window.clearInterval(timer)
     }
-  }, [globalAutoRefreshEnabled, globalRefreshInterval, refreshingAllSources, refreshSingleSource])
+  }, [fetchLatestProxyList, globalAutoRefreshEnabled, globalRefreshInterval, refreshingAllSources, refreshSingleSource])
 
   const protocolOptions = useMemo(
     () => ['all', ...Array.from(new Set(displayList.map(p => p.type).filter(t => t !== '-')))],
@@ -618,10 +644,18 @@ export function ProxyPoolPage() {
   }
 
   const handleBatchDeleteConfirm = async () => {
+    const deleteIds = new Set(selectedIds)
     try {
-      const newProxies = proxies.filter(p => !selectedIds.has(p.proxyId))
-      await saveProxies(newProxies)
-      toast.success(`已删除 ${selectedIds.size} 个代理`)
+      let removedCount = 0
+      await saveLatestProxies(latest => {
+        removedCount = latest.filter(p => deleteIds.has(p.proxyId)).length
+        return latest.filter(p => !deleteIds.has(p.proxyId))
+      })
+      if (removedCount === 0) {
+        toast.info('选中的代理已经被其他窗口删除')
+      } else {
+        toast.success(`已删除 ${removedCount} 个代理`)
+      }
       setSelectedIds(new Set())
     } catch (error: unknown) {
       toast.error(resolveActionErrorMessage(error, '删除失败'))
@@ -636,15 +670,22 @@ export function ProxyPoolPage() {
       return
     }
     try {
-      const newProxies = proxies.filter(p => !deleteIds.has(p.proxyId))
-      await saveProxies(newProxies)
+      let removedCount = 0
+      await saveLatestProxies(latest => {
+        removedCount = latest.filter(p => deleteIds.has(p.proxyId)).length
+        return latest.filter(p => !deleteIds.has(p.proxyId))
+      })
       removeProbeResults(deleteIds)
       setSelectedIds(prev => {
         const next = new Set(prev)
         deleteIds.forEach(id => next.delete(id))
         return next
       })
-      toast.success(`已删除 ${deleteIds.size} 个测试超时节点`)
+      if (removedCount === 0) {
+        toast.info('测试超时节点已经被其他窗口处理')
+      } else {
+        toast.success(`已删除 ${removedCount} 个测试超时节点`)
+      }
     } catch (error: unknown) {
       toast.error(resolveActionErrorMessage(error, '删除失败'))
     } finally {
@@ -1011,15 +1052,16 @@ export function ProxyPoolPage() {
   const handleSaveProxy = async () => {
     if (!editForm.proxyName.trim()) { toast.error('请输入代理名称'); return }
     if (!editingProxy) return
-    if (!proxies.some(p => p.proxyId === editingProxy.proxyId)) {
-      setEditModalOpen(false)
-      setEditingProxy(null)
-      toast.error('这个代理已被其他窗口删除，请重新选择')
-      return
-    }
     setSaving(true)
     try {
-      const newProxies = proxies.map(p =>
+      const latest = await fetchLatestProxyList()
+      if (!latest.some(p => p.proxyId === editingProxy.proxyId)) {
+        setEditModalOpen(false)
+        setEditingProxy(null)
+        toast.error('这个代理已被其他窗口删除，请重新选择')
+        return
+      }
+      const newProxies = latest.map(p =>
         p.proxyId === editingProxy.proxyId
           ? { ...p, proxyName: editForm.proxyName, proxyConfig: editForm.proxyConfig, dnsServers: editForm.dnsServers, groupName: editForm.groupName }
           : p
@@ -1042,7 +1084,14 @@ export function ProxyPoolPage() {
   const handleDeleteConfirm = async () => {
     if (!deletingId) return
     try {
-      const newProxies = proxies.filter(p => p.proxyId !== deletingId)
+      const latest = await fetchLatestProxyList()
+      if (!latest.some(p => p.proxyId === deletingId)) {
+        setSelectedIds(prev => { const next = new Set(prev); next.delete(deletingId); return next })
+        setDeletingId(null)
+        toast.info('这个代理已经被其他窗口删除')
+        return
+      }
+      const newProxies = latest.filter(p => p.proxyId !== deletingId)
       await saveProxies(newProxies)
       setSelectedIds(prev => { const next = new Set(prev); next.delete(deletingId); return next })
       toast.success('代理已删除')
@@ -1100,19 +1149,26 @@ export function ProxyPoolPage() {
     const nextGroup = sourceEditForm.groupName.trim()
     const nextPrefix = sourceEditForm.namePrefix.trim()
     const nextDNS = sourceEditForm.dnsServers.trim()
-    const updated = proxies.map(item => {
-      if ((item.sourceId || '').trim() !== editingSource.sourceId) return item
-      return {
-        ...item,
-        proxyName: renameSourceProxyName(item.proxyName, editingSource.sourceNamePrefix, nextPrefix),
-        groupName: nextGroup || undefined,
-        dnsServers: nextDNS || undefined,
-        sourceUrl: nextURL,
-        sourceNamePrefix: nextPrefix || undefined,
-      }
-    })
 
     try {
+      const latest = await fetchLatestProxyList()
+      if (!latest.some(item => (item.sourceId || '').trim() === editingSource.sourceId)) {
+        setSourceEditModalOpen(false)
+        setEditingSource(null)
+        toast.error('这个订阅已被其他窗口删除，请重新选择')
+        return
+      }
+      const updated = latest.map(item => {
+        if ((item.sourceId || '').trim() !== editingSource.sourceId) return item
+        return {
+          ...item,
+          proxyName: renameSourceProxyName(item.proxyName, editingSource.sourceNamePrefix, nextPrefix),
+          groupName: nextGroup || undefined,
+          dnsServers: nextDNS || undefined,
+          sourceUrl: nextURL,
+          sourceNamePrefix: nextPrefix || undefined,
+        }
+      })
       await saveProxies(updated)
       updateSourceArchive(current => current.map(item => {
         if (item.sourceId !== editingSource.sourceId) return item
@@ -1140,7 +1196,14 @@ export function ProxyPoolPage() {
   const handleDeleteSourceConfirm = async () => {
     if (!deletingSource) return
     try {
-      const updated = proxies.filter(item => (item.sourceId || '').trim() !== deletingSource.sourceId)
+      const latest = await fetchLatestProxyList()
+      if (!latest.some(item => (item.sourceId || '').trim() === deletingSource.sourceId)) {
+        updateSourceArchive(current => current.filter(item => item.sourceId !== deletingSource.sourceId))
+        setDeletingSource(null)
+        toast.info('这个订阅已经被其他窗口删除')
+        return
+      }
+      const updated = latest.filter(item => (item.sourceId || '').trim() !== deletingSource.sourceId)
       await saveProxies(updated)
       updateSourceArchive(current => current.filter(item => item.sourceId !== deletingSource.sourceId))
       setDeletingSource(null)
@@ -1225,7 +1288,6 @@ export function ProxyPoolPage() {
       const sourceGroupName = importGroupName.trim()
       const sourceDisplayName = importSourceName.trim() || defaultImportSourceName(importMode, sourceGroupName, sourceNamePrefix, selectedPreviewList.length)
       const effectiveSourceURL = isURLImport ? sourceURL : buildManualSourceURL(importMode, sourceDisplayName)
-      const sourceID = resolveImportSourceID(proxies, effectiveSourceURL, sourceNamePrefix, sourceGroupName)
       const sourceAutoRefresh = isURLImport ? globalAutoRefreshEnabled : false
       const sourceRefreshIntervalM = sourceAutoRefresh ? globalRefreshInterval : 0
       const sourceLastRefreshAt = isURLImport ? new Date().toISOString() : ''
@@ -1239,8 +1301,10 @@ export function ProxyPoolPage() {
         }
       }
       const sourceFilter = parseSourceRefreshFilter(sourceFilterJson)
+      const latest = await fetchLatestProxyList()
+      const sourceID = resolveImportSourceID(latest, effectiveSourceURL, sourceNamePrefix, sourceGroupName)
       const oldSourceProxies = sourceID
-        ? proxies.filter(item => (item.sourceId || '').trim() === sourceID)
+        ? latest.filter(item => (item.sourceId || '').trim() === sourceID)
         : []
       const pickExistingID = createExistingProxyIDPicker(oldSourceProxies)
 
@@ -1259,8 +1323,8 @@ export function ProxyPoolPage() {
         sourceLastRefreshAt: sourceLastRefreshAt || undefined,
       }))
       const allProxies = sourceID
-        ? proxies.filter(item => (item.sourceId || '').trim() !== sourceID).concat(newProxies)
-        : [...proxies, ...newProxies]
+        ? latest.filter(item => (item.sourceId || '').trim() !== sourceID).concat(newProxies)
+        : [...latest, ...newProxies]
       await saveProxies(allProxies)
       const unselectedPreviewProxyNames = previewList
         .filter(item => !previewSelectedIds.has(item.proxyId))

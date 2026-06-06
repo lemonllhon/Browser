@@ -13,7 +13,7 @@ type BrowserListSettingsModalProps = {
   coreColumns: TableColumn<BrowserCore>[]
   onClose: () => void
   onSave: () => void
-  onSettingsChange: (updater: (prev: BrowserSettings) => BrowserSettings) => void
+  onSettingsFieldChange: <K extends keyof BrowserSettings>(field: K, value: BrowserSettings[K]) => void
   onFingerprintTextChange: (value: string) => void
   onLaunchTextChange: (value: string) => void
   onOpenCoreModal: () => void
@@ -29,7 +29,7 @@ export function BrowserListSettingsModal({
   coreColumns,
   onClose,
   onSave,
-  onSettingsChange,
+  onSettingsFieldChange,
   onFingerprintTextChange,
   onLaunchTextChange,
   onOpenCoreModal,
@@ -63,7 +63,7 @@ export function BrowserListSettingsModal({
         <FormItem label="用户数据根目录">
           <Input
             value={settings.userDataRoot}
-            onChange={e => onSettingsChange(prev => ({ ...prev, userDataRoot: e.target.value }))}
+            onChange={e => onSettingsFieldChange('userDataRoot', e.target.value)}
             placeholder="data"
           />
         </FormItem>
@@ -86,7 +86,7 @@ export function BrowserListSettingsModal({
         <FormItem label="默认代理">
           <Input
             value={settings.defaultProxy}
-            onChange={e => onSettingsChange(prev => ({ ...prev, defaultProxy: e.target.value }))}
+            onChange={e => onSettingsFieldChange('defaultProxy', e.target.value)}
             placeholder="http://127.0.0.1:7890"
           />
         </FormItem>
@@ -97,7 +97,7 @@ export function BrowserListSettingsModal({
               min={1000}
               step={500}
               value={settings.startReadyTimeoutMs}
-              onChange={e => onSettingsChange(prev => ({ ...prev, startReadyTimeoutMs: Math.max(1000, Number(e.target.value) || 3000) }))}
+              onChange={e => onSettingsFieldChange('startReadyTimeoutMs', Math.max(1000, Number(e.target.value) || 3000))}
               placeholder="3000"
             />
           </FormItem>
@@ -107,7 +107,7 @@ export function BrowserListSettingsModal({
               min={0}
               step={100}
               value={settings.startStableWindowMs}
-              onChange={e => onSettingsChange(prev => ({ ...prev, startStableWindowMs: Math.max(0, Number(e.target.value) || 1200) }))}
+              onChange={e => onSettingsFieldChange('startStableWindowMs', Math.max(0, Number(e.target.value) || 1200))}
               placeholder="1200"
             />
           </FormItem>

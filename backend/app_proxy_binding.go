@@ -19,13 +19,13 @@ func (a *App) reconcileProfileProxyBindings() {
 	a.browserMgr.Mutex.Lock()
 	defer a.browserMgr.Mutex.Unlock()
 
-	changedCount := 0
+	changedProfiles := make([]*BrowserProfile, 0)
 	reboundCount := 0
 	for _, profile := range a.browserMgr.Profiles {
 		changed, boundInPool, mode := a.browserMgr.ResolveProfileProxyBinding(profile)
 		if changed {
 			profile.UpdatedAt = time.Now().Format(time.RFC3339)
-			changedCount++
+			changedProfiles = append(changedProfiles, profile)
 		}
 		if boundInPool && mode != "" && mode != "proxy_id" {
 			reboundCount++
@@ -38,15 +38,27 @@ func (a *App) reconcileProfileProxyBindings() {
 		}
 	}
 
-	if changedCount == 0 {
+	if len(changedProfiles) == 0 {
 		return
 	}
-	if err := a.browserMgr.SaveProfiles(); err != nil {
-		log.Error("实例代理绑定修复持久化失败", logger.F("error", err.Error()))
-		return
+	if a.browserMgr.ProfileDAO != nil {
+		for _, profile := range changedProfiles {
+			if err := a.browserMgr.ProfileDAO.Upsert(profile); err != nil {
+				log.Error("实例代理绑定修复持久化失败",
+					logger.F("profile_id", profile.ProfileId),
+					logger.F("error", err.Error()),
+				)
+				return
+			}
+		}
+	} else {
+		if err := a.browserMgr.SaveProfiles(); err != nil {
+			log.Error("实例代理绑定修复持久化失败", logger.F("error", err.Error()))
+			return
+		}
 	}
 	log.Info("实例代理绑定修复完成",
-		logger.F("changed", changedCount),
+		logger.F("changed", len(changedProfiles)),
 		logger.F("rebound", reboundCount),
 	)
 }

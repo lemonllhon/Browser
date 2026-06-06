@@ -694,6 +694,7 @@ func (a *App) profileBackupApplyRestoredFields(profileID string, item profileBac
 	if a == nil || a.browserMgr == nil {
 		return
 	}
+	var snapshot *BrowserProfile
 	a.browserMgr.Mutex.Lock()
 	profile := a.browserMgr.Profiles[profileID]
 	if profile != nil {
@@ -702,9 +703,15 @@ func (a *App) profileBackupApplyRestoredFields(profileID string, item profileBac
 		profile.ProxyBindName = item.ProxyBindName
 		profile.ProxyBindUpdatedAt = item.ProxyBindUpdatedAt
 		profile.AutoProxySwitchLastProxyId = item.AutoProxySwitchLastProxyID
+		copied := *profile
+		snapshot = &copied
 	}
 	a.browserMgr.Mutex.Unlock()
-	if profile != nil {
+	if snapshot != nil && a.browserMgr.ProfileDAO != nil {
+		_ = a.browserMgr.ProfileDAO.Upsert(snapshot)
+		return
+	}
+	if snapshot != nil {
 		_ = a.browserMgr.SaveProfiles()
 	}
 }

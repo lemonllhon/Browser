@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Plus, Trash2, RotateCcw, GripVertical } from 'lucide-react'
 import { Button, Card, ConfirmModal, Input, toast } from '../../../shared/components'
 import type { BrowserBookmark, BrowserStartURL } from '../types'
@@ -11,6 +11,7 @@ import {
   saveDefaultStartURLs,
 } from '../api'
 import { onRuntimeEvent } from '../../../shared/backend/runtime'
+import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
 
 type ManagedItem = {
   name: string
@@ -117,25 +118,42 @@ export function BookmarkSettingsPage({ embedded = false }: { embedded?: boolean 
   const [resetTarget, setResetTarget] = useState<ResetTarget>(null)
   const [bookmarkDragIndex, setBookmarkDragIndex] = useState<number | null>(null)
   const [startURLDragIndex, setStartURLDragIndex] = useState<number | null>(null)
+  const dirtyRef = useRef({ startUrls: false, bookmarks: false })
 
-  const load = async () => {
+  const load = useCallback(async (options: { preserveDirty?: boolean } = {}) => {
     const [startURLs, bookmarks] = await Promise.all([
       fetchDefaultStartURLs(),
       fetchBookmarks(),
     ])
-    setStartURLItems(startURLs)
-    setBookmarkItems(bookmarks)
-  }
+    if (!options.preserveDirty || !dirtyRef.current.startUrls) {
+      setStartURLItems(startURLs)
+    }
+    if (!options.preserveDirty || !dirtyRef.current.bookmarks) {
+      setBookmarkItems(bookmarks)
+    }
+  }, [])
 
   useEffect(() => {
     void load()
     const offDefaultsUpdated = onRuntimeEvent('browser:defaults:updated', () => {
-      void load()
+      void load({ preserveDirty: true })
     })
     return () => {
       offDefaultsUpdated?.()
     }
-  }, [])
+  }, [load])
+
+  useVisibleRefresh(() => load({ preserveDirty: true }), 2000, !savingBookmarks && !savingStartURLs)
+
+  const updateStartURLItems = (items: BrowserStartURL[]) => {
+    dirtyRef.current.startUrls = true
+    setStartURLItems(items)
+  }
+
+  const updateBookmarkItems = (items: BrowserBookmark[]) => {
+    dirtyRef.current.bookmarks = true
+    setBookmarkItems(items)
+  }
 
   const validateItems = (items: ManagedItem[]) => {
     const valid = items.filter(i => i.name.trim() && i.url.trim())
@@ -151,6 +169,8 @@ export function BookmarkSettingsPage({ embedded = false }: { embedded?: boolean 
     setSavingStartURLs(true)
     try {
       await saveDefaultStartURLs(startURLItems)
+      dirtyRef.current.startUrls = false
+      setStartURLItems(await fetchDefaultStartURLs())
       toast.success('默认打开页已保存，下次启动实例时生效')
     } finally {
       setSavingStartURLs(false)
@@ -162,6 +182,8 @@ export function BookmarkSettingsPage({ embedded = false }: { embedded?: boolean 
     setSavingBookmarks(true)
     try {
       await saveBookmarks(bookmarkItems)
+      dirtyRef.current.bookmarks = false
+      setBookmarkItems(await fetchBookmarks())
       toast.success('书签已保存，下次新建实例时生效')
     } finally {
       setSavingBookmarks(false)
@@ -171,11 +193,13 @@ export function BookmarkSettingsPage({ embedded = false }: { embedded?: boolean 
   const handleReset = async () => {
     if (resetTarget === 'startUrls') {
       await resetDefaultStartURLs()
+      dirtyRef.current.startUrls = false
       setStartURLItems(await fetchDefaultStartURLs())
       toast.success('已恢复默认打开页')
     }
     if (resetTarget === 'bookmarks') {
       await resetBookmarks()
+      dirtyRef.current.bookmarks = false
       setBookmarkItems(await fetchBookmarks())
       toast.success('已恢复默认书签')
     }
@@ -208,7 +232,7 @@ export function BookmarkSettingsPage({ embedded = false }: { embedded?: boolean 
         </div>
         <EditableURLList
           items={startURLItems}
-          onChange={setStartURLItems}
+          onChange={updateStartURLItems}
           addLabel="添加打开页"
           emptyText="暂无默认打开页，点击下方按钮添加"
           namePlaceholder="名称，如 IPPure"
@@ -227,7 +251,7 @@ export function BookmarkSettingsPage({ embedded = false }: { embedded?: boolean 
         </div>
         <EditableURLList
           items={bookmarkItems}
-          onChange={setBookmarkItems}
+          onChange={updateBookmarkItems}
           addLabel="添加书签"
           emptyText="暂无书签，点击下方按钮添加"
           namePlaceholder="名称，如 Google"

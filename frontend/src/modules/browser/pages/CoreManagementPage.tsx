@@ -6,6 +6,7 @@ import type { BrowserCore, BrowserCoreInput, BrowserCoreValidateResult, BrowserS
 import { fetchBrowserCores, saveBrowserCore, deleteBrowserCore, setDefaultBrowserCore, validateBrowserCorePath, openCorePath, fetchBrowserSettings, saveBrowserSettings, fetchCoreExtendedInfo, scanBrowserCores, BrowserCoreDownload, fetchBrowserProxies, onBrowserCoreDownloadProgress, cancelBrowserCoreDownload, renameBrowserCorePath } from '../api'
 import { onRuntimeEvent, openExternalURL } from '../../../shared/backend/runtime'
 import { resolveActionErrorMessage } from '../utils/actionErrors'
+import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
 
 interface CoreDisplayInfo {
   coreId: string
@@ -55,6 +56,19 @@ type GithubAssetPayload = {
 const FINGERPRINT_CHROMIUM_RELEASES_API = 'https://api.github.com/repos/adryfish/fingerprint-chromium/releases'
 const FINGERPRINT_CHROMIUM_RELEASES_PAGE = 'https://github.com/adryfish/fingerprint-chromium/releases'
 const CORE_DOWNLOAD_TERMINAL_PHASES = new Set(['done', 'error', 'cancelled'])
+
+type BrowserSettingsField = keyof BrowserSettings
+
+function settingsToForm(settings: BrowserSettings) {
+  return {
+    userDataRoot: settings.userDataRoot,
+    defaultProxy: settings.defaultProxy,
+    defaultFingerprintArgs: (settings.defaultFingerprintArgs || []).join('\n'),
+    defaultLaunchArgs: (settings.defaultLaunchArgs || []).join('\n'),
+    startReadyTimeoutMs: settings.startReadyTimeoutMs,
+    startStableWindowMs: settings.startStableWindowMs,
+  }
+}
 
 const isCoreDownloadActive = (progress: CoreDownloadProgressInfo | null) => {
   return !!progress && !CORE_DOWNLOAD_TERMINAL_PHASES.has(progress.phase)
@@ -111,6 +125,7 @@ export function CoreManagementPage() {
     startStableWindowMs: 1200,
   })
   const [savingSettings, setSavingSettings] = useState(false)
+  const dirtySettingsFieldsRef = useRef<Set<BrowserSettingsField>>(new Set())
 
   // 编辑弹窗状态
   const [editModalOpen, setEditModalOpen] = useState(false)
@@ -182,6 +197,40 @@ export function CoreManagementPage() {
     }
   }, [])
 
+  const applySettingsSnapshot = useCallback((settingsData: BrowserSettings, preserveDirty = false) => {
+    setSettings(settingsData)
+    if (!settingsModalOpen) return
+    const latestForm = settingsToForm(settingsData)
+    const dirtyFields = dirtySettingsFieldsRef.current
+    setSettingsForm(prev => {
+      if (!preserveDirty || dirtyFields.size === 0) return latestForm
+      const next = { ...latestForm }
+      dirtyFields.forEach(field => {
+        switch (field) {
+          case 'userDataRoot':
+            next.userDataRoot = prev.userDataRoot
+            break
+          case 'defaultProxy':
+            next.defaultProxy = prev.defaultProxy
+            break
+          case 'defaultFingerprintArgs':
+            next.defaultFingerprintArgs = prev.defaultFingerprintArgs
+            break
+          case 'defaultLaunchArgs':
+            next.defaultLaunchArgs = prev.defaultLaunchArgs
+            break
+          case 'startReadyTimeoutMs':
+            next.startReadyTimeoutMs = prev.startReadyTimeoutMs
+            break
+          case 'startStableWindowMs':
+            next.startStableWindowMs = prev.startStableWindowMs
+            break
+        }
+      })
+      return next
+    })
+  }, [settingsModalOpen])
+
   const loadData = async () => {
     setLoading(true)
     try {
@@ -192,7 +241,7 @@ export function CoreManagementPage() {
         fetchCoreExtendedInfo(),
       ])
 
-      setSettings(settingsData)
+      applySettingsSnapshot(settingsData, true)
       setCores(coreList)
 
       // 创建扩展信息映射
@@ -234,6 +283,11 @@ export function CoreManagementPage() {
       return { ...prev, proxyMode: 'system', proxyId: '' }
     })
   }
+
+  useVisibleRefresh(() => {
+    if (!settingsModalOpen) return
+    return fetchBrowserSettings().then(data => applySettingsSnapshot(data, true))
+  }, 2000, settingsModalOpen && !savingSettings)
 
   // 防抖验证路径
   const validatePath = useCallback(async (path: string) => {
@@ -594,16 +648,17 @@ export function CoreManagementPage() {
   }
 
   // 打开设置编辑弹窗
-  const handleEditSettings = () => {
-    setSettingsForm({
-      userDataRoot: settings.userDataRoot,
-      defaultProxy: settings.defaultProxy,
-      defaultFingerprintArgs: settings.defaultFingerprintArgs.join('\n'),
-      defaultLaunchArgs: settings.defaultLaunchArgs.join('\n'),
-      startReadyTimeoutMs: settings.startReadyTimeoutMs,
-      startStableWindowMs: settings.startStableWindowMs,
-    })
+  const handleEditSettings = async () => {
+    dirtySettingsFieldsRef.current.clear()
+    const latestSettings = await fetchBrowserSettings()
+    setSettings(latestSettings)
+    setSettingsForm(settingsToForm(latestSettings))
     setSettingsModalOpen(true)
+  }
+
+  const updateSettingsFormField = (field: BrowserSettingsField, value: string | number) => {
+    dirtySettingsFieldsRef.current.add(field)
+    setSettingsForm(prev => ({ ...prev, [field]: value }))
   }
 
   // 保存设置
@@ -619,6 +674,7 @@ export function CoreManagementPage() {
         startStableWindowMs: Math.max(0, Number(settingsForm.startStableWindowMs) || 1200),
       }
       await saveBrowserSettings(newSettings)
+      dirtySettingsFieldsRef.current.clear()
       setSettings(newSettings)
       setSettingsModalOpen(false)
       toast.success('设置已保存')
@@ -734,21 +790,21 @@ export function CoreManagementPage() {
           <FormItem label="用户数据根目录">
             <Input
               value={settingsForm.userDataRoot}
-              onChange={e => setSettingsForm(prev => ({ ...prev, userDataRoot: e.target.value }))}
+              onChange={e => updateSettingsFormField('userDataRoot', e.target.value)}
               placeholder="例如：data"
             />
           </FormItem>
           <FormItem label="默认代理配置">
             <Input
               value={settingsForm.defaultProxy}
-              onChange={e => setSettingsForm(prev => ({ ...prev, defaultProxy: e.target.value }))}
+              onChange={e => updateSettingsFormField('defaultProxy', e.target.value)}
               placeholder="例如：http://127.0.0.1:7890"
             />
           </FormItem>
           <FormItem label="默认指纹参数">
             <Textarea
               value={settingsForm.defaultFingerprintArgs}
-              onChange={e => setSettingsForm(prev => ({ ...prev, defaultFingerprintArgs: e.target.value }))}
+              onChange={e => updateSettingsFormField('defaultFingerprintArgs', e.target.value)}
               rows={4}
               placeholder="每行一个参数，如 --fingerprint-brand=Chrome"
             />
@@ -756,7 +812,7 @@ export function CoreManagementPage() {
           <FormItem label="默认启动参数">
             <Textarea
               value={settingsForm.defaultLaunchArgs}
-              onChange={e => setSettingsForm(prev => ({ ...prev, defaultLaunchArgs: e.target.value }))}
+              onChange={e => updateSettingsFormField('defaultLaunchArgs', e.target.value)}
               rows={4}
               placeholder="每行一个参数，如 --disable-sync"
             />
@@ -768,7 +824,7 @@ export function CoreManagementPage() {
                 min={1000}
                 step={500}
                 value={settingsForm.startReadyTimeoutMs}
-                onChange={e => setSettingsForm(prev => ({ ...prev, startReadyTimeoutMs: Math.max(1000, Number(e.target.value) || 3000) }))}
+                onChange={e => updateSettingsFormField('startReadyTimeoutMs', Math.max(1000, Number(e.target.value) || 3000))}
                 placeholder="3000"
               />
             </FormItem>
@@ -778,7 +834,7 @@ export function CoreManagementPage() {
                 min={0}
                 step={100}
                 value={settingsForm.startStableWindowMs}
-                onChange={e => setSettingsForm(prev => ({ ...prev, startStableWindowMs: Math.max(0, Number(e.target.value) || 1200) }))}
+                onChange={e => updateSettingsFormField('startStableWindowMs', Math.max(0, Number(e.target.value) || 1200))}
                 placeholder="1200"
               />
             </FormItem>

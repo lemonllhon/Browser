@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from '../../../shared/components'
 import { onRuntimeEvent } from '../../../shared/backend/runtime'
 import type { BrowserCore, BrowserCoreInput, BrowserCoreValidateResult, BrowserSettings } from '../types'
@@ -11,6 +11,7 @@ import {
   validateBrowserCorePath,
 } from '../api'
 import { resolveActionErrorMessage } from '../utils/actionErrors'
+import { useVisibleRefresh } from './useVisibleRefresh'
 
 const DEFAULT_BROWSER_SETTINGS: BrowserSettings = {
   userDataRoot: 'data',
@@ -33,6 +34,8 @@ type UseBrowserCoreSettingsInput = {
   loadCores: () => Promise<void>
 }
 
+type BrowserSettingsField = keyof BrowserSettings
+
 export function useBrowserCoreSettings({ cores, loadCores }: UseBrowserCoreSettingsInput) {
   const [settingsModalOpen, setSettingsModalOpen] = useState(false)
   const [settings, setSettings] = useState<BrowserSettings>(DEFAULT_BROWSER_SETTINGS)
@@ -43,18 +46,35 @@ export function useBrowserCoreSettings({ cores, loadCores }: UseBrowserCoreSetti
   const [coreForm, setCoreForm] = useState<BrowserCoreInput>(DEFAULT_CORE_FORM)
   const [coreValidation, setCoreValidation] = useState<BrowserCoreValidateResult | null>(null)
   const [savingCore, setSavingCore] = useState(false)
+  const dirtySettingsFieldsRef = useRef<Set<BrowserSettingsField>>(new Set())
 
-  const loadSettings = async () => {
+  const applySettingsSnapshot = useCallback((data: BrowserSettings, preserveDirty = false) => {
+    const dirtyFields = dirtySettingsFieldsRef.current
+    setSettings(prev => {
+      if (!preserveDirty || dirtyFields.size === 0) return data
+      const next = { ...data }
+      dirtyFields.forEach(field => {
+        next[field] = prev[field] as never
+      })
+      return next
+    })
+    if (!preserveDirty || !dirtyFields.has('defaultFingerprintArgs')) {
+      setFingerprintText((data.defaultFingerprintArgs || []).join('\n'))
+    }
+    if (!preserveDirty || !dirtyFields.has('defaultLaunchArgs')) {
+      setLaunchText((data.defaultLaunchArgs || []).join('\n'))
+    }
+  }, [])
+
+  const loadSettings = useCallback(async (preserveDirty = false) => {
     const data = await fetchBrowserSettings()
-    setSettings(data)
-    setFingerprintText((data.defaultFingerprintArgs || []).join('\n'))
-    setLaunchText((data.defaultLaunchArgs || []).join('\n'))
-  }
+    applySettingsSnapshot(data, preserveDirty)
+  }, [applySettingsSnapshot])
 
   useEffect(() => {
     const offSettingsUpdated = onRuntimeEvent('browser:settings:updated', () => {
       if (settingsModalOpen) {
-        void loadSettings()
+        void loadSettings(true)
       }
     })
     const offCoresUpdated = onRuntimeEvent('browser:cores:updated', () => {
@@ -64,9 +84,15 @@ export function useBrowserCoreSettings({ cores, loadCores }: UseBrowserCoreSetti
       offSettingsUpdated?.()
       offCoresUpdated?.()
     }
-  }, [settingsModalOpen, loadCores])
+  }, [settingsModalOpen, loadCores, loadSettings])
+
+  useVisibleRefresh(() => {
+    if (!settingsModalOpen) return
+    return loadSettings(true)
+  }, 2000, settingsModalOpen && !savingSettings)
 
   const handleOpenSettings = async () => {
+    dirtySettingsFieldsRef.current.clear()
     await Promise.all([loadSettings(), loadCores()])
     setSettingsModalOpen(true)
   }
@@ -79,6 +105,7 @@ export function useBrowserCoreSettings({ cores, loadCores }: UseBrowserCoreSetti
         defaultFingerprintArgs: fingerprintText.split('\n').map(value => value.trim()).filter(Boolean),
         defaultLaunchArgs: launchText.split('\n').map(value => value.trim()).filter(Boolean),
       })
+      dirtySettingsFieldsRef.current.clear()
       toast.success('配置已保存')
       setSettingsModalOpen(false)
     } catch (error: unknown) {
@@ -87,6 +114,21 @@ export function useBrowserCoreSettings({ cores, loadCores }: UseBrowserCoreSetti
       setSavingSettings(false)
     }
   }
+
+  const handleSettingsFieldChange = useCallback(<K extends BrowserSettingsField>(field: K, value: BrowserSettings[K]) => {
+    dirtySettingsFieldsRef.current.add(field)
+    setSettings(prev => ({ ...prev, [field]: value }))
+  }, [])
+
+  const handleFingerprintTextChange = useCallback((value: string) => {
+    dirtySettingsFieldsRef.current.add('defaultFingerprintArgs')
+    setFingerprintText(value)
+  }, [])
+
+  const handleLaunchTextChange = useCallback((value: string) => {
+    dirtySettingsFieldsRef.current.add('defaultLaunchArgs')
+    setLaunchText(value)
+  }, [])
 
   const handleOpenCoreModal = (core?: BrowserCore) => {
     setCoreForm(core ? { ...core } : DEFAULT_CORE_FORM)
@@ -153,8 +195,9 @@ export function useBrowserCoreSettings({ cores, loadCores }: UseBrowserCoreSetti
     savingCore,
     setSettingsModalOpen,
     setSettings,
-    setFingerprintText,
-    setLaunchText,
+    setFingerprintText: handleFingerprintTextChange,
+    setLaunchText: handleLaunchTextChange,
+    handleSettingsFieldChange,
     setCoreModalOpen,
     setCoreForm,
     setCoreValidation,

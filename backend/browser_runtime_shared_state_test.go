@@ -227,6 +227,7 @@ func TestBrowserProfileListRefreshesProfileConfigFromDiskWithoutDAO(t *testing.T
 			ProfileName: "Fresh",
 			CoreId:      "default",
 			Tags:        []string{"from-disk"},
+			GroupId:     "group-from-disk",
 		},
 	}
 	if err := latest.Save(app.resolveAppPath("config.yaml")); err != nil {
@@ -241,7 +242,7 @@ func TestBrowserProfileListRefreshesProfileConfigFromDiskWithoutDAO(t *testing.T
 	if got.ProfileId != "fresh-profile" || got.ProfileName != "Fresh" {
 		t.Fatalf("expected fresh profile from disk, got %#v", got)
 	}
-	if got.CoreId != "" || len(got.Tags) != 1 || got.Tags[0] != "from-disk" {
+	if got.CoreId != "" || len(got.Tags) != 1 || got.Tags[0] != "from-disk" || got.GroupId != "group-from-disk" {
 		t.Fatalf("expected normalized profile config from disk, got %#v", got)
 	}
 	if _, exists := app.browserMgr.Profiles["stale-profile"]; exists {
@@ -349,6 +350,25 @@ func TestBrowserProfileWriteRejectsDeletedSharedGroup(t *testing.T) {
 	}
 }
 
+func TestBrowserProfileUpdateSavesOnlyTargetProfile(t *testing.T) {
+	app := newRuntimeStateTestApp(t.TempDir())
+	dao := &profileDAOListStub{profiles: []*BrowserProfile{
+		{ProfileId: "profile-1", ProfileName: "One", Tags: []string{"one"}},
+		{ProfileId: "profile-2", ProfileName: "Two", Tags: []string{"two"}},
+	}}
+	app.browserMgr.ProfileDAO = dao
+
+	if _, err := app.BrowserProfileUpdate("profile-1", BrowserProfileInput{ProfileName: "One Updated", Tags: []string{"one-updated"}}); err != nil {
+		t.Fatalf("BrowserProfileUpdate failed: %v", err)
+	}
+	if len(dao.upsertedIDs) != 1 || dao.upsertedIDs[0] != "profile-1" {
+		t.Fatalf("expected only updated profile to be upserted, got %v", dao.upsertedIDs)
+	}
+	if dao.profiles[1].ProfileName != "Two" || len(dao.profiles[1].Tags) != 1 || dao.profiles[1].Tags[0] != "two" {
+		t.Fatalf("expected unrelated profile to remain untouched, got %#v", dao.profiles[1])
+	}
+}
+
 func TestReconcileProfileProxyBindingsRefreshesProfilesBeforeWriting(t *testing.T) {
 	app := newRuntimeStateTestApp(t.TempDir())
 	app.config.Browser.Proxies = []BrowserProxy{
@@ -370,6 +390,14 @@ func TestReconcileProfileProxyBindingsRefreshesProfilesBeforeWriting(t *testing.
 			ProxyBindSourceID: "source-a",
 			ProxyBindName:     "Fresh Proxy",
 		},
+		{
+			ProfileId:          "profile-2",
+			ProfileName:        "Unchanged elsewhere",
+			ProxyId:            "proxy-fresh",
+			ProxyConfig:        "http://127.0.0.1:18081",
+			ProxyBindName:      "Fresh Proxy",
+			ProxyBindUpdatedAt: "2026-06-07T00:00:00Z",
+		},
 	}}
 	app.browserMgr.ProfileDAO = dao
 
@@ -384,6 +412,9 @@ func TestReconcileProfileProxyBindingsRefreshesProfilesBeforeWriting(t *testing.
 	latest := app.browserMgr.Profiles["profile-1"]
 	if latest == nil || latest.ProxyId != "proxy-fresh" {
 		t.Fatalf("expected latest shared profile to be rebound to fresh proxy, got %#v", latest)
+	}
+	if dao.profiles[1].ProfileName != "Unchanged elsewhere" {
+		t.Fatalf("expected unrelated profile to remain untouched, got %#v", dao.profiles[1])
 	}
 }
 

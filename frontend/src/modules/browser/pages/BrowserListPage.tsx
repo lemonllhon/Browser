@@ -110,9 +110,9 @@ export function BrowserListPage() {
     coreValidation,
     savingCore,
     setSettingsModalOpen,
-    setSettings,
     setFingerprintText,
     setLaunchText,
+    handleSettingsFieldChange,
     setCoreModalOpen,
     setCoreForm,
     setCoreValidation,
@@ -664,7 +664,7 @@ export function BrowserListPage() {
         coreColumns={coreColumns}
         onClose={() => setSettingsModalOpen(false)}
         onSave={handleSaveSettings}
-        onSettingsChange={setSettings}
+        onSettingsFieldChange={handleSettingsFieldChange}
         onFingerprintTextChange={setFingerprintText}
         onLaunchTextChange={setLaunchText}
         onOpenCoreModal={() => handleOpenCoreModal()}

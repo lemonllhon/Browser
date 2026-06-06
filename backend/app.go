@@ -2007,6 +2007,7 @@ func (a *App) migrateToSQLite() {
 					LaunchArgs:         pc.LaunchArgs,
 					Tags:               pc.Tags,
 					Keywords:           pc.Keywords,
+					GroupId:            strings.TrimSpace(pc.GroupId),
 					CreatedAt:          pc.CreatedAt,
 					UpdatedAt:          pc.UpdatedAt,
 				}

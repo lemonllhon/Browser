@@ -90,7 +90,11 @@ func (a *App) browserInstanceStartInternal(profileId string, extraLaunchArgs []s
 
 	proxyChanged := a.browserMgr.ApplyDefaults(profile)
 	if proxyChanged {
-		_ = a.browserMgr.SaveProfiles()
+		if a.browserMgr.ProfileDAO != nil {
+			_ = a.browserMgr.ProfileDAO.Upsert(profile)
+		} else {
+			_ = a.browserMgr.SaveProfiles()
+		}
 	}
 
 	chromeBinaryPath, err := a.browserMgr.ResolveChromeBinary(profile)

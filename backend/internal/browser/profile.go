@@ -161,6 +161,17 @@ func (m *Manager) SaveProfiles() error {
 	return nil
 }
 
+func (m *Manager) saveProfile(profile *Profile) error {
+	if profile == nil {
+		return nil
+	}
+	if m.ProfileDAO != nil {
+		profile.CoreId = normalizeProfileCoreID(profile.CoreId)
+		return m.ProfileDAO.Upsert(profile)
+	}
+	return m.SaveProfiles()
+}
+
 // List 获取配置列表
 func (m *Manager) List() []Profile {
 	log := logger.New("Browser")
@@ -295,7 +306,7 @@ func (m *Manager) Create(input ProfileInput) (*Profile, error) {
 	}
 	m.Profiles[profileId] = profile
 	log.Info("浏览器配置创建", logger.F("profile_id", profileId), logger.F("profile_name", input.ProfileName))
-	if err := m.SaveProfiles(); err != nil {
+	if err := m.saveProfile(profile); err != nil {
 		return nil, err
 	}
 	if m.CodeProvider != nil {
@@ -343,7 +354,7 @@ func (m *Manager) Update(profileId string, input ProfileInput) (*Profile, error)
 	profile.GroupId = strings.TrimSpace(input.GroupId)
 	profile.UpdatedAt = time.Now().Format(time.RFC3339)
 	log.Info("浏览器配置更新", logger.F("profile_id", profileId), logger.F("profile_name", input.ProfileName))
-	if err := m.SaveProfiles(); err != nil {
+	if err := m.saveProfile(profile); err != nil {
 		return nil, err
 	}
 	return profile, nil
@@ -486,7 +497,7 @@ func (m *Manager) Copy(profileId string, newName string) (*Profile, error) {
 	m.Profiles[newId] = profile
 	log.Info("实例复制成功", logger.F("src_id", profileId), logger.F("new_id", newId), logger.F("new_name", profileName))
 
-	if err := m.SaveProfiles(); err != nil {
+	if err := m.saveProfile(profile); err != nil {
 		return nil, err
 	}
 
@@ -512,7 +523,7 @@ func (m *Manager) SetKeywords(profileId string, keywords []string) (*Profile, er
 	profile.Keywords = append([]string{}, keywords...)
 	profile.UpdatedAt = time.Now().Format(time.RFC3339)
 	log.Info("关键字更新", logger.F("profile_id", profileId))
-	if err := m.SaveProfiles(); err != nil {
+	if err := m.saveProfile(profile); err != nil {
 		return nil, err
 	}
 	return profile, nil

@@ -313,6 +313,12 @@ func (a *App) resetStoppedProfileFingerprint(profileId string) error {
 	}
 	profile.FingerprintArgs = nextArgs
 	profile.UpdatedAt = time.Now().Format(time.RFC3339)
+	if a.browserMgr.ProfileDAO != nil {
+		if err := a.browserMgr.ProfileDAO.Upsert(profile); err != nil {
+			return err
+		}
+		return nil
+	}
 	if err := a.browserMgr.SaveProfiles(); err != nil {
 		return err
 	}
