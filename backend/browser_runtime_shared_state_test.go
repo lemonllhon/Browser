@@ -77,6 +77,88 @@ func TestDashboardAndRunningInstancesReconcileSharedRuntimeState(t *testing.T) {
 	}
 }
 
+func TestDashboardStatsUsesLatestSharedCoreAndProxyData(t *testing.T) {
+	app := newRuntimeStateTestApp(t.TempDir())
+	app.config.Browser.Cores = []BrowserCore{
+		{CoreId: "stale-core", CoreName: "Stale Core"},
+	}
+	app.config.Browser.Proxies = []BrowserProxy{
+		{ProxyId: "stale-proxy", ProxyName: "Stale Proxy", ProxyConfig: "http://127.0.0.1:18080"},
+	}
+	app.browserMgr.CoreDAO = &coreDAOListStub{cores: []BrowserCore{
+		{CoreId: "core-a", CoreName: "Core A"},
+		{CoreId: "core-b", CoreName: "Core B"},
+	}}
+	app.browserMgr.ProxyDAO = &proxyDAOListStub{proxies: []BrowserProxy{
+		{ProxyId: "proxy-a", ProxyName: "Proxy A", ProxyConfig: "http://127.0.0.1:18081"},
+		{ProxyId: "proxy-b", ProxyName: "Proxy B", ProxyConfig: "http://127.0.0.1:18082"},
+		{ProxyId: "proxy-c", ProxyName: "Proxy C", ProxyConfig: "http://127.0.0.1:18083"},
+	}}
+
+	stats := app.GetDashboardStats()
+	if stats["coreCount"] != 2 || stats["proxyCount"] != 3 {
+		t.Fatalf("expected dashboard counts from latest DAO data, got %#v", stats)
+	}
+	if len(app.config.Browser.Cores) != 2 || len(app.config.Browser.Proxies) != 3 {
+		t.Fatalf("expected latest DAO data to refresh config cache, cores=%#v proxies=%#v", app.config.Browser.Cores, app.config.Browser.Proxies)
+	}
+}
+
+func TestBrowserProxyListUsesLatestSharedStore(t *testing.T) {
+	app := newRuntimeStateTestApp(t.TempDir())
+	app.config.Browser.Proxies = []BrowserProxy{
+		{ProxyId: "stale-proxy", ProxyName: "Stale Proxy", ProxyConfig: "http://127.0.0.1:18080"},
+	}
+	app.browserMgr.ProxyDAO = &proxyDAOListStub{proxies: []BrowserProxy{
+		{ProxyId: "fresh-proxy", ProxyName: "Fresh Proxy", ProxyConfig: "http://127.0.0.1:18081", GroupName: "fresh"},
+	}}
+
+	list := app.BrowserProxyList()
+	if len(list) != 1 || list[0].ProxyId != "fresh-proxy" {
+		t.Fatalf("expected proxy list from latest DAO data, got %#v", list)
+	}
+	if len(app.getLatestProxies()) != 1 || app.config.Browser.Proxies[0].ProxyId != "fresh-proxy" {
+		t.Fatalf("expected proxy cache to be refreshed from DAO, got %#v", app.config.Browser.Proxies)
+	}
+}
+
+func TestLicenseStatusRefreshesSharedProfileStore(t *testing.T) {
+	app := newRuntimeStateTestApp(t.TempDir())
+	app.browserMgr.Profiles["stale-profile"] = &BrowserProfile{ProfileId: "stale-profile", ProfileName: "Stale"}
+	app.browserMgr.ProfileDAO = &profileDAOListStub{profiles: []*BrowserProfile{
+		{ProfileId: "profile-a", ProfileName: "Profile A"},
+		{ProfileId: "profile-b", ProfileName: "Profile B"},
+	}}
+
+	status := app.GetLicenseStatus()
+	if status.UsedCount != 2 {
+		t.Fatalf("expected license status to count latest shared profiles, got %#v", status)
+	}
+	if _, exists := app.browserMgr.Profiles["stale-profile"]; exists {
+		t.Fatalf("expected stale cached profile to be removed")
+	}
+}
+
+func TestBrowserCoreExtendedInfoRefreshesSharedProfileStore(t *testing.T) {
+	app := newRuntimeStateTestApp(t.TempDir())
+	app.browserMgr.Profiles["stale-profile"] = &BrowserProfile{ProfileId: "stale-profile", CoreId: "stale-core"}
+	app.browserMgr.ProfileDAO = &profileDAOListStub{profiles: []*BrowserProfile{
+		{ProfileId: "profile-a", CoreId: "core-a"},
+		{ProfileId: "profile-b"},
+	}}
+	app.browserMgr.CoreDAO = &coreDAOListStub{cores: []BrowserCore{
+		{CoreId: "core-a", CoreName: "Core A", IsDefault: true},
+	}}
+
+	info := app.BrowserCoreExtendedInfo()
+	if len(info) != 1 {
+		t.Fatalf("expected one core info item, got %#v", info)
+	}
+	if info[0].CoreId != "core-a" || info[0].InstanceCount != 2 {
+		t.Fatalf("expected extended info to count latest shared profiles, got %#v", info)
+	}
+}
+
 func TestBrowserProfileListRefreshesProfileConfigFromStore(t *testing.T) {
 	ln := mustListenLoopback(t)
 	defer ln.Close()
@@ -126,6 +208,43 @@ func TestBrowserProfileListRefreshesProfileConfigFromStore(t *testing.T) {
 	}
 	if _, exists := byID["deleted-profile"]; exists {
 		t.Fatalf("expected deleted profile to disappear: %#v", profiles)
+	}
+}
+
+func TestBrowserProfileListRefreshesProfileConfigFromDiskWithoutDAO(t *testing.T) {
+	appRoot := t.TempDir()
+	app := newRuntimeStateTestApp(appRoot)
+	app.browserMgr.Profiles["stale-profile"] = &BrowserProfile{
+		ProfileId:   "stale-profile",
+		ProfileName: "Stale",
+	}
+
+	latest := config.DefaultConfig()
+	latest.Browser.Profiles = []config.BrowserProfileConfig{
+		{
+			ProfileId:   "fresh-profile",
+			ProfileName: "Fresh",
+			CoreId:      "default",
+			Tags:        []string{"from-disk"},
+		},
+	}
+	if err := latest.Save(app.resolveAppPath("config.yaml")); err != nil {
+		t.Fatalf("failed to save config: %v", err)
+	}
+
+	profiles := app.BrowserProfileList()
+	if len(profiles) != 1 {
+		t.Fatalf("expected refreshed profile list from disk, got %#v", profiles)
+	}
+	got := profiles[0]
+	if got.ProfileId != "fresh-profile" || got.ProfileName != "Fresh" {
+		t.Fatalf("expected fresh profile from disk, got %#v", got)
+	}
+	if got.CoreId != "" || len(got.Tags) != 1 || got.Tags[0] != "from-disk" {
+		t.Fatalf("expected normalized profile config from disk, got %#v", got)
+	}
+	if _, exists := app.browserMgr.Profiles["stale-profile"]; exists {
+		t.Fatalf("expected stale cached profile to be removed")
 	}
 }
 
@@ -238,3 +357,42 @@ func (s *profileDAOListStub) Upsert(profile *BrowserProfile) error {
 func (s *profileDAOListStub) Delete(profileId string) error {
 	return nil
 }
+
+type coreDAOListStub struct {
+	cores []BrowserCore
+}
+
+func (s *coreDAOListStub) List() ([]BrowserCore, error) {
+	return append([]BrowserCore{}, s.cores...), nil
+}
+
+func (s *coreDAOListStub) Upsert(BrowserCore) error { return nil }
+func (s *coreDAOListStub) Delete(string) error      { return nil }
+func (s *coreDAOListStub) SetDefault(string) error  { return nil }
+
+type proxyDAOListStub struct {
+	proxies []BrowserProxy
+}
+
+func (s *proxyDAOListStub) List() ([]BrowserProxy, error) {
+	return append([]BrowserProxy{}, s.proxies...), nil
+}
+
+func (s *proxyDAOListStub) ListByGroup(groupName string) ([]BrowserProxy, error) {
+	result := make([]BrowserProxy, 0)
+	for _, item := range s.proxies {
+		if item.GroupName == groupName {
+			result = append(result, item)
+		}
+	}
+	return result, nil
+}
+
+func (s *proxyDAOListStub) ListGroups() ([]string, error) { return nil, nil }
+func (s *proxyDAOListStub) Upsert(BrowserProxy) error     { return nil }
+func (s *proxyDAOListStub) Delete(string) error           { return nil }
+func (s *proxyDAOListStub) DeleteAll() error              { return nil }
+func (s *proxyDAOListStub) UpdateSpeedResult(string, bool, int64, string) error {
+	return nil
+}
+func (s *proxyDAOListStub) UpdateIPHealthResult(string, string) error { return nil }

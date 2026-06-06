@@ -19,8 +19,10 @@ type LicenseStatus struct {
 
 // GetLicenseStatus 获取当前授权状态（给前端使用）
 func (a *App) GetLicenseStatus() LicenseStatus {
+	_ = a.refreshConfigCacheFromDiskIfPresent()
 	profilesCount := 0
 	if a.browserMgr != nil {
+		a.refreshBrowserProfileConfigCacheFromStore()
 		profilesCount = len(a.browserMgr.List())
 	}
 	usedKeys := a.config.App.UsedCDKeys

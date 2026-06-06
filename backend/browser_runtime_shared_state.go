@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"ant-chrome/backend/internal/config"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -100,13 +101,25 @@ func (a *App) reconcileBrowserProfileRuntimeStates() {
 }
 
 func (a *App) refreshBrowserProfileConfigCacheFromStore() {
-	if a == nil || a.browserMgr == nil || a.browserMgr.ProfileDAO == nil {
+	if a == nil || a.browserMgr == nil {
 		return
 	}
 
-	profiles, err := a.browserMgr.ProfileDAO.List()
-	if err != nil {
-		return
+	var profiles []*BrowserProfile
+	if a.browserMgr.ProfileDAO != nil {
+		var err error
+		profiles, err = a.browserMgr.ProfileDAO.List()
+		if err != nil {
+			return
+		}
+	} else {
+		if _, err := os.Stat(a.resolveAppPath("config.yaml")); err != nil {
+			return
+		}
+		if err := a.refreshConfigCacheFromDiskIfPresent(); err != nil || a.config == nil {
+			return
+		}
+		profiles = browserProfilesFromConfig(a.config.Browser.Profiles)
 	}
 
 	next := make(map[string]*BrowserProfile, len(profiles))
@@ -141,6 +154,67 @@ func (a *App) refreshBrowserProfileConfigCacheFromStore() {
 		if a.launchServer != nil {
 			a.launchServer.ClearActiveProfile(profileID)
 		}
+	}
+}
+
+func browserProfilesFromConfig(items []config.BrowserProfileConfig) []*BrowserProfile {
+	now := time.Now().Format(time.RFC3339)
+	profiles := make([]*BrowserProfile, 0, len(items))
+	for _, item := range items {
+		profileID := strings.TrimSpace(item.ProfileId)
+		if profileID == "" {
+			continue
+		}
+		createdAt := strings.TrimSpace(item.CreatedAt)
+		if createdAt == "" {
+			createdAt = now
+		}
+		updatedAt := strings.TrimSpace(item.UpdatedAt)
+		if updatedAt == "" {
+			updatedAt = createdAt
+		}
+		profiles = append(profiles, &BrowserProfile{
+			ProfileId:                    profileID,
+			ProfileName:                  item.ProfileName,
+			UserDataDir:                  item.UserDataDir,
+			CoreId:                       normalizeBrowserProfileCoreID(item.CoreId),
+			FingerprintArgs:              append([]string{}, item.FingerprintArgs...),
+			ProxyId:                      item.ProxyId,
+			ProxyConfig:                  item.ProxyConfig,
+			ProxyBindSourceID:            item.ProxyBindSourceID,
+			ProxyBindSourceURL:           item.ProxyBindSourceURL,
+			ProxyBindName:                item.ProxyBindName,
+			ProxyBindUpdatedAt:           item.ProxyBindUpdatedAt,
+			AutoProxySwitchEnabled:       item.AutoProxySwitchEnabled,
+			AutoProxySwitchGroupName:     strings.TrimSpace(item.AutoProxySwitchGroupName),
+			AutoProxySwitchMode:          normalizeBrowserProfileAutoProxySwitchMode(item.AutoProxySwitchMode),
+			AutoProxySwitchIntervalM:     item.AutoProxySwitchIntervalM,
+			AutoProxySwitchRotateByGroup: item.AutoProxySwitchRotateByGroup,
+			AutoProxySwitchLastProxyId:   item.AutoProxySwitchLastProxyId,
+			LaunchArgs:                   append([]string{}, item.LaunchArgs...),
+			Tags:                         append([]string{}, item.Tags...),
+			Keywords:                     append([]string{}, item.Keywords...),
+			CreatedAt:                    createdAt,
+			UpdatedAt:                    updatedAt,
+		})
+	}
+	return profiles
+}
+
+func normalizeBrowserProfileCoreID(coreID string) string {
+	coreID = strings.TrimSpace(coreID)
+	if strings.EqualFold(coreID, "default") {
+		return ""
+	}
+	return coreID
+}
+
+func normalizeBrowserProfileAutoProxySwitchMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "manual":
+		return "manual"
+	default:
+		return "interval"
 	}
 }
 

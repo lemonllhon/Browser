@@ -293,7 +293,7 @@ func (a *App) startup(ctx context.Context) {
 	a.speedScheduler = browser.NewProxySpeedScheduler(
 		a.browserMgr.ProxyDAO,
 		func(proxyId string) (bool, int64, string) {
-			r := proxy.SpeedTest(proxyId, a.config.Browser.Proxies, a.xrayMgr, a.singboxMgr, nil)
+			r := proxy.SpeedTest(proxyId, a.getLatestProxies(), a.xrayMgr, a.singboxMgr, nil)
 			return r.Ok, r.LatencyMs, r.Error
 		},
 		5*time.Minute,
@@ -820,8 +820,8 @@ func (a *App) GetDashboardStats() map[string]interface{} {
 			runningInstances++
 		}
 	}
-	proxyCount := len(a.config.Browser.Proxies)
-	coreCount := len(a.config.Browser.Cores)
+	proxyCount := len(a.getLatestProxies())
+	coreCount := len(a.browserMgr.ListCores())
 
 	var mem goruntime.MemStats
 	goruntime.ReadMemStats(&mem)
@@ -1054,10 +1054,16 @@ func (a *App) SaveBrowserSettings(settings BrowserSettings) error {
 // ============================================================================
 
 func (a *App) BrowserCoreList() []BrowserCore {
+	if a.browserMgr.CoreDAO == nil {
+		_ = a.refreshConfigCacheFromDiskIfPresent()
+	}
 	return a.browserMgr.ListCores()
 }
 
 func (a *App) BrowserCoreSave(input BrowserCoreInput) error {
+	if a.browserMgr.CoreDAO == nil {
+		_ = a.refreshConfigCacheFromDiskIfPresent()
+	}
 	if err := a.browserMgr.SaveCore(input); err != nil {
 		return err
 	}
@@ -1066,6 +1072,9 @@ func (a *App) BrowserCoreSave(input BrowserCoreInput) error {
 }
 
 func (a *App) BrowserCoreDelete(coreId string) error {
+	if a.browserMgr.CoreDAO == nil {
+		_ = a.refreshConfigCacheFromDiskIfPresent()
+	}
 	if err := a.browserMgr.DeleteCore(coreId); err != nil {
 		return err
 	}
@@ -1074,6 +1083,9 @@ func (a *App) BrowserCoreDelete(coreId string) error {
 }
 
 func (a *App) BrowserCoreSetDefault(coreId string) error {
+	if a.browserMgr.CoreDAO == nil {
+		_ = a.refreshConfigCacheFromDiskIfPresent()
+	}
 	if err := a.browserMgr.SetDefaultCore(coreId); err != nil {
 		return err
 	}
@@ -1086,6 +1098,9 @@ func (a *App) BrowserCoreValidate(corePath string) BrowserCoreValidateResult {
 }
 
 func (a *App) BrowserCoreRenamePath(corePath, newFolderName string) error {
+	if a.browserMgr.CoreDAO == nil {
+		_ = a.refreshConfigCacheFromDiskIfPresent()
+	}
 	if err := a.browserMgr.RenameCorePath(corePath, newFolderName); err != nil {
 		return err
 	}
@@ -1094,6 +1109,10 @@ func (a *App) BrowserCoreRenamePath(corePath, newFolderName string) error {
 }
 
 func (a *App) BrowserCoreExtendedInfo() []BrowserCoreExtendedInfo {
+	a.refreshBrowserProfileConfigCacheFromStore()
+	if a.browserMgr.CoreDAO == nil {
+		_ = a.refreshConfigCacheFromDiskIfPresent()
+	}
 	return a.browserMgr.GetCoresExtendedInfo()
 }
 
@@ -1161,9 +1180,11 @@ type ProxyValidationResult struct {
 func (a *App) BrowserProxyList() []BrowserProxy {
 	if a.browserMgr.ProxyDAO != nil {
 		if list, err := a.browserMgr.ProxyDAO.List(); err == nil {
+			a.config.Browser.Proxies = append([]BrowserProxy{}, list...)
 			return list
 		}
 	}
+	_ = a.refreshConfigCacheFromDiskIfPresent()
 	return append([]BrowserProxy{}, a.config.Browser.Proxies...)
 }
 
@@ -1184,6 +1205,7 @@ func (a *App) BrowserProxyListByGroup(groupName string) []BrowserProxy {
 			return list
 		}
 	}
+	_ = a.refreshConfigCacheFromDiskIfPresent()
 	// 降级：内存过滤
 	var result []BrowserProxy
 	for _, p := range a.config.Browser.Proxies {
@@ -1629,11 +1651,13 @@ func mapBool(m map[string]interface{}, key string) bool {
 // getLatestProxies 获取最新的代理列表，优先从数据库读取
 func (a *App) getLatestProxies() []BrowserProxy {
 	if a.browserMgr.ProxyDAO != nil {
-		if list, err := a.browserMgr.ProxyDAO.List(); err == nil && len(list) > 0 {
+		if list, err := a.browserMgr.ProxyDAO.List(); err == nil {
+			a.config.Browser.Proxies = append([]BrowserProxy{}, list...)
 			return list
 		}
 	}
-	return a.config.Browser.Proxies
+	_ = a.refreshConfigCacheFromDiskIfPresent()
+	return append([]BrowserProxy{}, a.config.Browser.Proxies...)
 }
 
 func (a *App) SaveBrowserProxies(proxies []BrowserProxy) error {

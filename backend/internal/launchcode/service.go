@@ -35,26 +35,43 @@ func NewLaunchCodeService(dao LaunchCodeDAO) *LaunchCodeService {
 
 // EnsureCode 为 profile 生成并持久化 code（幂等：已有则直接返回）
 func (s *LaunchCodeService) EnsureCode(profileId string) (string, error) {
-	s.mu.RLock()
-	if code, ok := s.profileToCode[profileId]; ok {
-		s.mu.RUnlock()
+	profileId = strings.TrimSpace(profileId)
+	if profileId == "" {
+		return "", fmt.Errorf("profile id is required")
+	}
+
+	if s.dao != nil {
+		code, err := s.dao.FindCode(profileId)
+		if err == nil {
+			code = normalizeCode(code)
+			s.cacheMapping(profileId, code)
+			return code, nil
+		}
+		if !isLaunchCodeNotFound(err) {
+			if code, ok := s.cachedCodeForProfile(profileId); ok {
+				return code, nil
+			}
+			return "", err
+		}
+		s.forgetProfile(profileId)
+	} else if code, ok := s.cachedCodeForProfile(profileId); ok {
 		return code, nil
 	}
-	s.mu.RUnlock()
 
 	code, err := s.generateUniqueCode()
 	if err != nil {
 		return "", err
 	}
 
+	if s.dao == nil {
+		s.cacheMapping(profileId, code)
+		return code, nil
+	}
 	if err := s.dao.Upsert(profileId, code); err != nil {
 		return "", err
 	}
 
-	s.mu.Lock()
-	s.profileToCode[profileId] = code
-	s.codeToProfile[code] = profileId
-	s.mu.Unlock()
+	s.cacheMapping(profileId, code)
 
 	return code, nil
 }
@@ -67,82 +84,188 @@ func (s *LaunchCodeService) SetCode(profileId, code string) (string, error) {
 		return "", err
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if old, ok := s.profileToCode[profileId]; ok && old == code {
-		return code, nil
+	profileId = strings.TrimSpace(profileId)
+	if profileId == "" {
+		return "", fmt.Errorf("profile id is required")
 	}
 
-	if ownerProfile, exists := s.codeToProfile[code]; exists && ownerProfile != profileId {
+	if s.dao != nil {
+		ownerProfile, err := s.dao.FindProfileId(code)
+		if err == nil && ownerProfile != profileId {
+			return "", fmt.Errorf("launch code already exists")
+		}
+		if err != nil && !isLaunchCodeNotFound(err) {
+			return "", err
+		}
+	} else if ownerProfile, exists := s.cachedProfileForCode(code); exists && ownerProfile != profileId {
 		return "", fmt.Errorf("launch code already exists")
 	}
 
-	if err := s.dao.Upsert(profileId, code); err != nil {
-		return "", err
+	if s.dao != nil {
+		if err := s.dao.Upsert(profileId, code); err != nil {
+			return "", err
+		}
 	}
 
-	if old, ok := s.profileToCode[profileId]; ok {
-		delete(s.codeToProfile, old)
-	}
-	s.profileToCode[profileId] = code
-	s.codeToProfile[code] = profileId
+	s.cacheMapping(profileId, code)
 	return code, nil
 }
 
 // RegenerateCode 重新生成 code（废弃旧 code）
 func (s *LaunchCodeService) RegenerateCode(profileId string) (string, error) {
-	s.mu.Lock()
-	if oldCode, ok := s.profileToCode[profileId]; ok {
-		delete(s.codeToProfile, oldCode)
-		delete(s.profileToCode, profileId)
+	profileId = strings.TrimSpace(profileId)
+	if profileId == "" {
+		return "", fmt.Errorf("profile id is required")
 	}
-	s.mu.Unlock()
+	s.forgetProfile(profileId)
 
 	code, err := s.generateUniqueCode()
 	if err != nil {
 		return "", err
 	}
 
-	if err := s.dao.Upsert(profileId, code); err != nil {
-		return "", err
+	if s.dao != nil {
+		if err := s.dao.Upsert(profileId, code); err != nil {
+			return "", err
+		}
 	}
 
-	s.mu.Lock()
-	s.profileToCode[profileId] = code
-	s.codeToProfile[code] = profileId
-	s.mu.Unlock()
-
+	s.cacheMapping(profileId, code)
 	return code, nil
 }
 
-// Resolve 根据 code 查找 profileId（仅查内存缓存）
+// Resolve 根据 code 查找 profileId（以持久化存储为准并同步内存缓存）
 func (s *LaunchCodeService) Resolve(code string) (string, error) {
 	code = normalizeCode(code)
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	if code == "" {
+		return "", fmt.Errorf("launch code not found: %s", code)
+	}
 
-	profileId, ok := s.codeToProfile[code]
+	if s.dao != nil {
+		profileId, err := s.dao.FindProfileId(code)
+		if err == nil {
+			s.cacheMapping(profileId, code)
+			return profileId, nil
+		}
+		if isLaunchCodeNotFound(err) {
+			s.forgetCode(code)
+			return "", fmt.Errorf("launch code not found: %s", code)
+		}
+		if profileId, ok := s.cachedProfileForCode(code); ok {
+			return profileId, nil
+		}
+		return "", err
+	}
+
+	profileId, ok := s.cachedProfileForCode(code)
 	if !ok {
 		return "", fmt.Errorf("launch code not found: %s", code)
 	}
 	return profileId, nil
 }
 
-// Remove 删除 profile 对应的 code（同时清理内存缓存和数据库）
-func (s *LaunchCodeService) Remove(profileId string) error {
+func (s *LaunchCodeService) cachedCodeForProfile(profileId string) (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	code, ok := s.profileToCode[profileId]
+	return code, ok
+}
+
+func (s *LaunchCodeService) cachedProfileForCode(code string) (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	profileId, ok := s.codeToProfile[code]
+	return profileId, ok
+}
+
+func (s *LaunchCodeService) cacheMapping(profileId, code string) {
+	profileId = strings.TrimSpace(profileId)
+	code = normalizeCode(code)
+	if profileId == "" || code == "" {
+		return
+	}
+
 	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if oldCode, ok := s.profileToCode[profileId]; ok && oldCode != code {
+		delete(s.codeToProfile, oldCode)
+	}
+	if oldProfile, ok := s.codeToProfile[code]; ok && oldProfile != profileId {
+		if currentCode, currentOK := s.profileToCode[oldProfile]; currentOK && currentCode == code {
+			delete(s.profileToCode, oldProfile)
+		}
+	}
+	s.profileToCode[profileId] = code
+	s.codeToProfile[code] = profileId
+}
+
+func (s *LaunchCodeService) forgetProfile(profileId string) {
+	profileId = strings.TrimSpace(profileId)
+	if profileId == "" {
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if code, ok := s.profileToCode[profileId]; ok {
 		delete(s.codeToProfile, code)
 		delete(s.profileToCode, profileId)
 	}
-	s.mu.Unlock()
+}
 
+func (s *LaunchCodeService) forgetCode(code string) {
+	code = normalizeCode(code)
+	if code == "" {
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if profileId, ok := s.codeToProfile[code]; ok {
+		delete(s.codeToProfile, code)
+		if currentCode, currentOK := s.profileToCode[profileId]; currentOK && currentCode == code {
+			delete(s.profileToCode, profileId)
+		}
+	}
+}
+
+func isLaunchCodeNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "not found") || strings.Contains(msg, "不存在")
+}
+
+func (s *LaunchCodeService) codeExists(code string) bool {
+	if _, exists := s.cachedProfileForCode(code); exists {
+		return true
+	}
+	if s.dao == nil {
+		return false
+	}
+	_, err := s.dao.FindProfileId(code)
+	return err == nil
+}
+
+// Remove 删除 profile 对应的 code（同时清理内存缓存和数据库）
+func (s *LaunchCodeService) Remove(profileId string) error {
+	s.forgetProfile(profileId)
+
+	if s.dao == nil {
+		return nil
+	}
 	return s.dao.Delete(profileId)
 }
 
 // LoadAll 启动时从数据库加载所有映射到内存
 func (s *LaunchCodeService) LoadAll() error {
+	if s.dao == nil {
+		return nil
+	}
 	profileToCode, err := s.dao.LoadAll()
 	if err != nil {
 		return err
@@ -155,13 +278,14 @@ func (s *LaunchCodeService) LoadAll() error {
 	s.codeToProfile = make(map[string]string, len(profileToCode))
 
 	for profileId, code := range profileToCode {
-		s.profileToCode[profileId] = code
-		s.codeToProfile[code] = profileId
+		normalizedCode := normalizeCode(code)
+		s.profileToCode[profileId] = normalizedCode
+		s.codeToProfile[normalizedCode] = profileId
 	}
 	return nil
 }
 
-// generateUniqueCode 生成一个在内存缓存中唯一的 code
+// generateUniqueCode 生成一个在内存缓存和持久化存储中唯一的 code
 func (s *LaunchCodeService) generateUniqueCode() (string, error) {
 	for i := 0; i < maxRetries; i++ {
 		code, err := randomCode()
@@ -169,11 +293,7 @@ func (s *LaunchCodeService) generateUniqueCode() (string, error) {
 			return "", fmt.Errorf("生成 launch code 失败: %w", err)
 		}
 
-		s.mu.RLock()
-		_, exists := s.codeToProfile[code]
-		s.mu.RUnlock()
-
-		if !exists {
+		if !s.codeExists(code) {
 			return code, nil
 		}
 	}
