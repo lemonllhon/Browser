@@ -98,6 +98,18 @@ export function BrowserDetailPage() {
   useEffect(() => {
     if (!id) return
 
+    const refreshProfileSnapshot = () => {
+      void loadProfile()
+    }
+
+    const refreshProxyNames = () => {
+      fetchBrowserProxies().then(items => {
+        const names: Record<string, string> = {}
+        items.forEach(item => { names[item.proxyId] = item.proxyName || item.proxyId })
+        setProxyNames(names)
+      })
+    }
+
     const handleRuntimeChange = (payload: unknown) => {
       if (runtimeEventProfileId(payload) !== id) return
 
@@ -116,12 +128,16 @@ export function BrowserDetailPage() {
     const offUpdated = onRuntimeEvent('browser:instance:updated', handleRuntimeChange)
     const offStopped = onRuntimeEvent('browser:instance:stopped', handleRuntimeChange)
     const offCrashed = onRuntimeEvent('browser:instance:crashed', handleRuntimeChange)
+    const offProfilesUpdated = onRuntimeEvent('browser:profiles:updated', refreshProfileSnapshot)
+    const offProxiesUpdated = onRuntimeEvent('browser:proxies:updated', refreshProxyNames)
 
     return () => {
       offStarted?.()
       offUpdated?.()
       offStopped?.()
       offCrashed?.()
+      offProfilesUpdated?.()
+      offProxiesUpdated?.()
     }
   }, [id])
 

@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { FolderOpen, Layers } from 'lucide-react'
 import { Button, Card, ConfirmModal, FormItem, Input, Modal, Select, Textarea, toast } from '../../../shared/components'
-import type { BrowserCore, BrowserProfileInput, BrowserProxy, BrowserGroup } from '../types'
+import type { BrowserCore, BrowserProfile, BrowserProfileInput, BrowserProxy, BrowserGroup } from '../types'
+import { onRuntimeEvent } from '../../../shared/backend/runtime'
 import { createBrowserProfile, fetchAllTags, fetchBrowserCores, fetchBrowserProfiles, fetchBrowserProxies, fetchBrowserSettings, fetchGroups, openProfileUserDataDir, openUserDataDir, updateBrowserProfile } from '../api'
 import { resolveActionErrorMessage } from '../utils/actionErrors'
 import { FingerprintPanel } from '../components/FingerprintPanel'
@@ -75,6 +76,31 @@ export function BrowserEditPage() {
   const [saveError, setSaveError] = useState('')
   const incognitoEnabled = hasLaunchArg(launchArgsText, incognitoArg)
 
+  const applyProfileSnapshot = (current: BrowserProfile) => {
+    const currentLaunchArgs = normalizeLaunchArgs(current.launchArgs)
+    const normalizedCoreId = !current.coreId || current.coreId.toLowerCase() === 'default'
+      ? ''
+      : current.coreId
+    setFormData({
+      profileName: current.profileName,
+      userDataDir: current.userDataDir,
+      coreId: normalizedCoreId,
+      fingerprintArgs: current.fingerprintArgs,
+      proxyId: current.proxyId,
+      proxyConfig: current.proxyConfig,
+      autoProxySwitchEnabled: current.autoProxySwitchEnabled || false,
+      autoProxySwitchGroupName: current.autoProxySwitchGroupName || '',
+      autoProxySwitchMode: current.autoProxySwitchMode || 'interval',
+      autoProxySwitchIntervalM: current.autoProxySwitchIntervalM || 5,
+      autoProxySwitchRotateByGroup: current.autoProxySwitchRotateByGroup || false,
+      launchArgs: currentLaunchArgs,
+      tags: current.tags,
+      keywords: current.keywords || [],
+      groupId: current.groupId || '',
+    })
+    setLaunchArgsText(currentLaunchArgs.join('\n'))
+  }
+
   useEffect(() => {
     const loadData = async () => {
       const [coreList, proxyList, tagList, groupList, settings] = await Promise.all([
@@ -101,31 +127,59 @@ export function BrowserEditPage() {
       const list = await fetchBrowserProfiles()
       const current = list.find(item => item.profileId === id)
       if (!current) return
-      const currentLaunchArgs = normalizeLaunchArgs(current.launchArgs)
-      const normalizedCoreId = !current.coreId || current.coreId.toLowerCase() === 'default'
-        ? ''
-        : current.coreId
-      setFormData({
-        profileName: current.profileName,
-        userDataDir: current.userDataDir,
-        coreId: normalizedCoreId,
-        fingerprintArgs: current.fingerprintArgs,
-        proxyId: current.proxyId,
-        proxyConfig: current.proxyConfig,
-        autoProxySwitchEnabled: current.autoProxySwitchEnabled || false,
-        autoProxySwitchGroupName: current.autoProxySwitchGroupName || '',
-        autoProxySwitchMode: current.autoProxySwitchMode || 'interval',
-        autoProxySwitchIntervalM: current.autoProxySwitchIntervalM || 5,
-        autoProxySwitchRotateByGroup: current.autoProxySwitchRotateByGroup || false,
-        launchArgs: currentLaunchArgs,
-        tags: current.tags,
-        keywords: current.keywords || [],
-        groupId: current.groupId || '',
-      })
-      setLaunchArgsText(currentLaunchArgs.join('\n'))
+      applyProfileSnapshot(current)
     }
     loadData()
   }, [id, isCreate])
+
+  useEffect(() => {
+    const refreshTags = () => {
+      void fetchAllTags().then(setAllTags)
+    }
+    const refreshGroups = () => {
+      void fetchGroups().then(groupList => {
+        setGroups(groupList)
+        if (!isDirty) {
+          setFormData(prev => (
+            prev.groupId && !groupList.some(group => group.groupId === prev.groupId)
+              ? { ...prev, groupId: '' }
+              : prev
+          ))
+        }
+      })
+    }
+    const refreshProfiles = () => {
+      refreshTags()
+      if (!isCreate && id && !isDirty) {
+        void fetchBrowserProfiles().then(list => {
+          const current = list.find(item => item.profileId === id)
+          if (current) {
+            applyProfileSnapshot(current)
+          }
+        })
+      }
+    }
+
+    const offProfilesUpdated = onRuntimeEvent('browser:profiles:updated', refreshProfiles)
+    const offGroupsUpdated = onRuntimeEvent('browser:groups:updated', refreshGroups)
+    const offCoresUpdated = onRuntimeEvent('browser:cores:updated', () => { void fetchBrowserCores().then(setCores) })
+    const offProxiesUpdated = onRuntimeEvent('browser:proxies:updated', () => { void fetchBrowserProxies().then(setProxies) })
+    const offSettingsUpdated = onRuntimeEvent('browser:settings:updated', () => {
+      if (!isCreate || isDirty) return
+      void fetchBrowserSettings().then(settings => {
+        setFormData(prev => ({ ...prev, fingerprintArgs: settings.defaultFingerprintArgs || [] }))
+        setLaunchArgsText(resolveDefaultLaunchArgs(settings.defaultLaunchArgs || []).join('\n'))
+      })
+    })
+
+    return () => {
+      offProfilesUpdated?.()
+      offGroupsUpdated?.()
+      offCoresUpdated?.()
+      offProxiesUpdated?.()
+      offSettingsUpdated?.()
+    }
+  }, [id, isCreate, isDirty])
 
   const handleChange = (field: keyof BrowserProfileInput, value: string | string[] | boolean | number) => {
     setIsDirty(true)

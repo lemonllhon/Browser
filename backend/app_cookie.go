@@ -232,15 +232,23 @@ func (a *App) BrowserClearCookies(profileId string) error {
 	a.browserMgr.Mutex.Unlock()
 
 	if !snapshot.Running {
-		return a.clearStoppedProfileUserData(&snapshot)
+		if err := a.clearStoppedProfileUserData(&snapshot); err != nil {
+			return err
+		}
+		a.emitBrowserCookiesUpdated(profileId)
+		a.emitProfileDataUpdated()
+		return nil
 	}
 
 	debugPort, err := a.getDebugPort(profileId)
 	if err != nil {
 		return err
 	}
-	_, err = cdpCall(debugPort, "Network.clearBrowserCookies", nil)
-	return err
+	if _, err := cdpCall(debugPort, "Network.clearBrowserCookies", nil); err != nil {
+		return err
+	}
+	a.emitBrowserCookiesUpdated(profileId)
+	return nil
 }
 
 func (a *App) clearStoppedProfileUserData(profile *BrowserProfile) error {
@@ -378,6 +386,7 @@ func (a *App) BrowserImportCookies(profileId string, content string) (CookieImpo
 	if _, err := cdpCall(debugPort, "Network.setCookies", map[string]any{"cookies": payload}); err != nil {
 		return CookieImportResult{}, err
 	}
+	a.emitBrowserCookiesUpdated(profileId)
 	return CookieImportResult{Imported: len(payload), Skipped: skipped}, nil
 }
 

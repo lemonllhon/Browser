@@ -391,6 +391,12 @@ func isProtoRuntimeEvent(eventName string) bool {
 		"browser:profiles:updated",
 		"browser:groups:updated",
 		"browser:defaults:updated",
+		"browser:settings:updated",
+		"browser:cores:updated",
+		"browser:proxies:updated",
+		"browser:extensions:updated",
+		"browser:cookies:updated",
+		"browser:snapshots:updated",
 		"window-sync:master-closed",
 		"proxy:bridge:failed",
 		"proxy:bridge:died":

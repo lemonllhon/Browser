@@ -12,6 +12,7 @@ import { ProxyPoolHeader } from '../components/proxy-pool/ProxyPoolHeader'
 import { ProxyRowActions } from '../components/proxy-pool/ProxyRowActions'
 import { ProxySourceRowActions } from '../components/proxy-pool/ProxySourceRowActions'
 import { ProxyResourcePanel } from '../components/proxy-pool/ProxyResourcePanel'
+import { onRuntimeEvent } from '../../../shared/backend/runtime'
 import type { ProxyResourceView } from '../components/proxy-pool/ProxyResourcePanel'
 import { PROXY_COLUMN_OPTIONS, getLockedProxyColumnKeys, readStoredProxyColumnKeys, writeStoredProxyColumnKeys } from '../config/proxyPoolColumns'
 import { INITIAL_DIRECT_IMPORT_FORM, buildDirectImportCandidate, parseDirectProxyBatchText } from '../utils/directProxyImport'
@@ -230,11 +231,14 @@ export function ProxyPoolPage() {
     pruneProbeCaches(new Set(proxies.map(p => p.proxyId)))
   }, [proxies])
 
-  const loadProxies = async () => {
-    setLoading(true)
+  const loadProxies = async (silent = false) => {
+    if (!silent) {
+      setLoading(true)
+    }
     try {
       const raw = await fetchBrowserProxies()
       const proxyList = ensureBuiltinProxies(raw)
+      const validProxyIds = new Set(proxyList.map(proxy => proxy.proxyId))
       const persistedLatency: Record<string, number> = {}
       const persistedIPHealth: Record<string, ProxyIPHealthResult> = {}
       proxyList.forEach(proxy => {
@@ -261,6 +265,15 @@ export function ProxyPoolPage() {
       writeStoredSourceMetas(archivedSources)
       setProxies(proxyList)
       setDisplayList(toDisplayList(proxyList))
+      setSelectedIds(prev => {
+        const next = new Set<string>()
+        prev.forEach(proxyId => {
+          if (validProxyIds.has(proxyId)) {
+            next.add(proxyId)
+          }
+        })
+        return next
+      })
       setLatencyMap(prev => ({ ...persistedLatency, ...prev }))
       setIPHealthMap(prev => ({ ...persistedIPHealth, ...prev }))
       const grps = await fetchBrowserProxyGroups()
@@ -269,6 +282,15 @@ export function ProxyPoolPage() {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    const offProxiesUpdated = onRuntimeEvent('browser:proxies:updated', () => {
+      void loadProxies(true)
+    })
+    return () => {
+      offProxiesUpdated?.()
+    }
+  }, [])
 
   const updateSourceArchive = useCallback((updater: (current: URLImportSourceMeta[]) => URLImportSourceMeta[]) => {
     const next = updater(sourceArchiveRef.current)
@@ -989,6 +1011,12 @@ export function ProxyPoolPage() {
   const handleSaveProxy = async () => {
     if (!editForm.proxyName.trim()) { toast.error('请输入代理名称'); return }
     if (!editingProxy) return
+    if (!proxies.some(p => p.proxyId === editingProxy.proxyId)) {
+      setEditModalOpen(false)
+      setEditingProxy(null)
+      toast.error('这个代理已被其他窗口删除，请重新选择')
+      return
+    }
     setSaving(true)
     try {
       const newProxies = proxies.map(p =>

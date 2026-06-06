@@ -298,6 +298,7 @@ func (a *App) startup(ctx context.Context) {
 		},
 		5*time.Minute,
 		5,
+		a.emitBrowserProxiesUpdated,
 	)
 	a.speedScheduler.Start()
 
@@ -981,6 +982,7 @@ func (a *App) SaveBrowserSettings(settings BrowserSettings) error {
 		log.Error("浏览器配置保存失败", logger.F("error", err))
 		return err
 	}
+	a.emitBrowserSettingsUpdated()
 	return nil
 }
 
@@ -993,15 +995,27 @@ func (a *App) BrowserCoreList() []BrowserCore {
 }
 
 func (a *App) BrowserCoreSave(input BrowserCoreInput) error {
-	return a.browserMgr.SaveCore(input)
+	if err := a.browserMgr.SaveCore(input); err != nil {
+		return err
+	}
+	a.emitBrowserCoresUpdated()
+	return nil
 }
 
 func (a *App) BrowserCoreDelete(coreId string) error {
-	return a.browserMgr.DeleteCore(coreId)
+	if err := a.browserMgr.DeleteCore(coreId); err != nil {
+		return err
+	}
+	a.emitBrowserCoresUpdated()
+	return nil
 }
 
 func (a *App) BrowserCoreSetDefault(coreId string) error {
-	return a.browserMgr.SetDefaultCore(coreId)
+	if err := a.browserMgr.SetDefaultCore(coreId); err != nil {
+		return err
+	}
+	a.emitBrowserCoresUpdated()
+	return nil
 }
 
 func (a *App) BrowserCoreValidate(corePath string) BrowserCoreValidateResult {
@@ -1009,7 +1023,11 @@ func (a *App) BrowserCoreValidate(corePath string) BrowserCoreValidateResult {
 }
 
 func (a *App) BrowserCoreRenamePath(corePath, newFolderName string) error {
-	return a.browserMgr.RenameCorePath(corePath, newFolderName)
+	if err := a.browserMgr.RenameCorePath(corePath, newFolderName); err != nil {
+		return err
+	}
+	a.emitBrowserCoresUpdated()
+	return nil
 }
 
 func (a *App) BrowserCoreExtendedInfo() []BrowserCoreExtendedInfo {
@@ -1019,7 +1037,9 @@ func (a *App) BrowserCoreExtendedInfo() []BrowserCoreExtendedInfo {
 // BrowserCoreScan 重新扫描 chrome 目录，自动注册新内核
 func (a *App) BrowserCoreScan() []BrowserCore {
 	a.autoDetectCores()
-	return a.browserMgr.ListCores()
+	cores := a.browserMgr.ListCores()
+	a.emitBrowserCoresUpdated()
+	return cores
 }
 
 // BrowserCoreDownload 在线下载并自动解压配置内核
@@ -1174,7 +1194,9 @@ func (a *App) BrowserProxyTestSpeed(proxyId string) ProxyTestResult {
 	r := proxy.SpeedTest(proxyId, proxies, a.xrayMgr, a.singboxMgr, nil)
 	if a.browserMgr.ProxyDAO != nil {
 		testedAt := time.Now().Format(time.RFC3339)
-		_ = a.browserMgr.ProxyDAO.UpdateSpeedResult(proxyId, r.Ok, r.LatencyMs, testedAt)
+		if err := a.browserMgr.ProxyDAO.UpdateSpeedResult(proxyId, r.Ok, r.LatencyMs, testedAt); err == nil {
+			a.emitBrowserProxiesUpdated()
+		}
 	}
 	return ProxyTestResult{ProxyId: r.ProxyId, Ok: r.Ok, LatencyMs: r.LatencyMs, Error: r.Error}
 }
@@ -1198,6 +1220,8 @@ func (a *App) BrowserProxyBatchTestSpeed(proxyIds []string, concurrency int) []P
 	}
 	jobs := make(chan speedJob, len(proxyIds))
 	var wg sync.WaitGroup
+	var persistedMu sync.Mutex
+	persistedAny := false
 
 	// 固定大小 worker 池，避免大量代理时创建过多 goroutine
 	for worker := 0; worker < concurrency; worker++ {
@@ -1208,7 +1232,11 @@ func (a *App) BrowserProxyBatchTestSpeed(proxyIds []string, concurrency int) []P
 				r := proxy.SpeedTest(job.ProxyId, proxies, a.xrayMgr, a.singboxMgr, nil)
 				if a.browserMgr.ProxyDAO != nil {
 					testedAt := time.Now().Format(time.RFC3339)
-					_ = a.browserMgr.ProxyDAO.UpdateSpeedResult(job.ProxyId, r.Ok, r.LatencyMs, testedAt)
+					if err := a.browserMgr.ProxyDAO.UpdateSpeedResult(job.ProxyId, r.Ok, r.LatencyMs, testedAt); err == nil {
+						persistedMu.Lock()
+						persistedAny = true
+						persistedMu.Unlock()
+					}
 				}
 				result := ProxyTestResult{ProxyId: r.ProxyId, Ok: r.Ok, LatencyMs: r.LatencyMs, Error: r.Error}
 				results[job.Idx] = result
@@ -1227,6 +1255,9 @@ func (a *App) BrowserProxyBatchTestSpeed(proxyIds []string, concurrency int) []P
 	close(jobs)
 
 	wg.Wait()
+	if persistedAny {
+		a.emitBrowserProxiesUpdated()
+	}
 	return results
 }
 
@@ -1281,7 +1312,9 @@ func (a *App) BrowserProxyCheckIPHealth(proxyId string) ProxyIPHealthResult {
 	proxies := a.getLatestProxies()
 	data, err := proxy.FetchIPPureInfo(proxyId, proxies, a.xrayMgr, a.singboxMgr)
 	result := buildProxyIPHealthResult(proxyId, data, err)
-	a.persistProxyIPHealthResult(result)
+	if a.persistProxyIPHealthResult(result) {
+		a.emitBrowserProxiesUpdated()
+	}
 	if a.ctx != nil {
 		a.emitProxyIPHealthResultEvent("proxy:iphealth:result", result)
 	}
@@ -1308,6 +1341,8 @@ func (a *App) BrowserProxyBatchCheckIPHealth(proxyIds []string, concurrency int)
 	}
 	jobs := make(chan healthJob, len(proxyIds))
 	var wg sync.WaitGroup
+	var persistedMu sync.Mutex
+	persistedAny := false
 
 	for worker := 0; worker < concurrency; worker++ {
 		wg.Add(1)
@@ -1316,7 +1351,11 @@ func (a *App) BrowserProxyBatchCheckIPHealth(proxyIds []string, concurrency int)
 			for job := range jobs {
 				data, err := proxy.FetchIPPureInfo(job.ProxyId, proxies, a.xrayMgr, a.singboxMgr)
 				result := buildProxyIPHealthResult(job.ProxyId, data, err)
-				a.persistProxyIPHealthResult(result)
+				if a.persistProxyIPHealthResult(result) {
+					persistedMu.Lock()
+					persistedAny = true
+					persistedMu.Unlock()
+				}
 				results[job.Idx] = result
 				if a.ctx != nil {
 					a.emitProxyIPHealthResultEvent("proxy:iphealth:result", result)
@@ -1331,6 +1370,9 @@ func (a *App) BrowserProxyBatchCheckIPHealth(proxyIds []string, concurrency int)
 	close(jobs)
 
 	wg.Wait()
+	if persistedAny {
+		a.emitBrowserProxiesUpdated()
+	}
 	return results
 }
 
@@ -1429,15 +1471,15 @@ func buildProxyIPHealthResult(proxyId string, data map[string]interface{}, err e
 	}
 }
 
-func (a *App) persistProxyIPHealthResult(result ProxyIPHealthResult) {
+func (a *App) persistProxyIPHealthResult(result ProxyIPHealthResult) bool {
 	if a.browserMgr.ProxyDAO == nil {
-		return
+		return false
 	}
 	payload, err := json.Marshal(result)
 	if err != nil {
-		return
+		return false
 	}
-	_ = a.browserMgr.ProxyDAO.UpdateIPHealthResult(result.ProxyId, string(payload))
+	return a.browserMgr.ProxyDAO.UpdateIPHealthResult(result.ProxyId, string(payload)) == nil
 }
 
 func mapString(m map[string]interface{}, key string) string {
@@ -1622,6 +1664,8 @@ func (a *App) SaveBrowserProxies(proxies []BrowserProxy) error {
 		}
 		log.Info("代理列表已保存到数据库", logger.F("count", len(normalized)))
 		a.reconcileProfileProxyBindings()
+		a.emitBrowserProxiesUpdated()
+		a.emitProfileDataUpdated()
 		return nil
 	}
 
@@ -1631,6 +1675,8 @@ func (a *App) SaveBrowserProxies(proxies []BrowserProxy) error {
 		return err
 	}
 	a.reconcileProfileProxyBindings()
+	a.emitBrowserProxiesUpdated()
+	a.emitProfileDataUpdated()
 	return nil
 }
 

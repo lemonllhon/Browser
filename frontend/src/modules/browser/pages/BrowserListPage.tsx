@@ -96,6 +96,7 @@ export function BrowserListPage() {
     loadProfiles,
     loadGroups,
     loadCores,
+    loadProxies,
   } = useBrowserListData({ setStartingIds, setStoppingIds })
 
   const {
@@ -130,6 +131,8 @@ export function BrowserListPage() {
   useBrowserListRuntimeSync({
     loadProfiles,
     loadGroups,
+    loadProxies,
+    loadCores,
     setStartingIds,
     setStoppingIds,
     setWindowSyncState,

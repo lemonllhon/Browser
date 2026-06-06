@@ -185,6 +185,7 @@ func (a *App) BrowserSnapshotCreate(profileId, name string) (SnapshotInfo, error
 
 	// 返回给前端时不暴露 FilePath
 	info.FilePath = ""
+	a.emitBrowserSnapshotsUpdated(profileId)
 	return info, nil
 }
 
@@ -255,7 +256,11 @@ func (a *App) BrowserSnapshotRestore(profileId, snapshotId string) error {
 	if err := os.MkdirAll(userDataDir, 0755); err != nil {
 		return err
 	}
-	return unzipTo(zipPath, userDataDir)
+	if err := unzipTo(zipPath, userDataDir); err != nil {
+		return err
+	}
+	a.emitBrowserCookiesUpdated(profileId)
+	return nil
 }
 
 // BrowserSnapshotDelete 删除快照
@@ -270,6 +275,7 @@ func (a *App) BrowserSnapshotDelete(profileId, snapshotId string) error {
 	}
 	_ = os.Remove(zipPath)
 	_ = os.Remove(metaPath)
+	a.emitBrowserSnapshotsUpdated(profileId)
 	return nil
 }
 

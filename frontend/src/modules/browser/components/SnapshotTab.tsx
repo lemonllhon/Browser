@@ -4,10 +4,15 @@ import { Button, Card, Input, Table, toast } from '../../../shared/components'
 import type { TableColumn } from '../../../shared/components/Table'
 import type { SnapshotInfo } from '../types'
 import { createSnapshot, deleteSnapshot, listSnapshots, restoreSnapshot } from '../api'
+import { onRuntimeEvent } from '../../../shared/backend/runtime'
 
 interface Props {
   profileId: string
   running: boolean
+}
+
+type ProfileRuntimeEventPayload = {
+  profileId?: string
 }
 
 const defaultName = () => {
@@ -41,7 +46,17 @@ export function SnapshotTab({ profileId, running }: Props) {
     }
   }
 
-  useEffect(() => { load() }, [profileId])
+  useEffect(() => {
+    void load()
+    const offSnapshotsUpdated = onRuntimeEvent<ProfileRuntimeEventPayload>('browser:snapshots:updated', payload => {
+      if (!payload?.profileId || payload.profileId === profileId) {
+        void load()
+      }
+    })
+    return () => {
+      offSnapshotsUpdated?.()
+    }
+  }, [profileId])
 
   const handleCreate = async () => {
     if (!newName.trim()) return

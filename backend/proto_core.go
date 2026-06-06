@@ -239,4 +239,7 @@ func (a *App) emitCoreDownloadProgressEvent(eventName string, optionalData ...an
 		Message:  progress.Message,
 		CorePath: progress.CorePath,
 	}))
+	if progress.Phase == "done" {
+		a.emitBrowserCoresUpdated()
+	}
 }

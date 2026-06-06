@@ -258,7 +258,12 @@ func (a *App) BrowserExtensionAssignProfiles(input BrowserExtensionAssignInput) 
 			return nil, err
 		}
 	}
-	return dao.ListBindings(extensionId)
+	bindings, err := dao.ListBindings(extensionId)
+	if err != nil {
+		return nil, err
+	}
+	a.emitBrowserExtensionsUpdated()
+	return bindings, nil
 }
 
 // BrowserExtensionSetAutoBind 设置扩展自动绑定配置。
@@ -286,7 +291,12 @@ func (a *App) BrowserExtensionSetAutoBind(input BrowserExtensionAutoBindInput) (
 			return nil, err
 		}
 	}
-	return dao.Get(extensionId)
+	updated, err := dao.Get(extensionId)
+	if err != nil {
+		return nil, err
+	}
+	a.emitBrowserExtensionsUpdated()
+	return updated, nil
 }
 
 // BrowserExtensionUnassignProfiles 删除扩展与实例的绑定关系。
@@ -327,7 +337,12 @@ func (a *App) BrowserExtensionUnassignProfiles(input BrowserExtensionUnassignInp
 			}
 		}
 	}
-	return dao.ListBindings(extensionId)
+	bindings, err := dao.ListBindings(extensionId)
+	if err != nil {
+		return nil, err
+	}
+	a.emitBrowserExtensionsUpdated()
+	return bindings, nil
 }
 
 // BrowserExtensionDelete 删除未被实例使用的扩展插件。
@@ -403,6 +418,7 @@ func (a *App) BrowserExtensionDelete(extensionId string) error {
 			_ = os.Remove(safePackage)
 		}
 	}
+	a.emitBrowserExtensionsUpdated()
 	return nil
 }
 
@@ -512,6 +528,7 @@ func (a *App) importExtensionFromDirectory(sourceDir string, sourceType string, 
 	if err != nil {
 		return nil, err
 	}
+	a.emitBrowserExtensionsUpdated()
 	return &BrowserExtensionImportResult{
 		Message:   "扩展插件导入成功",
 		Extension: saved,

@@ -5,12 +5,17 @@ import type { TableColumn } from '../../../shared/components/Table'
 import type { CookieInfo } from '../types'
 import { clearBrowserCookies, exportBrowserCookies, fetchBrowserCookies, importBrowserCookies } from '../api'
 import { resolveActionErrorMessage } from '../utils/actionErrors'
+import { onRuntimeEvent } from '../../../shared/backend/runtime'
 
 interface Props {
   profileId: string
   profileName: string
   running: boolean
   ready: boolean
+}
+
+type ProfileRuntimeEventPayload = {
+  profileId?: string
 }
 
 const formatExpires = (expires: number) => {
@@ -43,8 +48,23 @@ export function CookieManagerCard({ profileId, profileName, running, ready }: Pr
   }
 
   useEffect(() => {
-    if (ready) loadCookies()
-    else setCookies([])
+    if (ready) {
+      void loadCookies()
+    } else {
+      setCookies([])
+    }
+    const offCookiesUpdated = onRuntimeEvent<ProfileRuntimeEventPayload>('browser:cookies:updated', payload => {
+      if (!payload?.profileId || payload.profileId === profileId) {
+        if (ready) {
+          void loadCookies()
+        } else {
+          setCookies([])
+        }
+      }
+    })
+    return () => {
+      offCookiesUpdated?.()
+    }
   }, [profileId, ready])
 
   const filteredCookies = useMemo(() => {

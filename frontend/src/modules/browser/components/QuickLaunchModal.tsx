@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Keyboard, Play, Search, Tag } from 'lucide-react'
 import { Badge, Button, Modal, toast } from '../../../shared/components'
+import { onRuntimeEvent } from '../../../shared/backend/runtime'
 import { fetchBrowserProfiles, fetchGroups, startBrowserInstanceByCode } from '../api'
 import type { BrowserGroupWithCount, BrowserProfile } from '../types'
 import { resolveActionFeedback } from '../utils/actionErrors'
@@ -81,7 +82,11 @@ export function QuickLaunchModal({ open, onClose }: QuickLaunchModalProps) {
     setSelectedIndex(0)
     setLoading(true)
 
-    Promise.allSettled([fetchBrowserProfiles(), fetchGroups()])
+    const loadData = (showLoading: boolean) => {
+      if (showLoading) {
+        setLoading(true)
+      }
+      Promise.allSettled([fetchBrowserProfiles(), fetchGroups()])
       .then(([profilesResult, groupsResult]) => {
         if (!alive) return
 
@@ -100,12 +105,23 @@ export function QuickLaunchModal({ open, onClose }: QuickLaunchModalProps) {
       })
       .finally(() => {
         if (!alive) return
-        setLoading(false)
-        setTimeout(() => inputRef.current?.focus(), 0)
+        if (showLoading) {
+          setLoading(false)
+          setTimeout(() => inputRef.current?.focus(), 0)
+        }
       })
+    }
+
+    loadData(true)
+
+    const reloadOpenData = () => loadData(false)
+    const offProfilesUpdated = onRuntimeEvent('browser:profiles:updated', reloadOpenData)
+    const offGroupsUpdated = onRuntimeEvent('browser:groups:updated', reloadOpenData)
 
     return () => {
       alive = false
+      offProfilesUpdated?.()
+      offGroupsUpdated?.()
       setStartingCode('')
       setActiveTag('')
     }

@@ -4,7 +4,7 @@ import { Badge, Button, Card, ConfirmModal, FormItem, Input, Modal, Table, Texta
 import type { TableColumn } from '../../../shared/components/Table'
 import type { BrowserCore, BrowserCoreInput, BrowserCoreValidateResult, BrowserSettings, BrowserCoreExtended, BrowserProxy } from '../types'
 import { fetchBrowserCores, saveBrowserCore, deleteBrowserCore, setDefaultBrowserCore, validateBrowserCorePath, openCorePath, fetchBrowserSettings, saveBrowserSettings, fetchCoreExtendedInfo, scanBrowserCores, BrowserCoreDownload, fetchBrowserProxies, onBrowserCoreDownloadProgress, cancelBrowserCoreDownload, renameBrowserCorePath } from '../api'
-import { openExternalURL } from '../../../shared/backend/runtime'
+import { onRuntimeEvent, openExternalURL } from '../../../shared/backend/runtime'
 import { resolveActionErrorMessage } from '../utils/actionErrors'
 
 interface CoreDisplayInfo {
@@ -140,6 +140,7 @@ export function CoreManagementPage() {
 
   useEffect(() => {
     loadData()
+    void loadDownloadProxies()
 
     // 监听下载进度
     const onDownloadProgress = (data: CoreDownloadProgressInfo) => {
@@ -168,7 +169,17 @@ export function CoreManagementPage() {
         }
       }
     }
-    return onBrowserCoreDownloadProgress(onDownloadProgress)
+    const offDownloadProgress = onBrowserCoreDownloadProgress(onDownloadProgress)
+    const offSettingsUpdated = onRuntimeEvent('browser:settings:updated', () => { void loadData() })
+    const offCoresUpdated = onRuntimeEvent('browser:cores:updated', () => { void loadData() })
+    const offProxiesUpdated = onRuntimeEvent('browser:proxies:updated', () => { void loadDownloadProxies() })
+
+    return () => {
+      offDownloadProgress?.()
+      offSettingsUpdated?.()
+      offCoresUpdated?.()
+      offProxiesUpdated?.()
+    }
   }, [])
 
   const loadData = async () => {
@@ -211,6 +222,19 @@ export function CoreManagementPage() {
     }
   }
 
+  const loadDownloadProxies = async () => {
+    const proxyList = await fetchBrowserProxies()
+    setProxies(proxyList)
+    setDownloadForm(prev => {
+      if (prev.proxyMode !== 'custom') return prev
+      if (proxyList.some(proxy => proxy.proxyId === prev.proxyId)) return prev
+      if (proxyList.length > 0) {
+        return { ...prev, proxyId: proxyList[0].proxyId }
+      }
+      return { ...prev, proxyMode: 'system', proxyId: '' }
+    })
+  }
+
   // 防抖验证路径
   const validatePath = useCallback(async (path: string) => {
     if (!path.trim()) {
@@ -228,7 +252,6 @@ export function CoreManagementPage() {
 
   // 路径输入变化时触发验证（防抖）
   useEffect(() => {
-    fetchBrowserProxies().then(setProxies)
     const timer = setTimeout(() => {
       if (editModalOpen && editForm.corePath) {
         validatePath(editForm.corePath)

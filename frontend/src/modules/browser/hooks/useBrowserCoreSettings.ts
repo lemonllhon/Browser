@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from '../../../shared/components'
+import { onRuntimeEvent } from '../../../shared/backend/runtime'
 import type { BrowserCore, BrowserCoreInput, BrowserCoreValidateResult, BrowserSettings } from '../types'
 import {
   deleteBrowserCore,
@@ -49,6 +50,21 @@ export function useBrowserCoreSettings({ cores, loadCores }: UseBrowserCoreSetti
     setFingerprintText((data.defaultFingerprintArgs || []).join('\n'))
     setLaunchText((data.defaultLaunchArgs || []).join('\n'))
   }
+
+  useEffect(() => {
+    const offSettingsUpdated = onRuntimeEvent('browser:settings:updated', () => {
+      if (settingsModalOpen) {
+        void loadSettings()
+      }
+    })
+    const offCoresUpdated = onRuntimeEvent('browser:cores:updated', () => {
+      void loadCores()
+    })
+    return () => {
+      offSettingsUpdated?.()
+      offCoresUpdated?.()
+    }
+  }, [settingsModalOpen, loadCores])
 
   const handleOpenSettings = async () => {
     await Promise.all([loadSettings(), loadCores()])

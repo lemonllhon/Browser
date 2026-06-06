@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { Check, Loader2, Search, Wifi, X } from 'lucide-react'
 import type { BrowserProxy } from '../types'
 import { browserProxyBatchTestSpeed, browserProxyTestSpeed, fetchBrowserProxies, fetchBrowserProxyGroups, onBrowserProxySpeedResult } from '../api'
+import { onRuntimeEvent } from '../../../shared/backend/runtime'
 
 interface ProxyPickerModalProps {
   open: boolean
@@ -36,7 +37,13 @@ export function ProxyPickerModal({ open, currentProxyId, onSelect, onClose }: Pr
     setTestingIds(new Set())
     abortRef.current = false
     loadData()
-    return () => { abortRef.current = true }
+    const offProxiesUpdated = onRuntimeEvent('browser:proxies:updated', () => {
+      void loadData()
+    })
+    return () => {
+      abortRef.current = true
+      offProxiesUpdated?.()
+    }
   }, [open])
 
   const loadData = async () => {

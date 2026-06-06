@@ -14,21 +14,27 @@ type ProxySpeedScheduler struct {
 	testFn    SpeedTestFunc
 	interval  time.Duration
 	concLimit int
+	onUpdated func()
 	stopCh    chan struct{}
 	mu        sync.Mutex
 	running   bool
 }
 
 // NewProxySpeedScheduler 创建调度器，interval 为测速间隔，concLimit 为并发数
-func NewProxySpeedScheduler(dao ProxyDAO, testFn SpeedTestFunc, interval time.Duration, concLimit int) *ProxySpeedScheduler {
+func NewProxySpeedScheduler(dao ProxyDAO, testFn SpeedTestFunc, interval time.Duration, concLimit int, onUpdated ...func()) *ProxySpeedScheduler {
 	if concLimit <= 0 {
 		concLimit = 5
+	}
+	var updateCallback func()
+	if len(onUpdated) > 0 {
+		updateCallback = onUpdated[0]
 	}
 	return &ProxySpeedScheduler{
 		dao:       dao,
 		testFn:    testFn,
 		interval:  interval,
 		concLimit: concLimit,
+		onUpdated: updateCallback,
 		stopCh:    make(chan struct{}),
 	}
 }
@@ -89,6 +95,8 @@ func (s *ProxySpeedScheduler) runAll() {
 
 	sem := make(chan struct{}, s.concLimit)
 	var wg sync.WaitGroup
+	var persistedMu sync.Mutex
+	persistedAny := false
 
 	for _, p := range proxies {
 		// 跳过直连（无意义测速）
@@ -103,8 +111,15 @@ func (s *ProxySpeedScheduler) runAll() {
 
 			ok, latencyMs, _ := s.testFn(proxyId)
 			testedAt := time.Now().Format(time.RFC3339)
-			_ = s.dao.UpdateSpeedResult(proxyId, ok, latencyMs, testedAt)
+			if err := s.dao.UpdateSpeedResult(proxyId, ok, latencyMs, testedAt); err == nil {
+				persistedMu.Lock()
+				persistedAny = true
+				persistedMu.Unlock()
+			}
 		}(p.ProxyId)
 	}
 	wg.Wait()
+	if persistedAny && s.onUpdated != nil {
+		s.onUpdated()
+	}
 }

@@ -6,6 +6,8 @@ import type { WindowSyncLayoutSettings, WindowSyncSettings, WindowSyncState } fr
 interface UseBrowserListRuntimeSyncOptions {
   loadProfiles: (options?: { silent?: boolean; syncRuntimeState?: boolean }) => Promise<unknown>
   loadGroups: () => Promise<void>
+  loadProxies: () => Promise<void>
+  loadCores: () => Promise<void>
   setStartingIds: (updater: (prev: Set<string>) => Set<string>) => void
   setStoppingIds: (updater: (prev: Set<string>) => Set<string>) => void
   setWindowSyncState: (state: WindowSyncState | null) => void
@@ -60,6 +62,8 @@ function syncWindowStateToSettings(
 export function useBrowserListRuntimeSync({
   loadProfiles,
   loadGroups,
+  loadProxies,
+  loadCores,
   setStartingIds,
   setStoppingIds,
   setWindowSyncState,
@@ -83,6 +87,8 @@ export function useBrowserListRuntimeSync({
     const offUpdated = onRuntimeEvent('browser:instance:updated', refreshProfiles)
     const offProfilesUpdated = onRuntimeEvent('browser:profiles:updated', refreshProfiles)
     const offGroupsUpdated = onRuntimeEvent('browser:groups:updated', () => { void loadGroups() })
+    const offProxiesUpdated = onRuntimeEvent('browser:proxies:updated', () => { void loadProxies() })
+    const offCoresUpdated = onRuntimeEvent('browser:cores:updated', () => { void loadCores() })
     const offStopped = onRuntimeEvent('browser:instance:stopped', clearPendingAndRefresh)
     const offCrashed = onRuntimeEvent('browser:instance:crashed', clearPendingAndRefresh)
     const offWindowSyncChanged = onWindowSyncStateChanged(state => {
@@ -107,6 +113,8 @@ export function useBrowserListRuntimeSync({
       offUpdated?.()
       offProfilesUpdated?.()
       offGroupsUpdated?.()
+      offProxiesUpdated?.()
+      offCoresUpdated?.()
       offStopped?.()
       offCrashed?.()
       offWindowSyncChanged?.()

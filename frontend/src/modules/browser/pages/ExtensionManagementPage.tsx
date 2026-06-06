@@ -205,8 +205,10 @@ export function ExtensionManagementPage() {
     try {
       const list = await fetchBrowserProfiles()
       setProfiles(list)
+      return list
     } catch (error: unknown) {
       toast.error(errorMessage(error, '加载实例列表失败'), 6000)
+      return []
     }
   }
 
@@ -223,6 +225,59 @@ export function ExtensionManagementPage() {
       setBindingsLoading(false)
     }
   }
+
+  useEffect(() => {
+    const refreshSelectedExtension = async () => {
+      const extensionId = selectedExtension?.extensionId
+      if (!extensionId) return
+      const detail = await fetchBrowserExtension(extensionId)
+      if (detail) {
+        setSelectedExtension(detail)
+      } else {
+        setDetailOpen(false)
+        setBindingModalOpen(false)
+        setAutoBindModalOpen(false)
+        setSelectedExtension(null)
+        setBindings([])
+      }
+    }
+
+    const offExtensionsUpdated = onRuntimeEvent('browser:extensions:updated', () => {
+      void loadData(true)
+      void refreshSelectedExtension()
+      if (bindingModalOpen && selectedExtension?.extensionId) {
+        void loadBindings(selectedExtension.extensionId)
+      }
+    })
+    const offProfilesUpdated = onRuntimeEvent('browser:profiles:updated', () => {
+      void loadProfiles().then(list => {
+        const validIds = new Set(list.map(profile => profile.profileId))
+        setSelectedProfileIds(prev => {
+          const next = new Set<string>()
+          prev.forEach(profileId => {
+            if (validIds.has(profileId)) {
+              next.add(profileId)
+            }
+          })
+          return next
+        })
+        setSyncTargetProfileIds(prev => {
+          const next = new Set<string>()
+          prev.forEach(profileId => {
+            if (validIds.has(profileId)) {
+              next.add(profileId)
+            }
+          })
+          return next
+        })
+      })
+    })
+
+    return () => {
+      offExtensionsUpdated?.()
+      offProfilesUpdated?.()
+    }
+  }, [bindingModalOpen, selectedExtension?.extensionId])
 
   const handleDeleteClick = (record: BrowserExtension) => {
     setDeletingExtension(record)

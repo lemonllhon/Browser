@@ -459,6 +459,7 @@ func (a *App) backupReloadAfterMutation() error {
 			},
 			5*time.Minute,
 			5,
+			a.emitBrowserProxiesUpdated,
 		)
 		a.speedScheduler.Start()
 	}

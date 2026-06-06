@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Button, Card, FormItem, Input, Select, toast } from '../../../shared/components'
+import { onRuntimeEvent } from '../../../shared/backend/runtime'
 import type { BrowserProfile } from '../types'
 import { createBrowserProfile, fetchBrowserProfiles } from '../api'
 import { type FingerprintCopyMode, prepareFingerprintArgsForCopy } from '../utils/fingerprintSerializer'
@@ -36,11 +37,18 @@ export function BrowserCopyPage() {
     const loadProfiles = async () => {
       const list = await fetchBrowserProfiles()
       setProfiles(list)
-      if (!sourceId && list.length > 0) {
-        setSourceId(list[0].profileId)
-      }
+      setSourceId(current => {
+        if (current && list.some(item => item.profileId === current)) return current
+        return list[0]?.profileId || ''
+      })
     }
-    loadProfiles()
+    void loadProfiles()
+    const offProfilesUpdated = onRuntimeEvent('browser:profiles:updated', () => {
+      void loadProfiles()
+    })
+    return () => {
+      offProfilesUpdated?.()
+    }
   }, [])
 
   const sourceProfile = profiles.find(item => item.profileId === sourceId)
@@ -63,6 +71,7 @@ export function BrowserCopyPage() {
         launchArgs: sourceProfile.launchArgs,
         tags: sourceProfile.tags,
         keywords: sourceProfile.keywords || [],
+        groupId: sourceProfile.groupId || '',
       })
       toast.success('配置已复制')
       navigate('/browser/list')
