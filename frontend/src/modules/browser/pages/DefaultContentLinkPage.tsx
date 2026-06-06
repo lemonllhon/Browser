@@ -5,6 +5,7 @@ import type { BrowserBookmark, BrowserGroupWithCount, BrowserStartURL, DefaultCo
 import { fetchAllTags, fetchDefaultContentRules, fetchGroups, saveDefaultContentRules } from '../api'
 import { resolveActionErrorMessage } from '../utils/actionErrors'
 import { BookmarkSettingsPage } from './BookmarkSettingsPage'
+import { onRuntimeEvent } from '../../../shared/backend/runtime'
 
 type ManagedItem = BrowserStartURL | BrowserBookmark
 
@@ -117,11 +118,27 @@ export function DefaultContentLinkPage() {
     setRules(ruleList)
     setTags(tagList)
     setGroups(groupList)
-    setSelectedRuleId(current => current || ruleList[0]?.ruleId || '')
+    setSelectedRuleId(current => {
+      if (current && ruleList.some(rule => rule.ruleId === current)) {
+        return current
+      }
+      return ruleList[0]?.ruleId || ''
+    })
   }
 
   useEffect(() => {
     void load()
+    const reload = () => {
+      void load()
+    }
+    const offDefaultsUpdated = onRuntimeEvent('browser:defaults:updated', reload)
+    const offProfilesUpdated = onRuntimeEvent('browser:profiles:updated', reload)
+    const offGroupsUpdated = onRuntimeEvent('browser:groups:updated', reload)
+    return () => {
+      offDefaultsUpdated?.()
+      offProfilesUpdated?.()
+      offGroupsUpdated?.()
+    }
   }, [])
 
   const upsertRule = (rule: DefaultContentRule) => {

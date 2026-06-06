@@ -65,6 +65,7 @@ func (a *App) DefaultStartURLSave(items []BrowserStartURL) error {
 		return err
 	}
 	log.Info("默认打开页已保存", logger.F("count", len(valid)))
+	a.emitBrowserDefaultsUpdated()
 	return nil
 }
 

@@ -40,6 +40,7 @@ func (a *App) BookmarkSave(items []BrowserBookmark) error {
 			return err
 		}
 		log.Info("书签已保存到数据库", logger.F("count", len(valid)))
+		a.emitBrowserDefaultsUpdated()
 		return nil
 	}
 
@@ -50,6 +51,7 @@ func (a *App) BookmarkSave(items []BrowserBookmark) error {
 		return err
 	}
 	log.Info("书签已保存到 config.yaml", logger.F("count", len(valid)))
+	a.emitBrowserDefaultsUpdated()
 	return nil
 }
 

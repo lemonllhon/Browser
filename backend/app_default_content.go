@@ -141,6 +141,7 @@ func (a *App) DefaultContentRuleSave(items []BrowserDefaultContentRule) error {
 		return err
 	}
 	log.Info("默认内容联动规则已保存", logger.F("count", len(valid)))
+	a.emitBrowserDefaultsUpdated()
 	return nil
 }
 

@@ -4,6 +4,7 @@ import { Badge, Button, Card, toast } from '../../../shared/components'
 import type { BrowserProfile } from '../types'
 import { batchRemoveProfileTags, batchSetProfileTags, fetchBrowserProfiles, renameBrowserTag } from '../api'
 import { resolveActionErrorMessage } from '../utils/actionErrors'
+import { onRuntimeEvent } from '../../../shared/backend/runtime'
 
 // ─── 左侧标签面板 ────────────────────────────────────────────────────────────
 
@@ -233,10 +234,19 @@ export function TagManagementPage({ embedded = false }: { embedded?: boolean }) 
       const usedTags = new Set<string>()
       data.forEach(p => p.tags?.forEach(t => usedTags.add(t)))
       setPendingTags(prev => prev.filter(t => !usedTags.has(t)))
+      setSelectedTag(current => current && !usedTags.has(current) ? null : current)
     } finally { setLoading(false) }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    void load()
+    const offProfilesUpdated = onRuntimeEvent('browser:profiles:updated', () => {
+      void load()
+    })
+    return () => {
+      offProfilesUpdated?.()
+    }
+  }, [])
 
   // 重置勾选当切换标签时
   useEffect(() => { setSelectedIds(new Set()) }, [selectedTag])

@@ -10,6 +10,7 @@ import {
   saveBookmarks,
   saveDefaultStartURLs,
 } from '../api'
+import { onRuntimeEvent } from '../../../shared/backend/runtime'
 
 type ManagedItem = {
   name: string
@@ -117,9 +118,23 @@ export function BookmarkSettingsPage({ embedded = false }: { embedded?: boolean 
   const [bookmarkDragIndex, setBookmarkDragIndex] = useState<number | null>(null)
   const [startURLDragIndex, setStartURLDragIndex] = useState<number | null>(null)
 
+  const load = async () => {
+    const [startURLs, bookmarks] = await Promise.all([
+      fetchDefaultStartURLs(),
+      fetchBookmarks(),
+    ])
+    setStartURLItems(startURLs)
+    setBookmarkItems(bookmarks)
+  }
+
   useEffect(() => {
-    fetchDefaultStartURLs().then(setStartURLItems)
-    fetchBookmarks().then(setBookmarkItems)
+    void load()
+    const offDefaultsUpdated = onRuntimeEvent('browser:defaults:updated', () => {
+      void load()
+    })
+    return () => {
+      offDefaultsUpdated?.()
+    }
   }, [])
 
   const validateItems = (items: ManagedItem[]) => {

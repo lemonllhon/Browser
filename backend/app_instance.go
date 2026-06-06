@@ -493,13 +493,20 @@ func (a *App) BrowserProfileBatchSetTags(profileIds []string, tags []string, rep
 	a.refreshBrowserProfileConfigCacheFromStore()
 	log := logger.New("Browser")
 	a.browserMgr.Mutex.Lock()
-	defer a.browserMgr.Mutex.Unlock()
+	shouldEmitProfileUpdate := false
+	defer func() {
+		a.browserMgr.Mutex.Unlock()
+		if shouldEmitProfileUpdate {
+			a.emitProfileDataUpdated()
+		}
+	}()
 
 	for _, profileId := range profileIds {
 		profile, exists := a.browserMgr.Profiles[profileId]
 		if !exists {
 			continue
 		}
+		shouldEmitProfileUpdate = true
 		if replace {
 			profile.Tags = tags
 		} else {
@@ -531,7 +538,13 @@ func (a *App) BrowserProfileBatchRemoveTags(profileIds []string, tags []string) 
 	a.refreshBrowserProfileConfigCacheFromStore()
 	log := logger.New("Browser")
 	a.browserMgr.Mutex.Lock()
-	defer a.browserMgr.Mutex.Unlock()
+	shouldEmitProfileUpdate := false
+	defer func() {
+		a.browserMgr.Mutex.Unlock()
+		if shouldEmitProfileUpdate {
+			a.emitProfileDataUpdated()
+		}
+	}()
 
 	removeSet := make(map[string]struct{})
 	for _, t := range tags {
@@ -543,6 +556,7 @@ func (a *App) BrowserProfileBatchRemoveTags(profileIds []string, tags []string) 
 		if !exists {
 			continue
 		}
+		shouldEmitProfileUpdate = true
 		filtered := profile.Tags[:0]
 		for _, t := range profile.Tags {
 			if _, ok := removeSet[t]; !ok {
@@ -571,10 +585,14 @@ func (a *App) BrowserRenameTag(oldName string, newName string) error {
 		return fmt.Errorf("标签名称不能为空")
 	}
 
-	a.browserMgr.Mutex.Lock()
-	defer a.browserMgr.Mutex.Unlock()
-
 	changedCount := 0
+	a.browserMgr.Mutex.Lock()
+	defer func() {
+		a.browserMgr.Mutex.Unlock()
+		if changedCount > 0 {
+			a.emitProfileDataUpdated()
+		}
+	}()
 	for profileId, profile := range a.browserMgr.Profiles {
 		tagChanged := false
 		var newTags []string
