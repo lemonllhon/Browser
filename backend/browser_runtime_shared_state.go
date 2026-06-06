@@ -194,6 +194,7 @@ func browserProfilesFromConfig(items []config.BrowserProfileConfig) []*BrowserPr
 			LaunchArgs:                   append([]string{}, item.LaunchArgs...),
 			Tags:                         append([]string{}, item.Tags...),
 			Keywords:                     append([]string{}, item.Keywords...),
+			GroupId:                      strings.TrimSpace(item.GroupId),
 			CreatedAt:                    createdAt,
 			UpdatedAt:                    updatedAt,
 		})

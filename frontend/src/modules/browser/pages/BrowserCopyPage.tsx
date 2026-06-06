@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Button, Card, FormItem, Input, Select, toast } from '../../../shared/components'
 import { onRuntimeEvent } from '../../../shared/backend/runtime'
 import type { BrowserProfile } from '../types'
 import { createBrowserProfile, fetchBrowserProfiles } from '../api'
 import { type FingerprintCopyMode, prepareFingerprintArgsForCopy } from '../utils/fingerprintSerializer'
+import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
 
 const FINGERPRINT_COPY_OPTIONS: Array<{ value: FingerprintCopyMode; label: string; hint: string }> = [
   {
@@ -33,15 +34,16 @@ export function BrowserCopyPage() {
   const [fingerprintMode, setFingerprintMode] = useState<FingerprintCopyMode>('regenerateSeed')
   const [saving, setSaving] = useState(false)
 
+  const loadProfiles = useCallback(async () => {
+    const list = await fetchBrowserProfiles()
+    setProfiles(list)
+    setSourceId(current => {
+      if (current && list.some(item => item.profileId === current)) return current
+      return list[0]?.profileId || ''
+    })
+  }, [])
+
   useEffect(() => {
-    const loadProfiles = async () => {
-      const list = await fetchBrowserProfiles()
-      setProfiles(list)
-      setSourceId(current => {
-        if (current && list.some(item => item.profileId === current)) return current
-        return list[0]?.profileId || ''
-      })
-    }
     void loadProfiles()
     const offProfilesUpdated = onRuntimeEvent('browser:profiles:updated', () => {
       void loadProfiles()
@@ -49,7 +51,9 @@ export function BrowserCopyPage() {
     return () => {
       offProfilesUpdated?.()
     }
-  }, [])
+  }, [loadProfiles])
+
+  useVisibleRefresh(() => loadProfiles(), 2000, !saving)
 
   const sourceProfile = profiles.find(item => item.profileId === sourceId)
   const fingerprintModeHint = FINGERPRINT_COPY_OPTIONS.find(item => item.value === fingerprintMode)?.hint || ''

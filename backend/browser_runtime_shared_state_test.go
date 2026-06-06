@@ -5,6 +5,7 @@ import (
 	"ant-chrome/backend/internal/config"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 )
 
@@ -321,6 +322,30 @@ func TestBrowserProfileCreateRefreshesBeforeWriting(t *testing.T) {
 	}
 	if len(dao.upsertedIDs) != 1 || dao.upsertedIDs[0] != created.ProfileId {
 		t.Fatalf("expected create to avoid resurrecting stale cached profiles, upserted=%v created=%s", dao.upsertedIDs, created.ProfileId)
+	}
+}
+
+func TestBrowserProfileWriteRejectsDeletedSharedGroup(t *testing.T) {
+	app := newRuntimeStateTestApp(t.TempDir())
+	dao := &profileDAOListStub{profiles: []*BrowserProfile{
+		{ProfileId: "profile-1", ProfileName: "Fresh profile", GroupId: ""},
+	}}
+	app.browserMgr.ProfileDAO = dao
+	app.browserMgr.GroupDAO = &groupDAOListStub{groups: []*BrowserGroup{
+		{GroupId: "existing-group", GroupName: "Existing"},
+	}}
+
+	if _, err := app.BrowserProfileCreate(BrowserProfileInput{ProfileName: "Created", GroupId: "deleted-group"}); err == nil || !strings.Contains(err.Error(), "分组不存在") {
+		t.Fatalf("expected create with deleted group to fail, got %v", err)
+	}
+	if _, err := app.BrowserProfileUpdate("profile-1", BrowserProfileInput{ProfileName: "Updated", GroupId: "deleted-group"}); err == nil || !strings.Contains(err.Error(), "分组不存在") {
+		t.Fatalf("expected update with deleted group to fail, got %v", err)
+	}
+	if err := app.MoveInstancesToGroup([]string{"profile-1"}, "deleted-group"); err == nil || !strings.Contains(err.Error(), "分组不存在") {
+		t.Fatalf("expected move to deleted group to fail before writing, got %v", err)
+	}
+	if len(dao.upsertedIDs) != 0 {
+		t.Fatalf("expected deleted group writes to be rejected before profile upsert, upserted=%v", dao.upsertedIDs)
 	}
 }
 

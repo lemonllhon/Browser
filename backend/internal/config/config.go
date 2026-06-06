@@ -203,6 +203,7 @@ type BrowserProfileConfig struct {
 	LaunchArgs                   []string `yaml:"launch_args" json:"launchArgs"`
 	Tags                         []string `yaml:"tags" json:"tags"`
 	Keywords                     []string `yaml:"keywords,omitempty" json:"keywords,omitempty"`
+	GroupId                      string   `yaml:"group_id,omitempty" json:"groupId,omitempty"`
 	CreatedAt                    string   `yaml:"created_at" json:"createdAt"`
 	UpdatedAt                    string   `yaml:"updated_at" json:"updatedAt"`
 }

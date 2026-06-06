@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { FolderOpen, Layers } from 'lucide-react'
 import { Button, Card, ConfirmModal, FormItem, Input, Modal, Select, Textarea, toast } from '../../../shared/components'
@@ -12,6 +12,7 @@ import { GroupSelector } from '../components/GroupSelector'
 import { ProxyPickerModal } from '../components/ProxyPickerModal'
 import { REGION_OPTIONS, findRegionPreset, findRegionPresetByLocale, pickRegionTimezone, regionTimezones } from '../config/regionPresets'
 import { deserialize as deserializeFingerprint, serialize as serializeFingerprint } from '../utils/fingerprintSerializer'
+import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
 
 const fallbackLowLaunchArgs = ['--disable-sync', '--no-first-run']
 const incognitoArg = '--incognito'
@@ -41,6 +42,47 @@ function getErrorMessage(error: unknown, fallback: string): string {
     return String((error as { message?: unknown }).message || fallback)
   }
   return fallback
+}
+
+function snapshotToInput(current: BrowserProfile): { input: BrowserProfileInput; launchArgsText: string } {
+  const currentLaunchArgs = normalizeLaunchArgs(current.launchArgs)
+  const normalizedCoreId = !current.coreId || current.coreId.toLowerCase() === 'default'
+    ? ''
+    : current.coreId
+  return {
+    input: {
+      profileName: current.profileName,
+      userDataDir: current.userDataDir,
+      coreId: normalizedCoreId,
+      fingerprintArgs: current.fingerprintArgs,
+      proxyId: current.proxyId,
+      proxyConfig: current.proxyConfig,
+      autoProxySwitchEnabled: current.autoProxySwitchEnabled || false,
+      autoProxySwitchGroupName: current.autoProxySwitchGroupName || '',
+      autoProxySwitchMode: current.autoProxySwitchMode || 'interval',
+      autoProxySwitchIntervalM: current.autoProxySwitchIntervalM || 5,
+      autoProxySwitchRotateByGroup: current.autoProxySwitchRotateByGroup || false,
+      launchArgs: currentLaunchArgs,
+      tags: current.tags,
+      keywords: current.keywords || [],
+      groupId: current.groupId || '',
+    },
+    launchArgsText: currentLaunchArgs.join('\n'),
+  }
+}
+
+function mergeCleanProfileFields(
+  previous: BrowserProfileInput,
+  latest: BrowserProfileInput,
+  dirtyFields: Set<keyof BrowserProfileInput>,
+): BrowserProfileInput {
+  const merged: BrowserProfileInput = { ...latest }
+  const previousByField = previous as unknown as Record<string, unknown>
+  const mergedByField = merged as unknown as Record<string, unknown>
+  dirtyFields.forEach(field => {
+    mergedByField[field] = previousByField[field]
+  })
+  return merged
 }
 
 export function BrowserEditPage() {
@@ -74,103 +116,84 @@ export function BrowserEditPage() {
   const [isDirty, setIsDirty] = useState(false)
   const [leaveConfirm, setLeaveConfirm] = useState(false)
   const [saveError, setSaveError] = useState('')
+  const dirtyFieldsRef = useRef<Set<keyof BrowserProfileInput>>(new Set())
   const incognitoEnabled = hasLaunchArg(launchArgsText, incognitoArg)
 
-  const applyProfileSnapshot = (current: BrowserProfile) => {
-    const currentLaunchArgs = normalizeLaunchArgs(current.launchArgs)
-    const normalizedCoreId = !current.coreId || current.coreId.toLowerCase() === 'default'
-      ? ''
-      : current.coreId
-    setFormData({
-      profileName: current.profileName,
-      userDataDir: current.userDataDir,
-      coreId: normalizedCoreId,
-      fingerprintArgs: current.fingerprintArgs,
-      proxyId: current.proxyId,
-      proxyConfig: current.proxyConfig,
-      autoProxySwitchEnabled: current.autoProxySwitchEnabled || false,
-      autoProxySwitchGroupName: current.autoProxySwitchGroupName || '',
-      autoProxySwitchMode: current.autoProxySwitchMode || 'interval',
-      autoProxySwitchIntervalM: current.autoProxySwitchIntervalM || 5,
-      autoProxySwitchRotateByGroup: current.autoProxySwitchRotateByGroup || false,
-      launchArgs: currentLaunchArgs,
-      tags: current.tags,
-      keywords: current.keywords || [],
-      groupId: current.groupId || '',
+  const markDirty = useCallback((...fields: Array<keyof BrowserProfileInput>) => {
+    fields.forEach(field => dirtyFieldsRef.current.add(field))
+    setIsDirty(true)
+  }, [])
+
+  const applyProfileSnapshot = useCallback((current: BrowserProfile, preserveDirty = false) => {
+    const latest = snapshotToInput(current)
+    const shouldPreserveDirty = preserveDirty && dirtyFieldsRef.current.size > 0
+    setFormData(prev => shouldPreserveDirty
+      ? mergeCleanProfileFields(prev, latest.input, dirtyFieldsRef.current)
+      : latest.input
+    )
+    if (!shouldPreserveDirty || !dirtyFieldsRef.current.has('launchArgs')) {
+      setLaunchArgsText(latest.launchArgsText)
+    }
+  }, [])
+
+  const applyCreateDefaults = useCallback((settings: Awaited<ReturnType<typeof fetchBrowserSettings>>, groupList: BrowserGroup[], preserveDirty = false) => {
+    const dirtyFields = dirtyFieldsRef.current
+    const resolvedDefaultLaunchArgs = resolveDefaultLaunchArgs(settings.defaultLaunchArgs || [])
+    setFormData(prev => {
+      const next = { ...prev }
+      if (!preserveDirty || !dirtyFields.has('fingerprintArgs')) {
+        next.fingerprintArgs = settings.defaultFingerprintArgs || []
+      }
+      if (next.groupId && !groupList.some(group => group.groupId === next.groupId) && (!preserveDirty || !dirtyFields.has('groupId'))) {
+        next.groupId = ''
+      }
+      return next
     })
-    setLaunchArgsText(currentLaunchArgs.join('\n'))
-  }
+    if (!preserveDirty || !dirtyFields.has('launchArgs')) {
+      setLaunchArgsText(resolvedDefaultLaunchArgs.join('\n'))
+    }
+  }, [])
+
+  const loadData = useCallback(async (preserveDirty = false) => {
+    const [coreList, proxyList, tagList, groupList, settings] = await Promise.all([
+      fetchBrowserCores(),
+      fetchBrowserProxies(),
+      fetchAllTags(),
+      fetchGroups(),
+      fetchBrowserSettings(),
+    ])
+    setCores(coreList)
+    setProxies(proxyList)
+    setAllTags(tagList)
+    setGroups(groupList)
+
+    if (isCreate) {
+      applyCreateDefaults(settings, groupList, preserveDirty)
+      return
+    }
+
+    const list = await fetchBrowserProfiles()
+    const current = list.find(item => item.profileId === id)
+    if (!current) return
+    applyProfileSnapshot(current, preserveDirty)
+  }, [applyCreateDefaults, applyProfileSnapshot, id, isCreate])
 
   useEffect(() => {
-    const loadData = async () => {
-      const [coreList, proxyList, tagList, groupList, settings] = await Promise.all([
-        fetchBrowserCores(),
-        fetchBrowserProxies(),
-        fetchAllTags(),
-        fetchGroups(),
-        fetchBrowserSettings(),
-      ])
-      const resolvedDefaultLaunchArgs = resolveDefaultLaunchArgs(settings.defaultLaunchArgs || [])
-      setCores(coreList)
-      setProxies(proxyList)
-      setAllTags(tagList)
-      setGroups(groupList)
+    void loadData(false)
+  }, [loadData])
 
-      if (isCreate) {
-        setFormData(prev => ({
-          ...prev,
-          fingerprintArgs: settings.defaultFingerprintArgs || [],
-        }))
-        setLaunchArgsText(resolvedDefaultLaunchArgs.join('\n'))
-        return
-      }
-      const list = await fetchBrowserProfiles()
-      const current = list.find(item => item.profileId === id)
-      if (!current) return
-      applyProfileSnapshot(current)
-    }
-    loadData()
-  }, [id, isCreate])
+  useVisibleRefresh(() => loadData(true), 2000, !saving)
 
   useEffect(() => {
-    const refreshTags = () => {
-      void fetchAllTags().then(setAllTags)
-    }
-    const refreshGroups = () => {
-      void fetchGroups().then(groupList => {
-        setGroups(groupList)
-        if (!isDirty) {
-          setFormData(prev => (
-            prev.groupId && !groupList.some(group => group.groupId === prev.groupId)
-              ? { ...prev, groupId: '' }
-              : prev
-          ))
-        }
-      })
-    }
-    const refreshProfiles = () => {
-      refreshTags()
-      if (!isCreate && id && !isDirty) {
-        void fetchBrowserProfiles().then(list => {
-          const current = list.find(item => item.profileId === id)
-          if (current) {
-            applyProfileSnapshot(current)
-          }
-        })
-      }
+    const refreshData = () => {
+      void loadData(true)
     }
 
-    const offProfilesUpdated = onRuntimeEvent('browser:profiles:updated', refreshProfiles)
-    const offGroupsUpdated = onRuntimeEvent('browser:groups:updated', refreshGroups)
-    const offCoresUpdated = onRuntimeEvent('browser:cores:updated', () => { void fetchBrowserCores().then(setCores) })
-    const offProxiesUpdated = onRuntimeEvent('browser:proxies:updated', () => { void fetchBrowserProxies().then(setProxies) })
-    const offSettingsUpdated = onRuntimeEvent('browser:settings:updated', () => {
-      if (!isCreate || isDirty) return
-      void fetchBrowserSettings().then(settings => {
-        setFormData(prev => ({ ...prev, fingerprintArgs: settings.defaultFingerprintArgs || [] }))
-        setLaunchArgsText(resolveDefaultLaunchArgs(settings.defaultLaunchArgs || []).join('\n'))
-      })
-    })
+    const offProfilesUpdated = onRuntimeEvent('browser:profiles:updated', refreshData)
+    const offGroupsUpdated = onRuntimeEvent('browser:groups:updated', refreshData)
+    const offCoresUpdated = onRuntimeEvent('browser:cores:updated', refreshData)
+    const offProxiesUpdated = onRuntimeEvent('browser:proxies:updated', refreshData)
+    const offSettingsUpdated = onRuntimeEvent('browser:settings:updated', refreshData)
 
     return () => {
       offProfilesUpdated?.()
@@ -179,15 +202,15 @@ export function BrowserEditPage() {
       offProxiesUpdated?.()
       offSettingsUpdated?.()
     }
-  }, [id, isCreate, isDirty])
+  }, [loadData])
 
   const handleChange = (field: keyof BrowserProfileInput, value: string | string[] | boolean | number) => {
-    setIsDirty(true)
+    markDirty(field)
     setFormData(prev => ({ ...prev, [field]: value }))
   }
 
   const handleAutoProxySwitchToggle = () => {
-    setIsDirty(true)
+    markDirty('autoProxySwitchEnabled', 'proxyId', 'proxyConfig')
     setFormData(prev => {
       const enabled = !prev.autoProxySwitchEnabled
       return {
@@ -208,7 +231,7 @@ export function BrowserEditPage() {
         lang: undefined,
         timezone: undefined,
       }
-      setIsDirty(true)
+      markDirty('fingerprintArgs')
       setFormData(prev => ({ ...prev, fingerprintArgs: serializeFingerprint(nextFingerprint) }))
       return
     }
@@ -220,12 +243,12 @@ export function BrowserEditPage() {
       lang: preset.lang,
       timezone: pickRegionTimezone(code) || preset.timezone,
     }
-    setIsDirty(true)
+    markDirty('fingerprintArgs')
     setFormData(prev => ({ ...prev, fingerprintArgs: serializeFingerprint(nextFingerprint) }))
   }
 
   const handleAutoProxySwitchGroupChange = (groupName: string) => {
-    setIsDirty(true)
+    markDirty('autoProxySwitchGroupName', 'autoProxySwitchRotateByGroup')
     setFormData(prev => ({
       ...prev,
       autoProxySwitchGroupName: groupName,
@@ -234,7 +257,7 @@ export function BrowserEditPage() {
   }
 
   const handleRotateByGroupToggle = () => {
-    setIsDirty(true)
+    markDirty('autoProxySwitchRotateByGroup')
     setFormData(prev => ({
       ...prev,
       autoProxySwitchRotateByGroup: !prev.autoProxySwitchRotateByGroup,
@@ -244,7 +267,7 @@ export function BrowserEditPage() {
   const handleIncognitoToggle = () => {
     const nextArgs = setLaunchArgEnabled(launchArgsText.split('\n'), incognitoArg, !incognitoEnabled)
     setLaunchArgsText(nextArgs.join('\n'))
-    setIsDirty(true)
+    markDirty('launchArgs')
   }
 
   const handleSave = async () => {
@@ -268,6 +291,7 @@ export function BrowserEditPage() {
         await updateBrowserProfile(id, payload)
         toast.success('配置已更新')
       }
+      dirtyFieldsRef.current.clear()
       setIsDirty(false)
       navigate('/browser/list')
     } catch (error: unknown) {
@@ -547,7 +571,7 @@ export function BrowserEditPage() {
           </div>
           <Textarea
             value={launchArgsText}
-            onChange={e => { setLaunchArgsText(e.target.value); setIsDirty(true) }}
+            onChange={e => { setLaunchArgsText(e.target.value); markDirty('launchArgs') }}
             rows={6}
             placeholder="--disable-sync"
           />

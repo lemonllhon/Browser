@@ -185,6 +185,53 @@ func TestBrowserClearCookiesUsesLatestSharedBrowserSettings(t *testing.T) {
 	}
 }
 
+func TestResetStoppedProfileFingerprintRefreshesProfileStoreBeforeSaving(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.Browser.DefaultFingerprintArgs = []string{"--fingerprint-platform=mac"}
+	app := NewApp(root)
+	app.config = cfg
+	app.browserMgr = browser.NewManager(cfg, root)
+	app.browserMgr.Profiles = map[string]*BrowserProfile{
+		"profile-1": {
+			ProfileId:       "profile-1",
+			ProfileName:     "Stale profile",
+			UserDataDir:     "profile-1",
+			FingerprintArgs: []string{"--fingerprint=old", "--fingerprint-platform=windows"},
+			Tags:            []string{"stale"},
+			GroupId:         "old-group",
+			Running:         false,
+		},
+	}
+	dao := &profileDAOListStub{profiles: []*BrowserProfile{
+		{
+			ProfileId:       "profile-1",
+			ProfileName:     "Fresh profile",
+			UserDataDir:     "profile-1",
+			FingerprintArgs: []string{"--fingerprint=old", "--fingerprint-platform=windows"},
+			Tags:            []string{"fresh"},
+			GroupId:         "fresh-group",
+			Running:         false,
+		},
+	}}
+	app.browserMgr.ProfileDAO = dao
+
+	if err := app.resetStoppedProfileFingerprint("profile-1"); err != nil {
+		t.Fatalf("resetStoppedProfileFingerprint returned error: %v", err)
+	}
+
+	persisted := dao.profiles[0]
+	if persisted.ProfileName != "Fresh profile" || persisted.GroupId != "fresh-group" || len(persisted.Tags) != 1 || persisted.Tags[0] != "fresh" {
+		t.Fatalf("expected reset to preserve latest shared profile fields, got %#v", persisted)
+	}
+	if value := launchArgValue(persisted.FingerprintArgs, "--fingerprint-platform"); value != "mac" {
+		t.Fatalf("expected fingerprint to be reset from latest defaults, got %q in %v", value, persisted.FingerprintArgs)
+	}
+	if value := launchArgValue(persisted.FingerprintArgs, "--fingerprint"); value == "" || value == "old" {
+		t.Fatalf("expected fingerprint seed to be regenerated, got %q in %v", value, persisted.FingerprintArgs)
+	}
+}
+
 func TestBrowserClearCookiesRejectsRunningProfileWithoutDebugReady(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.DefaultConfig()

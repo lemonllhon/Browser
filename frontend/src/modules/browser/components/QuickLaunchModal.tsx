@@ -5,6 +5,7 @@ import { onRuntimeEvent } from '../../../shared/backend/runtime'
 import { fetchBrowserProfiles, fetchGroups, startBrowserInstanceByCode } from '../api'
 import type { BrowserGroupWithCount, BrowserProfile } from '../types'
 import { resolveActionFeedback } from '../utils/actionErrors'
+import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
 
 interface QuickLaunchModalProps {
   open: boolean
@@ -126,6 +127,18 @@ export function QuickLaunchModal({ open, onClose }: QuickLaunchModalProps) {
       setActiveTag('')
     }
   }, [open])
+
+  useVisibleRefresh(() => {
+    if (!open) return
+    return Promise.allSettled([fetchBrowserProfiles(), fetchGroups()]).then(([profilesResult, groupsResult]) => {
+      if (profilesResult.status === 'fulfilled') {
+        setProfiles((profilesResult.value || []).slice().sort(sortProfiles))
+      }
+      if (groupsResult.status === 'fulfilled') {
+        setGroups(groupsResult.value || [])
+      }
+    })
+  }, 2000, open)
 
   const groupNameMap = useMemo(() => {
     const map = new Map<string, string>()

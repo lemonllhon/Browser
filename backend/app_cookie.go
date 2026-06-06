@@ -296,6 +296,7 @@ func (a *App) resetStoppedProfileFingerprint(profileId string) error {
 	if err := a.refreshConfigCacheFromDiskIfPresent(); err != nil {
 		return fmt.Errorf("重载浏览器配置失败: %w", err)
 	}
+	a.refreshBrowserProfileConfigCacheFromStore()
 	defaultArgs := []string{}
 	if a.config != nil {
 		defaultArgs = append(defaultArgs, a.config.Browser.DefaultFingerprintArgs...)

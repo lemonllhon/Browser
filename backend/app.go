@@ -946,6 +946,9 @@ func (a *App) BrowserProfileSetKeywords(profileId string, keywords []string) (*B
 func (a *App) BrowserProfileCreate(input BrowserProfileInput) (*BrowserProfile, error) {
 	_ = a.refreshConfigCacheFromDiskIfPresent()
 	a.refreshBrowserProfileConfigCacheFromStore()
+	if err := a.validateProfileGroupID(input.GroupId); err != nil {
+		return nil, err
+	}
 	profile, err := a.browserMgr.Create(input)
 	if err != nil {
 		return nil, err
@@ -962,6 +965,9 @@ func (a *App) BrowserProfileCreate(input BrowserProfileInput) (*BrowserProfile, 
 func (a *App) BrowserProfileUpdate(profileId string, input BrowserProfileInput) (*BrowserProfile, error) {
 	a.refreshBrowserProfileConfigCacheFromStore()
 	if err := a.ensureWindowSyncProfileMutable(profileId); err != nil {
+		return nil, err
+	}
+	if err := a.validateProfileGroupID(input.GroupId); err != nil {
 		return nil, err
 	}
 	profile, err := a.browserMgr.Update(profileId, input)

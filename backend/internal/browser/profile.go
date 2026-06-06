@@ -96,6 +96,7 @@ func (m *Manager) loadProfiles() {
 			LaunchArgs:                   append([]string{}, item.LaunchArgs...),
 			Tags:                         append([]string{}, item.Tags...),
 			Keywords:                     append([]string{}, item.Keywords...),
+			GroupId:                      strings.TrimSpace(item.GroupId),
 			Running:                      false,
 			DebugPort:                    0,
 			Pid:                          0,
@@ -146,6 +147,7 @@ func (m *Manager) SaveProfiles() error {
 			LaunchArgs:                   append([]string{}, profile.LaunchArgs...),
 			Tags:                         append([]string{}, profile.Tags...),
 			Keywords:                     append([]string{}, profile.Keywords...),
+			GroupId:                      strings.TrimSpace(profile.GroupId),
 			CreatedAt:                    profile.CreatedAt,
 			UpdatedAt:                    profile.UpdatedAt,
 		})

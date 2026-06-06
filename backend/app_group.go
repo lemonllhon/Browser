@@ -2,6 +2,7 @@ package backend
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"ant-chrome/backend/internal/browser"
@@ -125,6 +126,9 @@ func (a *App) DeleteGroup(groupId string) error {
 // MoveInstancesToGroup 批量移动实例到分组
 func (a *App) MoveInstancesToGroup(profileIds []string, groupId string) error {
 	log := logger.New("Group")
+	if err := a.validateProfileGroupID(groupId); err != nil {
+		return err
+	}
 	dao, ok := a.browserMgr.ProfileDAO.(*browser.SQLiteProfileDAO)
 	if !ok {
 		return fmt.Errorf("ProfileDAO 不支持批量移动")
@@ -138,6 +142,20 @@ func (a *App) MoveInstancesToGroup(profileIds []string, groupId string) error {
 	log.Info("实例已移动到分组", logger.F("count", len(profileIds)), logger.F("group_id", groupId))
 	a.emitGroupDataUpdated()
 	a.emitProfileDataUpdated()
+	return nil
+}
+
+func (a *App) validateProfileGroupID(groupId string) error {
+	groupId = strings.TrimSpace(groupId)
+	if groupId == "" {
+		return nil
+	}
+	if a == nil || a.browserMgr == nil || a.browserMgr.GroupDAO == nil {
+		return nil
+	}
+	if _, err := a.browserMgr.GroupDAO.GetById(groupId); err != nil {
+		return fmt.Errorf("分组不存在或已被删除: %s", groupId)
+	}
 	return nil
 }
 
