@@ -713,50 +713,41 @@ func (a *App) BrowserProfileSwitchProxyNow(profileId string) (*BrowserProfile, e
 		return nil, err
 	}
 
-	a.browserMgr.Mutex.Lock()
-	profile, exists = a.browserMgr.Profiles[profileId]
-	if !exists {
-		a.browserMgr.Mutex.Unlock()
-		return nil, fmt.Errorf("profile not found")
-	}
 	bridge.mu.RLock()
+	currentProxyID := ""
 	if bridge.hasCurrent {
-		profile.AutoProxySwitchLastProxyId = bridge.current.ProxyId
+		currentProxyID = bridge.current.ProxyId
 	}
 	bridge.mu.RUnlock()
-	profile.UpdatedAt = time.Now().Format(time.RFC3339)
-	if a.browserMgr.ProfileDAO != nil {
-		if err := a.browserMgr.ProfileDAO.Upsert(profile); err != nil {
-			a.browserMgr.Mutex.Unlock()
-			return nil, err
-		}
-	} else if err := a.browserMgr.SaveProfiles(); err != nil {
-		a.browserMgr.Mutex.Unlock()
+	snapshot, _, err := a.saveProfileSwitchProxyID(profileId, currentProxyID)
+	if err != nil {
 		return nil, err
 	}
-	snapshot := *profile
-	a.browserMgr.Mutex.Unlock()
-
-	a.emitBrowserInstanceUpdated(&snapshot)
-	return &snapshot, nil
+	a.emitBrowserInstanceUpdated(snapshot)
+	return snapshot, nil
 }
 
-func (a *App) updateProfileSwitchProxyID(profileId string, proxyID string) {
+func (a *App) saveProfileSwitchProxyID(profileId string, proxyID string) (*BrowserProfile, bool, error) {
 	profileId = strings.TrimSpace(profileId)
 	proxyID = strings.TrimSpace(proxyID)
-	if a == nil || a.browserMgr == nil || profileId == "" || proxyID == "" {
-		return
+	if a == nil || a.browserMgr == nil {
+		return nil, false, fmt.Errorf("browser manager is not initialized")
+	}
+	if profileId == "" || proxyID == "" {
+		return nil, false, fmt.Errorf("profile id and proxy id are required")
 	}
 
+	a.refreshBrowserProfileConfigCacheFromStore()
 	a.browserMgr.Mutex.Lock()
 	profile, exists := a.browserMgr.Profiles[profileId]
 	if !exists || profile == nil {
 		a.browserMgr.Mutex.Unlock()
-		return
+		return nil, false, fmt.Errorf("profile not found")
 	}
 	if profile.AutoProxySwitchLastProxyId == proxyID {
+		snapshot := *profile
 		a.browserMgr.Mutex.Unlock()
-		return
+		return &snapshot, false, nil
 	}
 	profile.AutoProxySwitchLastProxyId = proxyID
 	profile.UpdatedAt = time.Now().Format(time.RFC3339)
@@ -768,12 +759,27 @@ func (a *App) updateProfileSwitchProxyID(profileId string, proxyID string) {
 	}
 	snapshot := *profile
 	a.browserMgr.Mutex.Unlock()
-
 	if saveErr != nil {
-		logger.New("ProxySwitch").Warn("代理切换状态持久化失败", logger.F("profile_id", profileId), logger.F("proxy_id", proxyID), logger.F("error", saveErr.Error()))
+		return nil, false, saveErr
+	}
+	return &snapshot, true, nil
+}
+
+func (a *App) updateProfileSwitchProxyID(profileId string, proxyID string) {
+	profileId = strings.TrimSpace(profileId)
+	proxyID = strings.TrimSpace(proxyID)
+	if a == nil || a.browserMgr == nil || profileId == "" || proxyID == "" {
 		return
 	}
-	a.emitBrowserInstanceUpdated(&snapshot)
+
+	snapshot, changed, err := a.saveProfileSwitchProxyID(profileId, proxyID)
+	if err != nil {
+		logger.New("ProxySwitch").Warn("代理切换状态持久化失败", logger.F("profile_id", profileId), logger.F("proxy_id", proxyID), logger.F("error", err.Error()))
+		return
+	}
+	if changed {
+		a.emitBrowserInstanceUpdated(snapshot)
+	}
 }
 
 func (a *App) clearProfileSwitchBridges() {

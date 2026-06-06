@@ -324,6 +324,101 @@ func TestBrowserProfileCreateRefreshesBeforeWriting(t *testing.T) {
 	}
 }
 
+func TestReconcileProfileProxyBindingsRefreshesProfilesBeforeWriting(t *testing.T) {
+	app := newRuntimeStateTestApp(t.TempDir())
+	app.config.Browser.Proxies = []BrowserProxy{
+		{ProxyId: "proxy-fresh", ProxyName: "Fresh Proxy", ProxyConfig: "http://127.0.0.1:18081"},
+	}
+	app.browserMgr.ProxyDAO = &proxyDAOListStub{proxies: app.config.Browser.Proxies}
+	app.browserMgr.Profiles["deleted-profile"] = &BrowserProfile{
+		ProfileId:   "deleted-profile",
+		ProfileName: "Deleted elsewhere",
+		ProxyId:     "missing-proxy",
+		ProxyConfig: "http://127.0.0.1:18080",
+	}
+	dao := &profileDAOListStub{profiles: []*BrowserProfile{
+		{
+			ProfileId:         "profile-1",
+			ProfileName:       "Updated elsewhere",
+			ProxyId:           "missing-proxy",
+			ProxyConfig:       "http://127.0.0.1:18081",
+			ProxyBindSourceID: "source-a",
+			ProxyBindName:     "Fresh Proxy",
+		},
+	}}
+	app.browserMgr.ProfileDAO = dao
+
+	app.reconcileProfileProxyBindings()
+
+	if _, exists := app.browserMgr.Profiles["deleted-profile"]; exists {
+		t.Fatalf("expected stale cached profile to be removed before proxy binding save")
+	}
+	if len(dao.upsertedIDs) != 1 || dao.upsertedIDs[0] != "profile-1" {
+		t.Fatalf("expected only latest shared profile to be saved, upserted=%v", dao.upsertedIDs)
+	}
+	latest := app.browserMgr.Profiles["profile-1"]
+	if latest == nil || latest.ProxyId != "proxy-fresh" {
+		t.Fatalf("expected latest shared profile to be rebound to fresh proxy, got %#v", latest)
+	}
+}
+
+func TestProfileSwitchProxyIDRefreshesProfilesBeforeWriting(t *testing.T) {
+	app := newRuntimeStateTestApp(t.TempDir())
+	app.browserMgr.Profiles["profile-1"] = &BrowserProfile{
+		ProfileId:                  "profile-1",
+		ProfileName:                "Stale name",
+		GroupId:                    "old-group",
+		AutoProxySwitchLastProxyId: "proxy-old",
+	}
+	dao := &profileDAOListStub{profiles: []*BrowserProfile{
+		{
+			ProfileId:                  "profile-1",
+			ProfileName:                "Fresh name",
+			GroupId:                    "fresh-group",
+			AutoProxySwitchLastProxyId: "proxy-old",
+		},
+	}}
+	app.browserMgr.ProfileDAO = dao
+
+	app.updateProfileSwitchProxyID("profile-1", "proxy-new")
+
+	if len(dao.upsertedIDs) != 1 || dao.upsertedIDs[0] != "profile-1" {
+		t.Fatalf("expected proxy switch state to save one latest profile, upserted=%v", dao.upsertedIDs)
+	}
+	persisted := dao.profiles[0]
+	if persisted.ProfileName != "Fresh name" || persisted.GroupId != "fresh-group" {
+		t.Fatalf("expected shared profile fields to be preserved, got %#v", persisted)
+	}
+	if persisted.AutoProxySwitchLastProxyId != "proxy-new" {
+		t.Fatalf("expected last proxy id to be updated, got %#v", persisted)
+	}
+	cached := app.browserMgr.Profiles["profile-1"]
+	if cached.ProfileName != "Fresh name" || cached.GroupId != "fresh-group" || cached.AutoProxySwitchLastProxyId != "proxy-new" {
+		t.Fatalf("expected cached profile to be refreshed before write, got %#v", cached)
+	}
+}
+
+func TestListGroupsCountsFromSharedProfileCacheWithoutProfileDAO(t *testing.T) {
+	app := newRuntimeStateTestApp(t.TempDir())
+	app.browserMgr.GroupDAO = &groupDAOListStub{groups: []*BrowserGroup{
+		{GroupId: "group-a", GroupName: "Group A"},
+		{GroupId: "group-b", GroupName: "Group B"},
+	}}
+	app.browserMgr.ProfileDAO = nil
+	app.browserMgr.Profiles["profile-1"] = &BrowserProfile{ProfileId: "profile-1", GroupId: "group-a"}
+	app.browserMgr.Profiles["profile-2"] = &BrowserProfile{ProfileId: "profile-2", GroupId: "group-a"}
+	app.browserMgr.Profiles["profile-3"] = &BrowserProfile{ProfileId: "profile-3", GroupId: "group-b"}
+
+	groups := app.ListGroups()
+	counts := make(map[string]int)
+	for _, group := range groups {
+		counts[group.GroupId] = group.InstanceCount
+	}
+	if counts["group-a"] != 2 || counts["group-b"] != 1 {
+		t.Fatalf("expected group counts from cached profiles without ProfileDAO, got %#v", groups)
+	}
+}
+
 func TestBrowserProfileSwitchProxyNowUsesSharedSwitchBridge(t *testing.T) {
 	ln := mustListenLoopback(t)
 	defer ln.Close()
@@ -405,6 +500,15 @@ func (s *profileDAOListStub) GetById(profileId string) (*BrowserProfile, error) 
 func (s *profileDAOListStub) Upsert(profile *BrowserProfile) error {
 	if profile != nil {
 		s.upsertedIDs = append(s.upsertedIDs, profile.ProfileId)
+		for i, existing := range s.profiles {
+			if existing != nil && existing.ProfileId == profile.ProfileId {
+				snapshot := *profile
+				s.profiles[i] = &snapshot
+				return nil
+			}
+		}
+		snapshot := *profile
+		s.profiles = append(s.profiles, &snapshot)
 	}
 	return nil
 }
@@ -451,3 +555,47 @@ func (s *proxyDAOListStub) UpdateSpeedResult(string, bool, int64, string) error 
 	return nil
 }
 func (s *proxyDAOListStub) UpdateIPHealthResult(string, string) error { return nil }
+
+type groupDAOListStub struct {
+	groups []*BrowserGroup
+}
+
+func (s *groupDAOListStub) List() ([]*BrowserGroup, error) {
+	out := make([]*BrowserGroup, 0, len(s.groups))
+	for _, group := range s.groups {
+		if group == nil {
+			continue
+		}
+		snapshot := *group
+		out = append(out, &snapshot)
+	}
+	return out, nil
+}
+
+func (s *groupDAOListStub) GetById(groupId string) (*BrowserGroup, error) {
+	for _, group := range s.groups {
+		if group != nil && group.GroupId == groupId {
+			snapshot := *group
+			return &snapshot, nil
+		}
+	}
+	return nil, os.ErrNotExist
+}
+
+func (s *groupDAOListStub) Create(input BrowserGroupInput) (*BrowserGroup, error) {
+	return nil, nil
+}
+
+func (s *groupDAOListStub) Update(groupId string, input BrowserGroupInput) (*BrowserGroup, error) {
+	return nil, nil
+}
+
+func (s *groupDAOListStub) Delete(groupId string) error { return nil }
+
+func (s *groupDAOListStub) GetChildren(parentId string) ([]*BrowserGroup, error) {
+	return nil, nil
+}
+
+func (s *groupDAOListStub) MoveChildren(fromGroupId, toGroupId string) error {
+	return nil
+}

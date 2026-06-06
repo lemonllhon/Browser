@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Folder, FolderInput, FolderPlus, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { Badge, Button, Card, FormItem, Input, Select, toast } from '../../../shared/components'
 import type { BrowserGroupInput, BrowserGroupWithCount, BrowserProfile } from '../types'
 import { createGroup, deleteGroup, fetchBrowserProfiles, fetchGroups, moveInstancesToGroup, updateGroup } from '../api'
 import { resolveActionErrorMessage } from '../utils/actionErrors'
 import { onRuntimeEvent } from '../../../shared/backend/runtime'
+import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
 
 interface TreeGroup extends BrowserGroupWithCount {
   level: number
@@ -287,33 +288,44 @@ export function GroupManagementPage({ embedded = false }: { embedded?: boolean }
   const [editingGroup, setEditingGroup] = useState<BrowserGroupWithCount | null>(null)
   const [defaultParentId, setDefaultParentId] = useState('')
 
-  const load = async () => {
-    setLoading(true)
+  const load = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) {
+      setLoading(true)
+    }
     try {
       const [groupList, profileList] = await Promise.all([fetchGroups(), fetchBrowserProfiles()])
       setGroups(groupList)
       setProfiles(profileList)
-      if (selectedGroupId && selectedGroupId !== '__ungrouped__' && !groupList.some(group => group.groupId === selectedGroupId)) {
-        setSelectedGroupId('')
-      }
+      setSelectedGroupId(current => current && current !== '__ungrouped__' && !groupList.some(group => group.groupId === current) ? '' : current)
+      setTargetGroupId(current => current && !groupList.some(group => group.groupId === current) ? '' : current)
+      setSelectedIds(current => {
+        if (!current.size) return current
+        const existingIds = new Set(profileList.map(profile => profile.profileId))
+        const next = new Set(Array.from(current).filter(profileId => existingIds.has(profileId)))
+        return next.size === current.size ? current : next
+      })
     } finally {
-      setLoading(false)
+      if (!options?.silent) {
+        setLoading(false)
+      }
     }
-  }
+  }, [])
 
   useEffect(() => {
     void load()
     const offProfilesUpdated = onRuntimeEvent('browser:profiles:updated', () => {
-      void load()
+      void load({ silent: true })
     })
     const offGroupsUpdated = onRuntimeEvent('browser:groups:updated', () => {
-      void load()
+      void load({ silent: true })
     })
     return () => {
       offProfilesUpdated?.()
       offGroupsUpdated?.()
     }
-  }, [])
+  }, [load])
+
+  useVisibleRefresh(() => load({ silent: true }))
 
   useEffect(() => {
     setSelectedIds(new Set())

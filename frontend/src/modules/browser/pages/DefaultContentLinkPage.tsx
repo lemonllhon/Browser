@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Bookmark, FolderTree, Link2, Plus, Save, Tag, Trash2 } from 'lucide-react'
 import { Badge, Button, Card, Input, Select, Switch, toast } from '../../../shared/components'
 import type { BrowserBookmark, BrowserGroupWithCount, BrowserStartURL, DefaultContentRule } from '../types'
@@ -6,6 +6,7 @@ import { fetchAllTags, fetchDefaultContentRules, fetchGroups, saveDefaultContent
 import { resolveActionErrorMessage } from '../utils/actionErrors'
 import { BookmarkSettingsPage } from './BookmarkSettingsPage'
 import { onRuntimeEvent } from '../../../shared/backend/runtime'
+import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
 
 type ManagedItem = BrowserStartURL | BrowserBookmark
 
@@ -103,13 +104,34 @@ export function DefaultContentLinkPage() {
   const [groups, setGroups] = useState<BrowserGroupWithCount[]>([])
   const [selectedRuleId, setSelectedRuleId] = useState('')
   const [saving, setSaving] = useState(false)
+  const [dirty, setDirty] = useState(false)
+  const savingRef = useRef(false)
+  const dirtyRef = useRef(false)
 
   const groupsById = useMemo(() => new Map(groups.map(group => [group.groupId, group])), [groups])
   const tagOptions = useMemo(() => tags.map(tag => ({ value: tag, label: tag })), [tags])
   const resolvedGroupOptions = useMemo(() => groupOptions(groups), [groups])
   const selectedRule = rules.find(rule => rule.ruleId === selectedRuleId) || rules[0] || null
 
-  const load = async () => {
+  const markDirty = () => {
+    dirtyRef.current = true
+    setDirty(true)
+  }
+
+  const markClean = () => {
+    dirtyRef.current = false
+    setDirty(false)
+  }
+
+  const setSavingState = (value: boolean) => {
+    savingRef.current = value
+    setSaving(value)
+  }
+
+  const load = useCallback(async (options?: { force?: boolean }) => {
+    if (!options?.force && (dirtyRef.current || savingRef.current)) {
+      return
+    }
     const [ruleList, tagList, groupList] = await Promise.all([
       fetchDefaultContentRules(),
       fetchAllTags(),
@@ -124,10 +146,11 @@ export function DefaultContentLinkPage() {
       }
       return ruleList[0]?.ruleId || ''
     })
-  }
+    markClean()
+  }, [])
 
   useEffect(() => {
-    void load()
+    void load({ force: true })
     const reload = () => {
       void load()
     }
@@ -139,9 +162,12 @@ export function DefaultContentLinkPage() {
       offProfilesUpdated?.()
       offGroupsUpdated?.()
     }
-  }, [])
+  }, [load])
+
+  useVisibleRefresh(() => load(), 2000, !dirty && !saving)
 
   const upsertRule = (rule: DefaultContentRule) => {
+    markDirty()
     setRules(prev => prev.map(item => item.ruleId === rule.ruleId ? rule : item))
   }
 
@@ -161,11 +187,13 @@ export function DefaultContentLinkPage() {
       applyToChilds: true,
       includeGlobalDefaults: true,
     }
+    markDirty()
     setRules(prev => [...prev, rule])
     setSelectedRuleId(rule.ruleId)
   }
 
   const removeRule = (ruleId: string) => {
+    markDirty()
     setRules(prev => prev.filter(rule => rule.ruleId !== ruleId))
     if (selectedRuleId === ruleId) {
       const next = rules.find(rule => rule.ruleId !== ruleId)
@@ -183,15 +211,16 @@ export function DefaultContentLinkPage() {
         includeGlobalDefaults: rule.includeGlobalDefaults !== false,
       }))
       .filter(rule => rule.targetName || rule.targetId)
-    setSaving(true)
+    setSavingState(true)
     try {
       await saveDefaultContentRules(normalized)
       setRules(normalized)
+      markClean()
       toast.success('默认内容联动已保存')
     } catch (error: unknown) {
       toast.error(resolveActionErrorMessage(error, '保存失败'))
     } finally {
-      setSaving(false)
+      setSavingState(false)
     }
   }
 

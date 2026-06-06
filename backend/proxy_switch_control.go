@@ -70,6 +70,15 @@ func (a *App) switchProfileProxyNowViaRuntimeBridge(profileID string) (*BrowserP
 		return nil, true, err
 	}
 
+	if strings.TrimSpace(resp.ProxyID) != "" {
+		snapshot, _, err := a.saveProfileSwitchProxyID(profileID, resp.ProxyID)
+		if err != nil {
+			return nil, true, err
+		}
+		a.emitBrowserInstanceUpdated(snapshot)
+		return snapshot, true, nil
+	}
+
 	a.refreshBrowserProfileConfigCacheFromStore()
 	a.reconcileBrowserProfileRuntimeStates()
 	a.browserMgr.Mutex.Lock()
@@ -77,9 +86,6 @@ func (a *App) switchProfileProxyNowViaRuntimeBridge(profileID string) (*BrowserP
 	if !exists || profile == nil {
 		a.browserMgr.Mutex.Unlock()
 		return nil, true, fmt.Errorf("profile not found")
-	}
-	if strings.TrimSpace(resp.ProxyID) != "" {
-		profile.AutoProxySwitchLastProxyId = resp.ProxyID
 	}
 	snapshot := *profile
 	a.browserMgr.Mutex.Unlock()

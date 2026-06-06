@@ -23,6 +23,10 @@ type BrowserGroupWithCount = browser.GroupWithCount
 // ListGroups 获取所有分组（带实例计数）
 func (a *App) ListGroups() []BrowserGroupWithCount {
 	log := logger.New("Group")
+	if a == nil || a.browserMgr == nil {
+		log.Error("BrowserManager 未初始化")
+		return []BrowserGroupWithCount{}
+	}
 	if a.browserMgr.GroupDAO == nil {
 		log.Error("GroupDAO 未初始化")
 		return []BrowserGroupWithCount{}
@@ -35,11 +39,10 @@ func (a *App) ListGroups() []BrowserGroupWithCount {
 	}
 
 	// 统计每个分组的实例数量
-	profiles, _ := a.browserMgr.ProfileDAO.List()
 	countMap := make(map[string]int)
-	for _, p := range profiles {
-		if p.GroupId != "" {
-			countMap[p.GroupId]++
+	for _, profile := range a.profilesForGroupCounts() {
+		if profile.GroupId != "" {
+			countMap[profile.GroupId]++
 		}
 	}
 
@@ -51,6 +54,14 @@ func (a *App) ListGroups() []BrowserGroupWithCount {
 		})
 	}
 	return result
+}
+
+func (a *App) profilesForGroupCounts() []BrowserProfile {
+	if a == nil || a.browserMgr == nil {
+		return nil
+	}
+	a.refreshBrowserProfileConfigCacheFromStore()
+	return a.browserMgr.List()
 }
 
 // CreateGroup 创建分组

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Plus, Tag, Trash2, X } from 'lucide-react'
 import { Badge, Button, Card, toast } from '../../../shared/components'
 import type { BrowserProfile } from '../types'
 import { batchRemoveProfileTags, batchSetProfileTags, fetchBrowserProfiles, renameBrowserTag } from '../api'
 import { resolveActionErrorMessage } from '../utils/actionErrors'
 import { onRuntimeEvent } from '../../../shared/backend/runtime'
+import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
 
 // ─── 左侧标签面板 ────────────────────────────────────────────────────────────
 
@@ -225,8 +226,10 @@ export function TagManagementPage({ embedded = false }: { embedded?: boolean }) 
     }
   }
 
-  const load = async () => {
-    setLoading(true)
+  const load = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) {
+      setLoading(true)
+    }
     try {
       const data = await fetchBrowserProfiles()
       setProfiles(data)
@@ -235,18 +238,30 @@ export function TagManagementPage({ embedded = false }: { embedded?: boolean }) 
       data.forEach(p => p.tags?.forEach(t => usedTags.add(t)))
       setPendingTags(prev => prev.filter(t => !usedTags.has(t)))
       setSelectedTag(current => current && !usedTags.has(current) ? null : current)
-    } finally { setLoading(false) }
-  }
+      setSelectedIds(current => {
+        if (!current.size) return current
+        const existingIds = new Set(data.map(profile => profile.profileId))
+        const next = new Set(Array.from(current).filter(profileId => existingIds.has(profileId)))
+        return next.size === current.size ? current : next
+      })
+    } finally {
+      if (!options?.silent) {
+        setLoading(false)
+      }
+    }
+  }, [])
 
   useEffect(() => {
     void load()
     const offProfilesUpdated = onRuntimeEvent('browser:profiles:updated', () => {
-      void load()
+      void load({ silent: true })
     })
     return () => {
       offProfilesUpdated?.()
     }
-  }, [])
+  }, [load])
+
+  useVisibleRefresh(() => load({ silent: true }))
 
   // 重置勾选当切换标签时
   useEffect(() => { setSelectedIds(new Set()) }, [selectedTag])

@@ -14,6 +14,7 @@ func (a *App) reconcileProfileProxyBindings() {
 		return
 	}
 
+	a.refreshBrowserProfileConfigCacheFromStore()
 	log := logger.New("Browser")
 	a.browserMgr.Mutex.Lock()
 	defer a.browserMgr.Mutex.Unlock()
