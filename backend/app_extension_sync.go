@@ -43,6 +43,7 @@ func (a *App) BrowserExtensionSyncProfileData(input BrowserExtensionSyncDataInpu
 		}
 	}
 
+	a.refreshBrowserProfileSharedRuntimeOverlay()
 	extension, err := dao.Get(extensionId)
 	if err != nil {
 		return nil, err
@@ -98,7 +99,12 @@ func (a *App) BrowserExtensionSyncProfileData(input BrowserExtensionSyncDataInpu
 		}
 	}
 	a.clearExtensionAutoSyncBlocked(extensionId)
-	return dao.ListBindings(extensionId)
+	bindings, err := dao.ListBindings(extensionId)
+	if err != nil {
+		return nil, err
+	}
+	a.emitBrowserExtensionsUpdated()
+	return bindings, nil
 }
 
 type extensionDataSyncTarget struct {

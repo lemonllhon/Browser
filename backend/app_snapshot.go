@@ -125,13 +125,23 @@ func unzipTo(src, dest string) error {
 
 // getProfileForSnapshot 获取实例信息（加锁）
 func (a *App) getProfileForSnapshot(profileId string) (*BrowserProfile, error) {
+	profileId = strings.TrimSpace(profileId)
+	if profileId == "" {
+		return nil, fmt.Errorf("实例 ID 不能为空")
+	}
+	if a == nil || a.browserMgr == nil {
+		return nil, fmt.Errorf("浏览器管理器未初始化")
+	}
+	a.refreshBrowserProfileSharedRuntimeOverlay()
+
 	a.browserMgr.Mutex.Lock()
 	defer a.browserMgr.Mutex.Unlock()
 	profile, exists := a.browserMgr.Profiles[profileId]
-	if !exists {
+	if !exists || profile == nil {
 		return nil, fmt.Errorf("实例不存在: %s", profileId)
 	}
-	return profile, nil
+	snapshot := *profile
+	return &snapshot, nil
 }
 
 // BrowserSnapshotCreate 创建快照

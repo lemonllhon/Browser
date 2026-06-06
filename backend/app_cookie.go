@@ -170,6 +170,15 @@ func cdpBrowserCallResult(debugPort int, method string, params map[string]any) (
 
 // getDebugPort 获取运行中实例的调试端口
 func (a *App) getDebugPort(profileId string) (int, error) {
+	profileId = strings.TrimSpace(profileId)
+	if profileId == "" {
+		return 0, fmt.Errorf("profile id is required")
+	}
+	if a == nil || a.browserMgr == nil {
+		return 0, fmt.Errorf("browser manager is not initialized")
+	}
+
+	a.refreshBrowserProfileSharedRuntimeOverlay()
 	a.browserMgr.Mutex.Lock()
 	defer a.browserMgr.Mutex.Unlock()
 	profile, exists := a.browserMgr.Profiles[profileId]
@@ -222,6 +231,7 @@ func (a *App) BrowserClearCookies(profileId string) error {
 		return fmt.Errorf("browser manager is not initialized")
 	}
 
+	a.refreshBrowserProfileSharedRuntimeOverlay()
 	a.browserMgr.Mutex.Lock()
 	profile, exists := a.browserMgr.Profiles[profileId]
 	if !exists || profile == nil {

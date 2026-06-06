@@ -945,6 +945,7 @@ func (a *App) BrowserProfileCreate(input BrowserProfileInput) (*BrowserProfile, 
 		return nil, err
 	}
 	a.emitProfileDataUpdated()
+	a.emitGroupDataUpdated()
 	a.emitBrowserExtensionsUpdated()
 	return profile, nil
 }
@@ -959,6 +960,7 @@ func (a *App) BrowserProfileUpdate(profileId string, input BrowserProfileInput) 
 		return nil, err
 	}
 	a.emitProfileDataUpdated()
+	a.emitGroupDataUpdated()
 	return profile, nil
 }
 
@@ -971,6 +973,7 @@ func (a *App) BrowserProfileDelete(profileId string) error {
 		return err
 	}
 	a.emitProfileDataUpdated()
+	a.emitGroupDataUpdated()
 	return nil
 }
 
@@ -985,6 +988,7 @@ func (a *App) BrowserProfileCopy(profileId string, newName string) (*BrowserProf
 		return nil, err
 	}
 	a.emitProfileDataUpdated()
+	a.emitGroupDataUpdated()
 	a.emitBrowserExtensionsUpdated()
 	return profile, nil
 }

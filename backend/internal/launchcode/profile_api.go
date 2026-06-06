@@ -392,6 +392,7 @@ func (s *LaunchServer) listProfiles() ([]browser.Profile, int, string) {
 		return nil, http.StatusServiceUnavailable, "profile catalog is not available"
 	}
 
+	s.refreshProfileCatalog()
 	items := s.browserMgr.List()
 	for i := range items {
 		items[i].LaunchCode = s.resolveProfileLaunchCode(items[i].ProfileId, items[i].LaunchCode)
@@ -408,6 +409,7 @@ func (s *LaunchServer) profileSnapshotByID(profileID string) (*browser.Profile, 
 		return nil, http.StatusServiceUnavailable, "profile catalog is not available"
 	}
 
+	s.refreshProfileCatalog()
 	s.browserMgr.Mutex.Lock()
 	profile, ok := s.browserMgr.Profiles[profileID]
 	var snapshot browser.Profile

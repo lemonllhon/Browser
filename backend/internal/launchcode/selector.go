@@ -200,6 +200,7 @@ func (s *LaunchServer) profileSnapshots() []browser.Profile {
 		return nil
 	}
 
+	s.refreshProfileCatalog()
 	s.browserMgr.Mutex.Lock()
 	items := make([]browser.Profile, 0, len(s.browserMgr.Profiles))
 	for _, profile := range s.browserMgr.Profiles {

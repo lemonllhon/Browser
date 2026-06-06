@@ -31,8 +31,8 @@ type ProfileBackupExportRequest struct {
 }
 
 type ProfileBackupImportRequest struct {
-	ZipPath        string `json:"zipPath"`
-	RestoreCookies bool   `json:"restoreCookies"`
+	ZipPath        string   `json:"zipPath"`
+	RestoreCookies bool     `json:"restoreCookies"`
 	ProfileIDs     []string `json:"profileIds,omitempty"`
 }
 
@@ -59,18 +59,18 @@ type ProfileBackupWarning struct {
 }
 
 type ProfileBackupActionResult struct {
-	Cancelled          bool                   `json:"cancelled"`
-	Message            string                 `json:"message"`
-	ZipPath            string                 `json:"zipPath"`
-	CreatedAt          string                 `json:"createdAt"`
-	Exported           int                    `json:"exported"`
-	Imported           int                    `json:"imported"`
-	Skipped            int                    `json:"skipped"`
-	Failed             int                    `json:"failed"`
-	ProfileCount       int                    `json:"profileCount"`
-	CookieProfileCount int                    `json:"cookieProfileCount"`
-	Summary            ProfileBackupSummary   `json:"summary"`
-	Warnings           []ProfileBackupWarning `json:"warnings"`
+	Cancelled          bool                          `json:"cancelled"`
+	Message            string                        `json:"message"`
+	ZipPath            string                        `json:"zipPath"`
+	CreatedAt          string                        `json:"createdAt"`
+	Exported           int                           `json:"exported"`
+	Imported           int                           `json:"imported"`
+	Skipped            int                           `json:"skipped"`
+	Failed             int                           `json:"failed"`
+	ProfileCount       int                           `json:"profileCount"`
+	CookieProfileCount int                           `json:"cookieProfileCount"`
+	Summary            ProfileBackupSummary          `json:"summary"`
+	Warnings           []ProfileBackupWarning        `json:"warnings"`
 	Profiles           []ProfileBackupProfileSummary `json:"profiles,omitempty"`
 }
 
@@ -338,6 +338,7 @@ func (a *App) BrowserProfilesBackupImport(input ProfileBackupImportRequest) (Pro
 
 	a.emitProfileBackupProgress("done", 100, fmt.Sprintf("实例恢复完成：成功 %d，失败 %d", imported, failed), nil)
 	a.emitProfileDataUpdated()
+	a.emitGroupDataUpdated()
 
 	summary := profileBackupSummaryFromManifest(manifest, zipPath)
 	profiles := profileBackupProfileSummariesFromPayload(&reader.Reader, payload)

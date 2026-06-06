@@ -51,6 +51,10 @@ type BrowserStarterWithParams interface {
 	StartInstanceWithParams(profileId string, params LaunchRequestParams) (*browser.Profile, error)
 }
 
+type profileCatalogRefresher interface {
+	RefreshProfileCatalog()
+}
+
 // LaunchCallRecord 接口调用记录
 type LaunchCallRecord struct {
 	Timestamp   string              `json:"timestamp"`
@@ -96,6 +100,15 @@ func NewLaunchServer(service *LaunchCodeService, starter BrowserStarter, mgr *br
 	}
 	srv.SetAPIAuthConfig(APIAuthConfig{})
 	return srv
+}
+
+func (s *LaunchServer) refreshProfileCatalog() {
+	if s == nil {
+		return
+	}
+	if refresher, ok := s.starter.(profileCatalogRefresher); ok {
+		refresher.RefreshProfileCatalog()
+	}
 }
 
 // Start 非阻塞启动 HTTP 服务。

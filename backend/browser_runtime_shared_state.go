@@ -144,6 +144,53 @@ func (a *App) refreshBrowserProfileConfigCacheFromStore() {
 	}
 }
 
+func (a *App) refreshBrowserProfileSharedRuntimeOverlay() {
+	if a == nil || a.browserMgr == nil {
+		return
+	}
+
+	a.refreshBrowserProfileConfigCacheFromStore()
+	a.browserMgr.InitData()
+
+	var activeSnapshot *BrowserProfile
+	a.browserMgr.Mutex.Lock()
+	for profileID, profile := range a.browserMgr.Profiles {
+		if profile == nil {
+			continue
+		}
+
+		state, err := a.loadBrowserProfileRuntimeState(profileID)
+		if err != nil || state == nil || !browserRuntimeStateLive(state) {
+			continue
+		}
+
+		debugReady := state.DebugReady
+		runtimeWarning := state.RuntimeWarning
+		if state.DebugPort > 0 && canConnectDebugPort(state.DebugPort, 250*time.Millisecond) {
+			debugReady = true
+			runtimeWarning = ""
+		}
+
+		profile.Running = true
+		profile.DebugPort = state.DebugPort
+		profile.DebugReady = debugReady
+		profile.Pid = state.PID
+		profile.RuntimeWarning = runtimeWarning
+		if state.LastStartAt != "" {
+			profile.LastStartAt = state.LastStartAt
+		}
+		profile.LastError = ""
+		if activeSnapshot == nil && profile.DebugReady && profile.DebugPort > 0 {
+			activeSnapshot = copyBrowserProfileSnapshot(profile)
+		}
+	}
+	a.browserMgr.Mutex.Unlock()
+
+	if activeSnapshot != nil && a.launchServer != nil {
+		a.launchServer.SetActiveProfile(activeSnapshot)
+	}
+}
+
 func preserveBrowserProfileRuntimeFields(target *BrowserProfile, source *BrowserProfile) {
 	if target == nil || source == nil {
 		return

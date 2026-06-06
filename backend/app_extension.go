@@ -120,6 +120,7 @@ func (a *App) BrowserExtensionListForProfile(profileId string) ([]BrowserExtensi
 	if profileId == "" {
 		return nil, fmt.Errorf("实例 ID 不能为空")
 	}
+	a.refreshBrowserProfileConfigCacheFromStore()
 	if _, err := a.requireProfile(profileId); err != nil {
 		return nil, err
 	}
@@ -252,6 +253,7 @@ func (a *App) BrowserExtensionAssignProfiles(input BrowserExtensionAssignInput) 
 	if len(profileIds) == 0 {
 		return nil, fmt.Errorf("请选择要绑定的实例")
 	}
+	a.refreshBrowserProfileConfigCacheFromStore()
 	mode := normalizeExtensionBindingMode(input.Mode)
 	for _, profileId := range profileIds {
 		if err := a.assignExtensionToProfile(dao, extension, profileId, mode, input.Enabled, true); err != nil {
@@ -287,6 +289,7 @@ func (a *App) BrowserExtensionSetAutoBind(input BrowserExtensionAutoBindInput) (
 	extension.AutoBindEnabled = input.Enabled
 	extension.AutoBindMode = mode
 	if input.Enabled {
+		a.refreshBrowserProfileConfigCacheFromStore()
 		if err := a.applyAutoBindExtensionToAllProfiles(dao, extension); err != nil {
 			return nil, err
 		}
@@ -316,6 +319,7 @@ func (a *App) BrowserExtensionUnassignProfiles(input BrowserExtensionUnassignInp
 	if len(profileIds) == 0 {
 		return nil, fmt.Errorf("请选择要解绑的实例")
 	}
+	a.refreshBrowserProfileConfigCacheFromStore()
 	for _, profileId := range profileIds {
 		exclusiveDir := ""
 		bindings, err := dao.ListBindingsByProfile(profileId)
@@ -364,6 +368,7 @@ func (a *App) BrowserExtensionDelete(extensionId string) error {
 	if err != nil {
 		return err
 	}
+	a.refreshBrowserProfileSharedRuntimeOverlay()
 	for _, binding := range bindings {
 		if a.isProfileRunning(binding.ProfileId) {
 			name := strings.TrimSpace(binding.ProfileName)

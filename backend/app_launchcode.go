@@ -16,6 +16,11 @@ func (a *App) StartInstanceWithParams(profileId string, params launchcode.Launch
 	return a.BrowserInstanceStartWithParams(profileId, params.LaunchArgs, params.StartURLs, params.SkipDefaultStartURLs)
 }
 
+// RefreshProfileCatalog 实现 launchcode 的实例目录刷新接口。
+func (a *App) RefreshProfileCatalog() {
+	a.refreshBrowserProfileConfigCacheFromStore()
+}
+
 // CreateProfile 实现 launchcode Profile API 的创建接口。
 func (a *App) CreateProfile(input browser.ProfileInput) (*browser.Profile, error) {
 	return a.BrowserProfileCreate(input)

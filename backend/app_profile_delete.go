@@ -74,9 +74,10 @@ func (a *App) OpenProfileUserDataDir(profileId string) error {
 		return fmt.Errorf("browser manager is not initialized")
 	}
 
+	a.refreshBrowserProfileSharedRuntimeOverlay()
 	a.browserMgr.Mutex.Lock()
 	profile, exists := a.browserMgr.Profiles[profileId]
-	if !exists {
+	if !exists || profile == nil {
 		a.browserMgr.Mutex.Unlock()
 		return fmt.Errorf("profile not found")
 	}
