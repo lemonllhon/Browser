@@ -165,6 +165,10 @@ func (a *App) BrowserProfilesBackupExport(input ProfileBackupExportRequest) (Pro
 	if a.browserMgr == nil {
 		return ProfileBackupActionResult{}, fmt.Errorf("浏览器实例服务尚未初始化")
 	}
+	if err := a.refreshConfigCacheFromDiskIfPresent(); err != nil {
+		a.emitProfileBackupProgress("error", 100, fmt.Sprintf("重载浏览器配置失败: %v", err), nil)
+		return ProfileBackupActionResult{}, fmt.Errorf("重载浏览器配置失败: %w", err)
+	}
 
 	a.emitProfileBackupProgress("starting", 0, "等待选择实例备份导出路径...", nil)
 	defaultName := fmt.Sprintf("trace-browser-instances-backup-%s.zip", time.Now().Format("20060102-150405"))
@@ -250,6 +254,10 @@ func (a *App) BrowserProfilesBackupImport(input ProfileBackupImportRequest) (Pro
 
 	if a == nil || a.browserMgr == nil {
 		return ProfileBackupActionResult{}, fmt.Errorf("浏览器实例服务尚未初始化")
+	}
+	if err := a.refreshConfigCacheFromDiskIfPresent(); err != nil {
+		a.emitProfileBackupProgress("error", 100, fmt.Sprintf("重载浏览器配置失败: %v", err), nil)
+		return ProfileBackupActionResult{}, fmt.Errorf("重载浏览器配置失败: %w", err)
 	}
 	zipPath := strings.TrimSpace(input.ZipPath)
 	if zipPath == "" {

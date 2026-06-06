@@ -132,6 +132,9 @@ func (a *App) getProfileForSnapshot(profileId string) (*BrowserProfile, error) {
 	if a == nil || a.browserMgr == nil {
 		return nil, fmt.Errorf("浏览器管理器未初始化")
 	}
+	if err := a.refreshConfigCacheFromDiskIfPresent(); err != nil {
+		return nil, fmt.Errorf("重载浏览器配置失败: %w", err)
+	}
 	a.refreshBrowserProfileSharedRuntimeOverlay()
 
 	a.browserMgr.Mutex.Lock()

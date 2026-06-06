@@ -30,6 +30,9 @@ func (a *App) BrowserInstanceStartWithParams(profileId string, extraLaunchArgs [
 
 func (a *App) browserInstanceStartInternal(profileId string, extraLaunchArgs []string, startURLs []string, skipDefaultStartURLs bool, preferVisibleWindow bool) (*BrowserProfile, error) {
 	log := logger.New("Browser")
+	if err := a.refreshConfigCacheFromDiskIfPresent(); err != nil {
+		log.Warn("启动前重载浏览器配置失败，继续使用当前缓存", logger.F("error", err.Error()))
+	}
 	if err := a.applyAutoBindExtensionsForProfile(profileId); err != nil {
 		log.Error("自动绑定扩展失败", logger.F("profile_id", profileId), logger.F("error", err.Error()))
 		return nil, fmt.Errorf("实例启动失败：自动绑定扩展失败。原因：%w", err)

@@ -43,6 +43,9 @@ func (a *App) BrowserExtensionSyncProfileData(input BrowserExtensionSyncDataInpu
 		}
 	}
 
+	if err := a.refreshConfigCacheFromDiskIfPresent(); err != nil {
+		return nil, fmt.Errorf("重载浏览器配置失败: %w", err)
+	}
 	a.refreshBrowserProfileSharedRuntimeOverlay()
 	extension, err := dao.Get(extensionId)
 	if err != nil {

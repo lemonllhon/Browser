@@ -293,6 +293,9 @@ func (a *App) resetStoppedProfileFingerprint(profileId string) error {
 	if a == nil || a.browserMgr == nil {
 		return fmt.Errorf("browser manager is not initialized")
 	}
+	if err := a.refreshConfigCacheFromDiskIfPresent(); err != nil {
+		return fmt.Errorf("重载浏览器配置失败: %w", err)
+	}
 	defaultArgs := []string{}
 	if a.config != nil {
 		defaultArgs = append(defaultArgs, a.config.Browser.DefaultFingerprintArgs...)

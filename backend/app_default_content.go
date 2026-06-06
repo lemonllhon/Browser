@@ -154,6 +154,7 @@ func (a *App) defaultContentRulesForProfile(profile *BrowserProfile) []BrowserDe
 	if profile == nil {
 		return nil
 	}
+	_ = a.refreshConfigCacheFromDiskIfPresent()
 	tagSet := make(map[string]bool)
 	for _, tag := range profile.Tags {
 		if normalized := strings.ToLower(strings.TrimSpace(tag)); normalized != "" {

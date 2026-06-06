@@ -938,6 +938,7 @@ func (a *App) BrowserProfileSetKeywords(profileId string, keywords []string) (*B
 }
 
 func (a *App) BrowserProfileCreate(input BrowserProfileInput) (*BrowserProfile, error) {
+	_ = a.refreshConfigCacheFromDiskIfPresent()
 	a.refreshBrowserProfileConfigCacheFromStore()
 	profile, err := a.browserMgr.Create(input)
 	if err != nil {
@@ -981,6 +982,7 @@ func (a *App) BrowserProfileDelete(profileId string) error {
 
 // BrowserProfileCopy 复制实例配置（除指纹参数外全部复制）
 func (a *App) BrowserProfileCopy(profileId string, newName string) (*BrowserProfile, error) {
+	_ = a.refreshConfigCacheFromDiskIfPresent()
 	a.refreshBrowserProfileConfigCacheFromStore()
 	profile, err := a.browserMgr.Copy(profileId, newName)
 	if err != nil {
@@ -1774,6 +1776,10 @@ func (a *App) SaveBrowserProxies(proxies []BrowserProxy) error {
 // OpenUserDataDir 在资源管理器中打开用户数据目录
 func (a *App) OpenUserDataDir(userDataDir string) error {
 	log := logger.New("Browser")
+	if err := a.refreshConfigCacheFromDiskIfPresent(); err != nil {
+		log.Error("浏览器配置重载失败", logger.F("error", err))
+		return fmt.Errorf("浏览器配置重载失败: %w", err)
+	}
 
 	// 解析完整路径
 	userDataDir = strings.TrimSpace(userDataDir)

@@ -104,6 +104,87 @@ func TestBrowserClearCookiesResetsStoppedProfileFingerprintFromDefaultConfig(t *
 	}
 }
 
+func TestBrowserClearCookiesUsesLatestSharedBrowserSettings(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.Browser.UserDataRoot = "old-data"
+	cfg.Browser.DefaultFingerprintArgs = []string{"--fingerprint-platform=windows"}
+	app := NewApp(root)
+	app.config = cfg
+	app.browserMgr = browser.NewManager(cfg, root)
+	app.browserMgr.Profiles = map[string]*BrowserProfile{
+		"profile-1": {
+			ProfileId:       "profile-1",
+			ProfileName:     "Profile 1",
+			UserDataDir:     "profile-1",
+			FingerprintArgs: []string{"--fingerprint=123", "--fingerprint-platform=windows"},
+			Running:         false,
+		},
+	}
+
+	latest := config.DefaultConfig()
+	latest.Browser.UserDataRoot = "latest-data"
+	latest.Browser.DefaultFingerprintArgs = []string{
+		"--fingerprint-region=JP",
+		"--lang=ja-JP",
+		"--timezone=Asia/Tokyo",
+		"--fingerprint-platform=mac",
+	}
+	latest.Browser.Profiles = []config.BrowserProfileConfig{
+		{
+			ProfileId:       "profile-1",
+			ProfileName:     "Profile 1",
+			UserDataDir:     "profile-1",
+			FingerprintArgs: []string{"--fingerprint=123", "--fingerprint-platform=windows"},
+		},
+	}
+	if err := latest.Save(app.resolveAppPath("config.yaml")); err != nil {
+		t.Fatalf("failed to save config: %v", err)
+	}
+
+	oldUserDataDir := filepath.Join(root, "old-data", "profile-1")
+	if err := os.MkdirAll(oldUserDataDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(oldUserDataDir, "Preferences"), []byte("old"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	latestUserDataDir := filepath.Join(root, "latest-data", "profile-1")
+	if err := os.MkdirAll(latestUserDataDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(latestUserDataDir, "Preferences"), []byte("latest"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := app.BrowserClearCookies("profile-1"); err != nil {
+		t.Fatalf("BrowserClearCookies returned error: %v", err)
+	}
+
+	oldContent, err := os.ReadFile(filepath.Join(oldUserDataDir, "Preferences"))
+	if err != nil {
+		t.Fatalf("expected old user data dir to be untouched: %v", err)
+	}
+	if string(oldContent) != "old" {
+		t.Fatalf("expected old user data to be untouched, got %q", string(oldContent))
+	}
+	entries, err := os.ReadDir(latestUserDataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected latest user data dir contents to be removed, got %d entries", len(entries))
+	}
+
+	args := app.browserMgr.Profiles["profile-1"].FingerprintArgs
+	if !containsLaunchArg(args, "--fingerprint-region=JP") || !containsLaunchArg(args, "--lang=ja-JP") || !containsLaunchArg(args, "--timezone=Asia/Tokyo") {
+		t.Fatalf("latest shared fingerprint defaults should be used: %v", args)
+	}
+	if value := launchArgValue(args, "--fingerprint-platform"); value != "mac" {
+		t.Fatalf("latest shared platform should be used, got %q in %v", value, args)
+	}
+}
+
 func TestBrowserClearCookiesRejectsRunningProfileWithoutDebugReady(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.DefaultConfig()

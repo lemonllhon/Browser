@@ -77,6 +77,49 @@ func TestIsBrowserProfileLiveKeepsPendingDebugProcessAlive(t *testing.T) {
 	}
 }
 
+func TestBrowserInstanceStartAppliesLatestSharedBrowserDefaults(t *testing.T) {
+	appRoot := t.TempDir()
+	app := newRuntimeStateTestApp(appRoot)
+	app.config.Browser.DefaultFingerprintArgs = []string{"--fingerprint-brand=Stale"}
+	app.config.Browser.DefaultLaunchArgs = []string{"--stale-launch"}
+	app.config.Browser.DefaultProxy = "http://127.0.0.1:18080"
+
+	profileID := "profile-defaults"
+	app.browserMgr.Profiles[profileID] = &BrowserProfile{
+		ProfileId:   profileID,
+		ProfileName: "Profile Defaults",
+	}
+
+	latest := config.DefaultConfig()
+	latest.Browser.DefaultFingerprintArgs = []string{"--fingerprint-brand=Latest", "--fingerprint-platform=linux"}
+	latest.Browser.DefaultLaunchArgs = []string{"--latest-launch"}
+	latest.Browser.DefaultProxy = "http://127.0.0.1:19090"
+	if err := latest.Save(app.resolveAppPath("config.yaml")); err != nil {
+		t.Fatalf("failed to save config: %v", err)
+	}
+
+	_, err := app.browserInstanceStartInternal(profileID, nil, nil, false, false)
+	if err == nil || !strings.Contains(err.Error(), "未配置可用浏览器内核") {
+		t.Fatalf("expected start to stop at missing core after applying defaults, got %v", err)
+	}
+
+	app.browserMgr.Mutex.Lock()
+	got := app.browserMgr.Profiles[profileID]
+	app.browserMgr.Mutex.Unlock()
+	if got == nil {
+		t.Fatal("expected profile to remain cached")
+	}
+	if !reflect.DeepEqual(got.FingerprintArgs, latest.Browser.DefaultFingerprintArgs) {
+		t.Fatalf("expected latest default fingerprint args, got %#v", got.FingerprintArgs)
+	}
+	if !reflect.DeepEqual(got.LaunchArgs, latest.Browser.DefaultLaunchArgs) {
+		t.Fatalf("expected latest default launch args, got %#v", got.LaunchArgs)
+	}
+	if got.ProxyConfig != latest.Browser.DefaultProxy {
+		t.Fatalf("expected latest default proxy, got %q", got.ProxyConfig)
+	}
+}
+
 func TestWaitBrowserDebugPortStableKeepsListeningPort(t *testing.T) {
 	t.Parallel()
 

@@ -248,6 +248,61 @@ func TestBrowserProfileListRefreshesProfileConfigFromDiskWithoutDAO(t *testing.T
 	}
 }
 
+func TestDefaultContentForProfileRefreshesConfigFromDisk(t *testing.T) {
+	appRoot := t.TempDir()
+	app := newRuntimeStateTestApp(appRoot)
+	includeGlobal := false
+	app.config.Browser.DefaultContentRules = []config.BrowserDefaultContentRule{
+		{
+			RuleId:                "tag:fresh:stale",
+			Scope:                 "tag",
+			TargetName:            "fresh",
+			Enabled:               true,
+			IncludeGlobalDefaults: &includeGlobal,
+			StartURLs: []config.BrowserStartURL{
+				{Name: "Stale Start", URL: "https://stale-start.example.test/"},
+			},
+			Bookmarks: []config.BrowserBookmark{
+				{Name: "Stale Bookmark", URL: "https://stale-bookmark.example.test/"},
+			},
+		},
+	}
+
+	latest := config.DefaultConfig()
+	latest.Browser.DefaultContentRules = []config.BrowserDefaultContentRule{
+		{
+			RuleId:                "tag:fresh:latest",
+			Scope:                 "tag",
+			TargetName:            "fresh",
+			Enabled:               true,
+			IncludeGlobalDefaults: &includeGlobal,
+			StartURLs: []config.BrowserStartURL{
+				{Name: "Latest Start", URL: "https://latest-start.example.test/"},
+			},
+			Bookmarks: []config.BrowserBookmark{
+				{Name: "Latest Bookmark", URL: "https://latest-bookmark.example.test/"},
+			},
+		},
+	}
+	if err := latest.Save(app.resolveAppPath("config.yaml")); err != nil {
+		t.Fatalf("failed to save config: %v", err)
+	}
+
+	profile := &BrowserProfile{
+		ProfileId:   "profile-1",
+		ProfileName: "Profile 1",
+		Tags:        []string{"fresh"},
+	}
+	bookmarks := app.BookmarkListForProfile(profile)
+	if len(bookmarks) != 1 || bookmarks[0].URL != "https://latest-bookmark.example.test/" {
+		t.Fatalf("expected bookmarks from latest shared config, got %#v", bookmarks)
+	}
+	startURLs := app.DefaultStartURLValuesForProfile(profile)
+	if len(startURLs) != 1 || startURLs[0] != "https://latest-start.example.test/" {
+		t.Fatalf("expected start URLs from latest shared config, got %#v", startURLs)
+	}
+}
+
 func TestBrowserProfileCreateRefreshesBeforeWriting(t *testing.T) {
 	app := newRuntimeStateTestApp(t.TempDir())
 	app.browserMgr.Profiles["deleted-profile"] = &BrowserProfile{

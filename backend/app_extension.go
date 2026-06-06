@@ -984,6 +984,7 @@ func (a *App) requireProfile(profileId string) (*browser.Profile, error) {
 	if a.browserMgr == nil {
 		return nil, fmt.Errorf("浏览器管理器未初始化")
 	}
+	a.refreshBrowserProfileConfigCacheFromStore()
 	a.browserMgr.Mutex.Lock()
 	defer a.browserMgr.Mutex.Unlock()
 	profile, ok := a.browserMgr.Profiles[profileId]

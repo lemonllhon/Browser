@@ -74,6 +74,9 @@ func (a *App) OpenProfileUserDataDir(profileId string) error {
 		return fmt.Errorf("browser manager is not initialized")
 	}
 
+	if err := a.refreshConfigCacheFromDiskIfPresent(); err != nil {
+		return fmt.Errorf("重载浏览器配置失败: %w", err)
+	}
 	a.refreshBrowserProfileSharedRuntimeOverlay()
 	a.browserMgr.Mutex.Lock()
 	profile, exists := a.browserMgr.Profiles[profileId]
@@ -102,6 +105,9 @@ func (a *App) OpenProfileUserDataDir(profileId string) error {
 func (a *App) safeProfileUserDataDir(profile *browser.Profile) (string, error) {
 	if profile == nil {
 		return "", fmt.Errorf("profile is nil")
+	}
+	if err := a.refreshConfigCacheFromDiskIfPresent(); err != nil {
+		return "", fmt.Errorf("重载浏览器配置失败: %w", err)
 	}
 	resolved := a.browserMgr.ResolveUserDataDir(profile)
 	absDir, err := filepath.Abs(resolved)
