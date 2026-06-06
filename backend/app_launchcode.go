@@ -16,6 +16,16 @@ func (a *App) StartInstanceWithParams(profileId string, params launchcode.Launch
 	return a.BrowserInstanceStartWithParams(profileId, params.LaunchArgs, params.StartURLs, params.SkipDefaultStartURLs)
 }
 
+// CreateProfile 实现 launchcode Profile API 的创建接口。
+func (a *App) CreateProfile(input browser.ProfileInput) (*browser.Profile, error) {
+	return a.BrowserProfileCreate(input)
+}
+
+// UpdateProfile 实现 launchcode Profile API 的更新接口。
+func (a *App) UpdateProfile(profileId string, input browser.ProfileInput) (*browser.Profile, error) {
+	return a.BrowserProfileUpdate(profileId, input)
+}
+
 // BrowserProfileGetCode 获取实例的 LaunchCode（Wails 绑定）
 func (a *App) BrowserProfileGetCode(profileId string) (string, error) {
 	if a.launchCodeSvc == nil {
@@ -29,7 +39,12 @@ func (a *App) BrowserProfileRegenerateCode(profileId string) (string, error) {
 	if a.launchCodeSvc == nil {
 		return "", nil
 	}
-	return a.launchCodeSvc.RegenerateCode(profileId)
+	code, err := a.launchCodeSvc.RegenerateCode(profileId)
+	if err != nil {
+		return "", err
+	}
+	a.emitProfileDataUpdated()
+	return code, nil
 }
 
 // BrowserProfileSetCode 自定义设置实例 LaunchCode（Wails 绑定）
@@ -37,7 +52,12 @@ func (a *App) BrowserProfileSetCode(profileId string, code string) (string, erro
 	if a.launchCodeSvc == nil {
 		return "", nil
 	}
-	return a.launchCodeSvc.SetCode(profileId, code)
+	next, err := a.launchCodeSvc.SetCode(profileId, code)
+	if err != nil {
+		return "", err
+	}
+	a.emitProfileDataUpdated()
+	return next, nil
 }
 
 // BrowserInstanceStartByCode 通过 LaunchCode 启动实例（Wails 绑定）

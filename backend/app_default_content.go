@@ -129,12 +129,17 @@ func mergeBookmarkItems(groups ...[]BrowserBookmark) []BrowserBookmark {
 }
 
 func (a *App) DefaultContentRuleList() []BrowserDefaultContentRule {
+	_ = a.refreshConfigCacheFromDiskIfPresent()
 	return append([]BrowserDefaultContentRule{}, a.config.Browser.DefaultContentRules...)
 }
 
 func (a *App) DefaultContentRuleSave(items []BrowserDefaultContentRule) error {
 	log := logger.New("DefaultContent")
 	valid := normalizeDefaultContentRules(items)
+	if err := a.refreshConfigCacheFromDiskIfPresent(); err != nil {
+		log.Error("配置重载失败", logger.F("error", err.Error()))
+		return err
+	}
 	a.config.Browser.DefaultContentRules = valid
 	if err := a.config.Save(a.resolveAppPath("config.yaml")); err != nil {
 		log.Error("默认内容联动规则保存失败", logger.F("error", err.Error()))

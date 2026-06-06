@@ -444,6 +444,30 @@ func (a *App) ReloadConfig() error {
 	return nil
 }
 
+func (a *App) refreshConfigCacheFromDiskIfPresent() error {
+	if a == nil {
+		return nil
+	}
+	configPath := a.resolveAppPath("config.yaml")
+	if _, err := os.Stat(configPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("检查配置文件失败: %w", err)
+	}
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		return fmt.Errorf("重载配置文件失败: %w", err)
+	}
+	a.config = cfg
+	if a.browserMgr != nil {
+		a.browserMgr.Config = cfg
+		a.browserMgr.ListCores()
+		a.loadProxies()
+	}
+	return nil
+}
+
 func (a *App) applyRuntimeConfig(cfg config.RuntimeConfig) {
 	if cfg.GCPercent > 0 {
 		debug.SetGCPercent(cfg.GCPercent)
@@ -903,7 +927,12 @@ func (a *App) BrowserProfileSetKeywords(profileId string, keywords []string) (*B
 	if err := a.ensureWindowSyncProfileMutable(profileId); err != nil {
 		return nil, err
 	}
-	return a.browserMgr.SetKeywords(profileId, keywords)
+	profile, err := a.browserMgr.SetKeywords(profileId, keywords)
+	if err != nil {
+		return nil, err
+	}
+	a.emitProfileDataUpdated()
+	return profile, nil
 }
 
 func (a *App) BrowserProfileCreate(input BrowserProfileInput) (*BrowserProfile, error) {
@@ -915,6 +944,8 @@ func (a *App) BrowserProfileCreate(input BrowserProfileInput) (*BrowserProfile, 
 	if err := a.applyAutoBindExtensionsForProfile(profile.ProfileId); err != nil {
 		return nil, err
 	}
+	a.emitProfileDataUpdated()
+	a.emitBrowserExtensionsUpdated()
 	return profile, nil
 }
 
@@ -923,7 +954,12 @@ func (a *App) BrowserProfileUpdate(profileId string, input BrowserProfileInput) 
 	if err := a.ensureWindowSyncProfileMutable(profileId); err != nil {
 		return nil, err
 	}
-	return a.browserMgr.Update(profileId, input)
+	profile, err := a.browserMgr.Update(profileId, input)
+	if err != nil {
+		return nil, err
+	}
+	a.emitProfileDataUpdated()
+	return profile, nil
 }
 
 func (a *App) BrowserProfileDelete(profileId string) error {
@@ -931,7 +967,11 @@ func (a *App) BrowserProfileDelete(profileId string) error {
 	if err := a.ensureWindowSyncProfileMutable(profileId); err != nil {
 		return err
 	}
-	return a.deleteProfileWithData(profileId)
+	if err := a.deleteProfileWithData(profileId); err != nil {
+		return err
+	}
+	a.emitProfileDataUpdated()
+	return nil
 }
 
 // BrowserProfileCopy 复制实例配置（除指纹参数外全部复制）
@@ -944,6 +984,8 @@ func (a *App) BrowserProfileCopy(profileId string, newName string) (*BrowserProf
 	if err := a.applyAutoBindExtensionsForProfile(profile.ProfileId); err != nil {
 		return nil, err
 	}
+	a.emitProfileDataUpdated()
+	a.emitBrowserExtensionsUpdated()
 	return profile, nil
 }
 
@@ -952,18 +994,33 @@ func (a *App) BrowserProfileCopy(profileId string, newName string) (*BrowserProf
 // ============================================================================
 
 func (a *App) GetBrowserSettings() BrowserSettings {
+	_ = a.refreshConfigCacheFromDiskIfPresent()
+	cfg := a.config
+	if cfg == nil {
+		cfg = config.DefaultConfig()
+	}
 	return BrowserSettings{
-		UserDataRoot:           a.config.Browser.UserDataRoot,
-		DefaultFingerprintArgs: append([]string{}, a.config.Browser.DefaultFingerprintArgs...),
-		DefaultLaunchArgs:      append([]string{}, a.config.Browser.DefaultLaunchArgs...),
-		DefaultProxy:           a.config.Browser.DefaultProxy,
-		StartReadyTimeoutMs:    browserStartReadyTimeoutMillis(a.config),
-		StartStableWindowMs:    browserStartStableWindowMillis(a.config),
+		UserDataRoot:           cfg.Browser.UserDataRoot,
+		DefaultFingerprintArgs: append([]string{}, cfg.Browser.DefaultFingerprintArgs...),
+		DefaultLaunchArgs:      append([]string{}, cfg.Browser.DefaultLaunchArgs...),
+		DefaultProxy:           cfg.Browser.DefaultProxy,
+		StartReadyTimeoutMs:    browserStartReadyTimeoutMillis(cfg),
+		StartStableWindowMs:    browserStartStableWindowMillis(cfg),
 	}
 }
 
 func (a *App) SaveBrowserSettings(settings BrowserSettings) error {
 	log := logger.New("Browser")
+	if err := a.refreshConfigCacheFromDiskIfPresent(); err != nil {
+		log.Error("浏览器配置重载失败", logger.F("error", err))
+		return err
+	}
+	if a.config == nil {
+		a.config = config.DefaultConfig()
+		if a.browserMgr != nil {
+			a.browserMgr.Config = a.config
+		}
+	}
 	a.config.Browser.UserDataRoot = strings.TrimSpace(settings.UserDataRoot)
 	a.config.Browser.DefaultFingerprintArgs = append([]string{}, settings.DefaultFingerprintArgs...)
 	a.config.Browser.DefaultLaunchArgs = append([]string{}, settings.DefaultLaunchArgs...)

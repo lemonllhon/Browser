@@ -17,6 +17,7 @@ var defaultBookmarkList = []BrowserBookmark{
 
 // BookmarkList 获取默认书签列表（优先 SQLite，降级 config.yaml）
 func (a *App) BookmarkList() []BrowserBookmark {
+	_ = a.refreshConfigCacheFromDiskIfPresent()
 	if a.browserMgr.BookmarkDAO != nil {
 		list, err := a.browserMgr.BookmarkDAO.List()
 		if err == nil && len(list) > 0 {
@@ -45,6 +46,10 @@ func (a *App) BookmarkSave(items []BrowserBookmark) error {
 	}
 
 	// 降级：写入 config.yaml
+	if err := a.refreshConfigCacheFromDiskIfPresent(); err != nil {
+		log.Error("配置重载失败", logger.F("error", err.Error()))
+		return err
+	}
 	a.config.Browser.DefaultBookmarks = valid
 	if err := a.config.Save(a.resolveAppPath("config.yaml")); err != nil {
 		log.Error("书签保存失败", logger.F("error", err.Error()))

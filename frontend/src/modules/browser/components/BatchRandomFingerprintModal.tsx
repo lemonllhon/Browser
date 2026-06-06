@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Wand2 } from 'lucide-react'
 import { Button, FormItem, Input, Modal, Progress, Select, Textarea, toast } from '../../../shared/components'
-import type { BrowserCore, BrowserGroupWithCount, BrowserProfile, BrowserProfileInput, BrowserProxy } from '../types'
+import type { BrowserCore, BrowserGroupWithCount, BrowserProfile, BrowserProfileInput, BrowserProxy, BrowserSettings } from '../types'
 import { createBrowserProfile, fetchBrowserSettings } from '../api'
+import { onRuntimeEvent } from '../../../shared/backend/runtime'
 import { FingerprintPanel } from './FingerprintPanel'
 import { GroupSelector } from './GroupSelector'
 import { TagInput } from './TagInput'
@@ -153,9 +154,23 @@ export function BatchRandomFingerprintModal({
   const [progress, setProgress] = useState(0)
   const [progressText, setProgressText] = useState('')
   const [lastSummary, setLastSummary] = useState('')
+  const launchTemplateDirtyRef = useRef(false)
+  const fingerprintTemplateDirtyRef = useRef(false)
+
+  const applyDefaultSettingsTemplate = (settings: BrowserSettings, force = false) => {
+    const launchArgs = settings.defaultLaunchArgs?.length ? settings.defaultLaunchArgs : fallbackLaunchArgs
+    if (force || !launchTemplateDirtyRef.current) {
+      setLaunchArgsText(launchArgs.join('\n'))
+    }
+    if (force || !fingerprintTemplateDirtyRef.current) {
+      setFingerprintArgs(seedVisibleFingerprintArgs(settings.defaultFingerprintArgs || []))
+    }
+  }
 
   useEffect(() => {
     if (!open) return
+    launchTemplateDirtyRef.current = false
+    fingerprintTemplateDirtyRef.current = false
     setCount(5)
     setNamePrefix('随机实例')
     setCoreId('')
@@ -175,14 +190,27 @@ export function BatchRandomFingerprintModal({
     setProgressText('')
     setLastSummary('')
     void fetchBrowserSettings().then(settings => {
-      const launchArgs = settings.defaultLaunchArgs?.length ? settings.defaultLaunchArgs : fallbackLaunchArgs
-      setLaunchArgsText(launchArgs.join('\n'))
-      setFingerprintArgs(seedVisibleFingerprintArgs(settings.defaultFingerprintArgs || []))
+      applyDefaultSettingsTemplate(settings, true)
     }).catch(() => {
       setLaunchArgsText(fallbackLaunchArgs.join('\n'))
       setFingerprintArgs(seedVisibleFingerprintArgs([]))
     })
   }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    const offSettingsUpdated = onRuntimeEvent('browser:settings:updated', () => {
+      if (busy || (launchTemplateDirtyRef.current && fingerprintTemplateDirtyRef.current)) {
+        return
+      }
+      void fetchBrowserSettings().then(settings => {
+        applyDefaultSettingsTemplate(settings)
+      }).catch(() => {})
+    })
+    return () => {
+      offSettingsUpdated?.()
+    }
+  }, [busy, open])
 
   const selectedProxyGroups = useMemo(() => (
     Array.from(new Set(proxies.map(item => (item.groupName || '').trim()).filter(Boolean))).sort()
@@ -207,6 +235,7 @@ export function BatchRandomFingerprintModal({
   const startIndex = useMemo(() => detectNextStartIndex(profiles, namePrefix), [profiles, namePrefix])
 
   const handleRegionChange = (code: string) => {
+    fingerprintTemplateDirtyRef.current = true
     const current = deserializeFingerprint(fingerprintArgs)
     if (!code) {
       setFingerprintArgs(serializeFingerprint({
@@ -432,7 +461,15 @@ export function BatchRandomFingerprintModal({
         </div>
 
         <FormItem label="启动参数" hint="每行一个">
-          <Textarea value={launchArgsText} onChange={event => setLaunchArgsText(event.target.value)} rows={4} placeholder="--disable-sync" />
+          <Textarea
+            value={launchArgsText}
+            onChange={event => {
+              launchTemplateDirtyRef.current = true
+              setLaunchArgsText(event.target.value)
+            }}
+            rows={4}
+            placeholder="--disable-sync"
+          />
         </FormItem>
 
         <div className="rounded-md border border-[var(--color-border-default)] p-3 space-y-4">
@@ -449,7 +486,13 @@ export function BatchRandomFingerprintModal({
               随机当前国家时区
             </Button>
           )}
-          <FingerprintPanel value={fingerprintArgs} onChange={setFingerprintArgs} />
+          <FingerprintPanel
+            value={fingerprintArgs}
+            onChange={value => {
+              fingerprintTemplateDirtyRef.current = true
+              setFingerprintArgs(value)
+            }}
+          />
         </div>
 
         {(busy || lastSummary) && (

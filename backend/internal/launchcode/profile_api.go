@@ -32,6 +32,10 @@ type profileDeleter interface {
 	DeleteProfile(profileID string) error
 }
 
+type profileCodeSetter interface {
+	BrowserProfileSetCode(profileID string, code string) (string, error)
+}
+
 func (s *LaunchServer) handleProfiles(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -429,7 +433,15 @@ func (s *LaunchServer) applyRequestedLaunchCode(profileID, currentCode, requeste
 		return "", http.StatusServiceUnavailable, "launch code service is unavailable"
 	}
 
-	code, err := s.service.SetCode(profileID, requestedCode)
+	var (
+		code string
+		err  error
+	)
+	if setter, ok := s.starter.(profileCodeSetter); ok {
+		code, err = setter.BrowserProfileSetCode(profileID, requestedCode)
+	} else {
+		code, err = s.service.SetCode(profileID, requestedCode)
+	}
 	if err != nil {
 		return "", mapProfileWriteErrorStatus(err), err.Error()
 	}

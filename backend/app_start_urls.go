@@ -35,6 +35,7 @@ func normalizeStartURLItems(items []BrowserStartURL) []BrowserStartURL {
 }
 
 func (a *App) DefaultStartURLList() []BrowserStartURL {
+	_ = a.refreshConfigCacheFromDiskIfPresent()
 	if a.config.Browser.DefaultStartURLsSet {
 		return append([]BrowserStartURL{}, a.config.Browser.DefaultStartURLs...)
 	}
@@ -58,6 +59,10 @@ func (a *App) DefaultStartURLValues() []string {
 func (a *App) DefaultStartURLSave(items []BrowserStartURL) error {
 	log := logger.New("StartURL")
 	valid := normalizeStartURLItems(items)
+	if err := a.refreshConfigCacheFromDiskIfPresent(); err != nil {
+		log.Error("配置重载失败", logger.F("error", err.Error()))
+		return err
+	}
 	a.config.Browser.DefaultStartURLs = valid
 	a.config.Browser.DefaultStartURLsSet = true
 	if err := a.config.Save(a.resolveAppPath("config.yaml")); err != nil {

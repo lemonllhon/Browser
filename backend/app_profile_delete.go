@@ -11,10 +11,7 @@ import (
 )
 
 func (a *App) DeleteProfile(profileId string) error {
-	if err := a.ensureWindowSyncProfileMutable(profileId); err != nil {
-		return err
-	}
-	return a.deleteProfileWithData(profileId)
+	return a.BrowserProfileDelete(profileId)
 }
 
 func (a *App) deleteProfileWithData(profileId string) error {
