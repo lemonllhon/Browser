@@ -7,6 +7,7 @@ import { fetchBrowserCores, saveBrowserCore, deleteBrowserCore, setDefaultBrowse
 import { onRuntimeEvent, openExternalURL } from '../../../shared/backend/runtime'
 import { resolveActionErrorMessage } from '../utils/actionErrors'
 import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
+import { useSingleFlightCallback } from '../hooks/useSingleFlightCallback'
 
 interface CoreDisplayInfo {
   coreId: string
@@ -152,10 +153,12 @@ export function CoreManagementPage() {
   const [githubLoading, setGithubLoading] = useState(false)
   const [githubError, setGithubError] = useState('')
   const lastDownloadPhaseRef = useRef('')
+  const refreshCoreData = useSingleFlightCallback(() => loadData())
+  const refreshDownloadProxies = useSingleFlightCallback(() => loadDownloadProxies())
 
   useEffect(() => {
-    loadData()
-    void loadDownloadProxies()
+    void refreshCoreData()
+    void refreshDownloadProxies()
 
     // 监听下载进度
     const onDownloadProgress = (data: CoreDownloadProgressInfo) => {
@@ -176,7 +179,7 @@ export function CoreManagementPage() {
         if (phase === 'done') {
           setDownloadRenameValue(getCorePathFolderName(next.corePath || ''))
           toast.success(next.message || '内核下载完成')
-          void loadData()
+          void refreshCoreData()
         } else if (phase === 'error') {
           toast.error(next.message || '内核下载失败')
         } else if (phase === 'cancelled') {
@@ -185,9 +188,9 @@ export function CoreManagementPage() {
       }
     }
     const offDownloadProgress = onBrowserCoreDownloadProgress(onDownloadProgress)
-    const offSettingsUpdated = onRuntimeEvent('browser:settings:updated', () => { void loadData() })
-    const offCoresUpdated = onRuntimeEvent('browser:cores:updated', () => { void loadData() })
-    const offProxiesUpdated = onRuntimeEvent('browser:proxies:updated', () => { void loadDownloadProxies() })
+    const offSettingsUpdated = onRuntimeEvent('browser:settings:updated', () => { void refreshCoreData() })
+    const offCoresUpdated = onRuntimeEvent('browser:cores:updated', () => { void refreshCoreData() })
+    const offProxiesUpdated = onRuntimeEvent('browser:proxies:updated', () => { void refreshDownloadProxies() })
 
     return () => {
       offDownloadProgress?.()
@@ -195,7 +198,7 @@ export function CoreManagementPage() {
       offCoresUpdated?.()
       offProxiesUpdated?.()
     }
-  }, [])
+  }, [refreshCoreData, refreshDownloadProxies])
 
   const applySettingsSnapshot = useCallback((settingsData: BrowserSettings, preserveDirty = false) => {
     setSettings(settingsData)

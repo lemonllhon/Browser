@@ -121,12 +121,6 @@ func (m *Manager) SaveCore(input CoreInput) error {
 		if coreId == "" {
 			coreId = uuid.NewString()
 		}
-		if input.IsDefault {
-			if err := m.CoreDAO.SetDefault(""); err != nil {
-				// SetDefault 空串只清除，忽略错误
-				_ = err
-			}
-		}
 		core := Core{CoreId: coreId, CoreName: coreName, CorePath: corePath, IsDefault: input.IsDefault}
 		if err := m.CoreDAO.Upsert(core); err != nil {
 			return err
@@ -300,10 +294,30 @@ func (m *Manager) DeleteCore(coreId string) error {
 	}
 
 	if m.CoreDAO != nil {
+		coresBeforeDelete := m.ListCores()
+		deletedWasDefault := false
+		for _, core := range coresBeforeDelete {
+			if strings.EqualFold(core.CoreId, coreId) {
+				deletedWasDefault = core.IsDefault
+				break
+			}
+		}
 		if err := m.CoreDAO.Delete(coreId); err != nil {
 			return err
 		}
 		m.syncCoresFromDAO()
+		if deletedWasDefault {
+			for _, core := range m.Config.Browser.Cores {
+				if strings.TrimSpace(core.CoreId) == "" {
+					continue
+				}
+				if err := m.CoreDAO.SetDefault(core.CoreId); err != nil {
+					return err
+				}
+				m.syncCoresFromDAO()
+				break
+			}
+		}
 		log.Info("内核配置删除", logger.F("core_id", coreId))
 		return nil
 	}

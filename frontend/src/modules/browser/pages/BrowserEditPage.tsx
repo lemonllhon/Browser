@@ -13,6 +13,7 @@ import { ProxyPickerModal } from '../components/ProxyPickerModal'
 import { REGION_OPTIONS, findRegionPreset, findRegionPresetByLocale, pickRegionTimezone, regionTimezones } from '../config/regionPresets'
 import { deserialize as deserializeFingerprint, serialize as serializeFingerprint } from '../utils/fingerprintSerializer'
 import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
+import { useSingleFlightCallback } from '../hooks/useSingleFlightCallback'
 
 const fallbackLowLaunchArgs = ['--disable-sync', '--no-first-run']
 const incognitoArg = '--incognito'
@@ -177,23 +178,24 @@ export function BrowserEditPage() {
     if (!current) return
     applyProfileSnapshot(current, preserveDirty)
   }, [applyCreateDefaults, applyProfileSnapshot, id, isCreate])
+  const refreshData = useSingleFlightCallback((preserveDirty: boolean = true) => loadData(preserveDirty))
 
   useEffect(() => {
     void loadData(false)
   }, [loadData])
 
-  useVisibleRefresh(() => loadData(true), 2000, !saving)
+  useVisibleRefresh(() => refreshData(true), 2000, !saving)
 
   useEffect(() => {
-    const refreshData = () => {
-      void loadData(true)
+    const refreshFromEvent = () => {
+      void refreshData(true)
     }
 
-    const offProfilesUpdated = onRuntimeEvent('browser:profiles:updated', refreshData)
-    const offGroupsUpdated = onRuntimeEvent('browser:groups:updated', refreshData)
-    const offCoresUpdated = onRuntimeEvent('browser:cores:updated', refreshData)
-    const offProxiesUpdated = onRuntimeEvent('browser:proxies:updated', refreshData)
-    const offSettingsUpdated = onRuntimeEvent('browser:settings:updated', refreshData)
+    const offProfilesUpdated = onRuntimeEvent('browser:profiles:updated', refreshFromEvent)
+    const offGroupsUpdated = onRuntimeEvent('browser:groups:updated', refreshFromEvent)
+    const offCoresUpdated = onRuntimeEvent('browser:cores:updated', refreshFromEvent)
+    const offProxiesUpdated = onRuntimeEvent('browser:proxies:updated', refreshFromEvent)
+    const offSettingsUpdated = onRuntimeEvent('browser:settings:updated', refreshFromEvent)
 
     return () => {
       offProfilesUpdated?.()
@@ -202,7 +204,7 @@ export function BrowserEditPage() {
       offProxiesUpdated?.()
       offSettingsUpdated?.()
     }
-  }, [loadData])
+  }, [refreshData])
 
   const handleChange = (field: keyof BrowserProfileInput, value: string | string[] | boolean | number) => {
     markDirty(field)

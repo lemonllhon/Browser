@@ -322,7 +322,7 @@ func (a *App) BrowserProfilesBackupImport(input ProfileBackupImportRequest) (Pro
 			warnings = append(warnings, ProfileBackupWarning{ProfileID: item.ProfileID, ProfileName: item.ProfileName, Message: warning})
 		}
 
-		created, err := a.browserMgr.Create(createInput)
+		created, err := a.BrowserProfileCreate(createInput)
 		if err != nil {
 			failed++
 			warnings = append(warnings, ProfileBackupWarning{ProfileID: item.ProfileID, ProfileName: item.ProfileName, Message: err.Error()})

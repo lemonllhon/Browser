@@ -6,6 +6,7 @@ import { fetchBrowserProfiles, fetchGroups, startBrowserInstanceByCode } from '.
 import type { BrowserGroupWithCount, BrowserProfile } from '../types'
 import { resolveActionFeedback } from '../utils/actionErrors'
 import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
+import { useSingleFlightCallback } from '../hooks/useSingleFlightCallback'
 
 interface QuickLaunchModalProps {
   open: boolean
@@ -73,71 +74,62 @@ export function QuickLaunchModal({ open, onClose }: QuickLaunchModalProps) {
   const sectionsScrollableRef = useRef(false)
   const autoScrollingRef = useRef(false)
   const autoScrollTimerRef = useRef<number | null>(null)
+  const openRef = useRef(open)
+  const loadOpenData = useSingleFlightCallback(async (showLoading = false) => {
+    if (showLoading) {
+      setLoading(true)
+    }
+    const [profilesResult, groupsResult] = await Promise.allSettled([fetchBrowserProfiles(), fetchGroups()])
+    if (!openRef.current) return
+
+    if (profilesResult.status === 'fulfilled') {
+      setProfiles((profilesResult.value || []).slice().sort(sortProfiles))
+    } else {
+      toast.error('加载实例列表失败')
+      setProfiles([])
+    }
+
+    if (groupsResult.status === 'fulfilled') {
+      setGroups(groupsResult.value || [])
+    } else {
+      setGroups([])
+    }
+
+    if (showLoading) {
+      setLoading(false)
+      setTimeout(() => inputRef.current?.focus(), 0)
+    }
+  })
+
+  useEffect(() => {
+    openRef.current = open
+  }, [open])
 
   useEffect(() => {
     if (!open) return
 
-    let alive = true
     setQuery('')
     setGroupFilter(GROUP_ALL)
     setSelectedIndex(0)
-    setLoading(true)
 
-    const loadData = (showLoading: boolean) => {
-      if (showLoading) {
-        setLoading(true)
-      }
-      Promise.allSettled([fetchBrowserProfiles(), fetchGroups()])
-      .then(([profilesResult, groupsResult]) => {
-        if (!alive) return
-
-        if (profilesResult.status === 'fulfilled') {
-          setProfiles((profilesResult.value || []).slice().sort(sortProfiles))
-        } else {
-          toast.error('加载实例列表失败')
-          setProfiles([])
-        }
-
-        if (groupsResult.status === 'fulfilled') {
-          setGroups(groupsResult.value || [])
-        } else {
-          setGroups([])
-        }
-      })
-      .finally(() => {
-        if (!alive) return
-        if (showLoading) {
-          setLoading(false)
-          setTimeout(() => inputRef.current?.focus(), 0)
-        }
-      })
-    }
-
-    loadData(true)
-
-    const reloadOpenData = () => loadData(false)
+    void loadOpenData(true)
+    const reloadOpenData = () => { void loadOpenData(false) }
     const offProfilesUpdated = onRuntimeEvent('browser:profiles:updated', reloadOpenData)
     const offGroupsUpdated = onRuntimeEvent('browser:groups:updated', reloadOpenData)
 
     return () => {
-      alive = false
+      openRef.current = false
+      setLoading(false)
       offProfilesUpdated?.()
       offGroupsUpdated?.()
       setStartingCode('')
       setActiveTag('')
     }
-  }, [open])
+  }, [open, loadOpenData])
 
   useVisibleRefresh(() => {
     if (!open) return
-    return Promise.allSettled([fetchBrowserProfiles(), fetchGroups()]).then(([profilesResult, groupsResult]) => {
-      if (profilesResult.status === 'fulfilled') {
-        setProfiles((profilesResult.value || []).slice().sort(sortProfiles))
-      }
-      if (groupsResult.status === 'fulfilled') {
-        setGroups(groupsResult.value || [])
-      }
-    })
+    return loadOpenData(false)
   }, 2000, open)
 
   const groupNameMap = useMemo(() => {

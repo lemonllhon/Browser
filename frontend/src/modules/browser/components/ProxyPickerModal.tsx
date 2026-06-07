@@ -4,6 +4,7 @@ import { Check, Loader2, Search, Wifi, X } from 'lucide-react'
 import type { BrowserProxy } from '../types'
 import { browserProxyBatchTestSpeed, browserProxyTestSpeed, fetchBrowserProxies, fetchBrowserProxyGroups, onBrowserProxySpeedResult } from '../api'
 import { onRuntimeEvent } from '../../../shared/backend/runtime'
+import { useSingleFlightCallback } from '../hooks/useSingleFlightCallback'
 
 interface ProxyPickerModalProps {
   open: boolean
@@ -28,25 +29,7 @@ export function ProxyPickerModal({ open, currentProxyId, onSelect, onClose }: Pr
   const [speedMap, setSpeedMap] = useState<Record<string, SpeedResult>>({})
   const [testingIds, setTestingIds] = useState<Set<string>>(new Set())
   const abortRef = useRef(false)
-
-  useEffect(() => {
-    if (!open) return
-    setSelectedGroup(ALL_GROUP)
-    setSearch('')
-    setSpeedMap({})
-    setTestingIds(new Set())
-    abortRef.current = false
-    loadData()
-    const offProxiesUpdated = onRuntimeEvent('browser:proxies:updated', () => {
-      void loadData()
-    })
-    return () => {
-      abortRef.current = true
-      offProxiesUpdated?.()
-    }
-  }, [open])
-
-  const loadData = async () => {
+  const loadData = useSingleFlightCallback(async () => {
     setLoading(true)
     try {
       const [groupList, proxyList] = await Promise.all([
@@ -66,7 +49,24 @@ export function ProxyPickerModal({ open, currentProxyId, onSelect, onClose }: Pr
     } finally {
       setLoading(false)
     }
-  }
+  })
+
+  useEffect(() => {
+    if (!open) return
+    setSelectedGroup(ALL_GROUP)
+    setSearch('')
+    setSpeedMap({})
+    setTestingIds(new Set())
+    abortRef.current = false
+    loadData()
+    const offProxiesUpdated = onRuntimeEvent('browser:proxies:updated', () => {
+      void loadData()
+    })
+    return () => {
+      abortRef.current = true
+      offProxiesUpdated?.()
+    }
+  }, [open, loadData])
 
   useEffect(() => {
     let list = allProxies

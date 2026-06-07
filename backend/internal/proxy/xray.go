@@ -223,7 +223,7 @@ func (m *XrayManager) ensureBridge(proxyConfig string, proxies []config.BrowserP
 	key := computeNodeKey(src + "\x00" + dnsServers)
 
 	if socksURL, reused := m.tryReuseBridge(key, pin); reused {
-		log.Info("复用桥接进程", logger.F("key", key), logger.F("socks_url", socksURL))
+		log.Info("复用桥接进程", logger.F("key", shortNodeKey(key)), logger.F("socks_url", socksURL))
 		return socksURL, key, nil
 	}
 
@@ -232,7 +232,7 @@ func (m *XrayManager) ensureBridge(proxyConfig string, proxies []config.BrowserP
 	defer launchLock.Unlock()
 
 	if socksURL, reused := m.tryReuseBridge(key, pin); reused {
-		log.Info("复用桥接进程", logger.F("key", key), logger.F("socks_url", socksURL))
+		log.Info("复用桥接进程", logger.F("key", shortNodeKey(key)), logger.F("socks_url", socksURL))
 		return socksURL, key, nil
 	}
 
@@ -241,18 +241,20 @@ func (m *XrayManager) ensureBridge(proxyConfig string, proxies []config.BrowserP
 		log.Error("xray 不可用", logger.F("error", err))
 		return "", "", err
 	}
-	// 最多重试 3 次，解决端口分配后被抢占的 TOCTOU 竞争问题
+	// 最多重试 3 次，缩短端口释放到子进程绑定之间的竞争窗口。
 	const maxLaunchRetries = 3
 	var lastErr error
 	for attempt := 1; attempt <= maxLaunchRetries; attempt++ {
-		port, err := nextAvailablePort()
+		reservation, err := reserveAvailablePort()
 		if err != nil {
 			log.Error("端口分配失败", logger.F("error", err), logger.F("attempt", attempt))
 			lastErr = err
 			continue
 		}
+		port := reservation.Port
 		cfgPath, err := m.buildRuntimeConfig(key, outbound, port, dnsServers)
 		if err != nil {
+			reservation.Close()
 			log.Error("xray 配置生成失败", logger.F("error", err))
 			return "", "", err
 		}
@@ -263,6 +265,14 @@ func (m *XrayManager) ensureBridge(proxyConfig string, proxies []config.BrowserP
 		stderrFile, _ := os.Create(stderrPath)
 		if stderrFile != nil {
 			cmd.Stderr = stderrFile
+		}
+		if err := reservation.Close(); err != nil {
+			if stderrFile != nil {
+				stderrFile.Close()
+			}
+			log.Error("xray 端口释放失败", logger.F("error", err), logger.F("port", port), logger.F("attempt", attempt))
+			lastErr = err
+			continue
 		}
 		if err := cmd.Start(); err != nil {
 			if stderrFile != nil {
@@ -281,8 +291,8 @@ func (m *XrayManager) ensureBridge(proxyConfig string, proxies []config.BrowserP
 			RefCount:   0,
 			LastUsedAt: time.Now(),
 		}
-		log.Info("xray 启动", logger.F("key", key), logger.F("pid", bridge.Pid), logger.F("port", bridge.Port), logger.F("attempt", attempt))
-		if err := waitPortReady("127.0.0.1", port, 10*time.Second); err != nil {
+		log.Info("xray 启动", logger.F("key", shortNodeKey(key)), logger.F("pid", bridge.Pid), logger.F("port", bridge.Port), logger.F("attempt", attempt))
+		if err := waitPortReadyForProcess("127.0.0.1", port, cmd, 10*time.Second); err != nil {
 			if stderrFile != nil {
 				stderrFile.Close()
 			}
@@ -300,7 +310,7 @@ func (m *XrayManager) ensureBridge(proxyConfig string, proxies []config.BrowserP
 			bridge.Running = false
 			bridge.Pid = 0
 			bridge.LastError = err.Error()
-			log.Error("xray 端口不可用，重试", logger.F("key", key), logger.F("error", err), logger.F("port", port), logger.F("attempt", attempt))
+			log.Error("xray 端口不可用，重试", logger.F("key", shortNodeKey(key)), logger.F("error", err), logger.F("port", port), logger.F("attempt", attempt))
 			lastErr = err
 			// 等待一下再重试，给 OS 时间回收端口
 			time.Sleep(200 * time.Millisecond)
@@ -311,7 +321,7 @@ func (m *XrayManager) ensureBridge(proxyConfig string, proxies []config.BrowserP
 		}
 
 		if socksURL, reused := m.registerBridge(key, bridge, pin); reused {
-			log.Info("复用已就绪桥接进程", logger.F("key", key), logger.F("socks_url", socksURL))
+			log.Info("复用已就绪桥接进程", logger.F("key", shortNodeKey(key)), logger.F("socks_url", socksURL))
 			bridge.Stopping = true
 			m.stopBridgeProcess(bridge)
 			return socksURL, key, nil
@@ -469,7 +479,7 @@ func (m *XrayManager) recycleIdleBridges() {
 
 	log := logger.New("Xray")
 	for _, bridge := range stale {
-		log.Info("回收空闲桥接进程", logger.F("key", bridge.NodeKey), logger.F("pid", bridge.Pid))
+		log.Info("回收空闲桥接进程", logger.F("key", shortNodeKey(bridge.NodeKey)), logger.F("pid", bridge.Pid))
 		m.stopBridgeProcess(bridge)
 	}
 }
@@ -696,6 +706,14 @@ func computeNodeKey(src string) string {
 	return hex.EncodeToString(h[:])
 }
 
+func shortNodeKey(key string) string {
+	key = strings.TrimSpace(key)
+	if len(key) <= 8 {
+		return key
+	}
+	return key[:8]
+}
+
 func normalizeNodeScheme(src string) string {
 	return normalizeHysteria2Scheme(src)
 }
@@ -733,44 +751,87 @@ func resolveEnvPath(path string, appRoot string) string {
 }
 
 func waitPortReady(host string, port int, timeout time.Duration) error {
+	return waitPortReadyForProcess(host, port, nil, timeout)
+}
+
+func waitPortReadyForProcess(host string, port int, cmd *exec.Cmd, timeout time.Duration) error {
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
 	deadline := time.Now().Add(timeout)
+	var lastErr error
+	nextProcessCheck := time.Time{}
 	for time.Now().Before(deadline) {
 		conn, err := net.DialTimeout("tcp", addr, 200*time.Millisecond)
 		if err == nil {
 			conn.Close()
 			return nil
 		}
+		lastErr = err
+		if cmd != nil && !time.Now().Before(nextProcessCheck) {
+			alive, err := commandProcessAlive(cmd)
+			if err == nil && !alive {
+				return fmt.Errorf("进程已退出，端口 %d 未就绪", port)
+			}
+			nextProcessCheck = time.Now().Add(300 * time.Millisecond)
+		}
 		time.Sleep(100 * time.Millisecond)
+	}
+	if lastErr != nil {
+		return fmt.Errorf("端口 %d 不可用: %w", port, lastErr)
 	}
 	return fmt.Errorf("端口 %d 不可用", port)
 }
 
-// nextAvailablePort 分配一个可用端口。
-// 采用二次验证策略：分配后立即再次绑定确认未被其他进程抢占，
-// 并在 EnsureBridge 层面加重试，彻底消除 TOCTOU 竞争窗口。
-func nextAvailablePort() (int, error) {
-	return nextAvailablePortWithRetry(10)
+func commandProcessAlive(cmd *exec.Cmd) (bool, error) {
+	if cmd == nil || cmd.Process == nil {
+		return false, nil
+	}
+	if cmd.ProcessState != nil {
+		return false, nil
+	}
+	return isProcessAlive(cmd.Process.Pid)
 }
 
-func nextAvailablePortWithRetry(maxRetries int) (int, error) {
+type portReservation struct {
+	Port     int
+	listener net.Listener
+}
+
+func (r *portReservation) Close() error {
+	if r == nil || r.listener == nil {
+		return nil
+	}
+	err := r.listener.Close()
+	r.listener = nil
+	return err
+}
+
+func reserveAvailablePort() (*portReservation, error) {
+	return reserveAvailablePortWithRetry(10)
+}
+
+func reserveAvailablePortWithRetry(maxRetries int) (*portReservation, error) {
 	for i := 0; i < maxRetries; i++ {
 		listener, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			continue
 		}
-		port := listener.Addr().(*net.TCPAddr).Port
-		listener.Close()
-		// 短暂等待确保 OS 释放端口
-		time.Sleep(10 * time.Millisecond)
-		// 二次验证端口确实可用（没有被其他进程抢占）
-		verifyListener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
-		if err != nil {
-			// 端口被抢占，重试
+		tcpAddr, ok := listener.Addr().(*net.TCPAddr)
+		if !ok || tcpAddr.Port == 0 {
+			listener.Close()
 			continue
 		}
-		verifyListener.Close()
-		return port, nil
+		return &portReservation{Port: tcpAddr.Port, listener: listener}, nil
 	}
-	return 0, fmt.Errorf("无法分配可用端口，已重试 %d 次", maxRetries)
+	return nil, fmt.Errorf("无法保留可用端口，已重试 %d 次", maxRetries)
+}
+
+// nextAvailablePort 分配一个可用端口。
+// 桥接进程启动应优先使用 reserveAvailablePort，将端口保留到子进程启动前一刻。
+func nextAvailablePort() (int, error) {
+	reservation, err := reserveAvailablePort()
+	if err != nil {
+		return 0, err
+	}
+	port := reservation.Port
+	return port, reservation.Close()
 }

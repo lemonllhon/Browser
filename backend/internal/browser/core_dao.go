@@ -54,13 +54,35 @@ func (d *SQLiteCoreDAO) Upsert(core Core) error {
 	if core.IsDefault {
 		isDefault = 1
 	}
-	_, err := d.db.Exec(`
+	const stmt = `
 		INSERT INTO browser_cores (core_id, core_name, core_path, is_default, created_at)
 		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(core_id) DO UPDATE SET
 		  core_name  = excluded.core_name,
 		  core_path  = excluded.core_path,
-		  is_default = excluded.is_default`,
+		  is_default = excluded.is_default`
+
+	if core.IsDefault {
+		tx, err := d.db.Begin()
+		if err != nil {
+			return fmt.Errorf("开启事务失败: %w", err)
+		}
+		defer tx.Rollback()
+		if _, err := tx.Exec(`UPDATE browser_cores SET is_default = 0`); err != nil {
+			return fmt.Errorf("清除默认内核失败: %w", err)
+		}
+		if _, err := tx.Exec(stmt,
+			core.CoreId, core.CoreName, core.CorePath, isDefault, now,
+		); err != nil {
+			return fmt.Errorf("保存内核配置失败: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("提交内核配置失败: %w", err)
+		}
+		return nil
+	}
+
+	_, err := d.db.Exec(stmt,
 		core.CoreId, core.CoreName, core.CorePath, isDefault, now,
 	)
 	if err != nil {
@@ -71,9 +93,12 @@ func (d *SQLiteCoreDAO) Upsert(core Core) error {
 
 // Delete 删除内核配置
 func (d *SQLiteCoreDAO) Delete(coreId string) error {
-	_, err := d.db.Exec(`DELETE FROM browser_cores WHERE core_id = ?`, coreId)
+	result, err := d.db.Exec(`DELETE FROM browser_cores WHERE core_id = ?`, coreId)
 	if err != nil {
 		return fmt.Errorf("删除内核配置失败: %w", err)
+	}
+	if affected, affectedErr := result.RowsAffected(); affectedErr == nil && affected == 0 {
+		return fmt.Errorf("内核不存在: %s", coreId)
 	}
 	return nil
 }
@@ -89,8 +114,14 @@ func (d *SQLiteCoreDAO) SetDefault(coreId string) error {
 	if _, err := tx.Exec(`UPDATE browser_cores SET is_default = 0`); err != nil {
 		return fmt.Errorf("清除默认内核失败: %w", err)
 	}
-	if _, err := tx.Exec(`UPDATE browser_cores SET is_default = 1 WHERE core_id = ?`, coreId); err != nil {
-		return fmt.Errorf("设置默认内核失败: %w", err)
+	if coreId != "" {
+		result, err := tx.Exec(`UPDATE browser_cores SET is_default = 1 WHERE core_id = ?`, coreId)
+		if err != nil {
+			return fmt.Errorf("设置默认内核失败: %w", err)
+		}
+		if affected, affectedErr := result.RowsAffected(); affectedErr == nil && affected == 0 {
+			return fmt.Errorf("内核不存在: %s", coreId)
+		}
 	}
 	return tx.Commit()
 }

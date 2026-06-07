@@ -73,7 +73,7 @@ func (m *SingBoxManager) EnsureBridge(proxyConfig string, proxies []config.Brows
 	key := computeNodeKey(src)
 
 	if socksURL, reused := m.tryReuseBridge(key); reused {
-		log.Info("复用 sing-box 桥接", logger.F("key", key[:8]), logger.F("socks_url", socksURL))
+		log.Info("复用 sing-box 桥接", logger.F("key", shortNodeKey(key)), logger.F("socks_url", socksURL))
 		return socksURL, nil
 	}
 
@@ -82,7 +82,7 @@ func (m *SingBoxManager) EnsureBridge(proxyConfig string, proxies []config.Brows
 	defer launchLock.Unlock()
 
 	if socksURL, reused := m.tryReuseBridge(key); reused {
-		log.Info("复用 sing-box 桥接", logger.F("key", key[:8]), logger.F("socks_url", socksURL))
+		log.Info("复用 sing-box 桥接", logger.F("key", shortNodeKey(key)), logger.F("socks_url", socksURL))
 		return socksURL, nil
 	}
 
@@ -96,14 +96,16 @@ func (m *SingBoxManager) EnsureBridge(proxyConfig string, proxies []config.Brows
 	const maxRetries = 3
 	var lastErr error
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		port, err := nextAvailablePort()
+		reservation, err := reserveAvailablePort()
 		if err != nil {
 			lastErr = err
 			continue
 		}
+		port := reservation.Port
 
 		cfgPath, err := m.buildConfig(key, outbound, port)
 		if err != nil {
+			reservation.Close()
 			return "", fmt.Errorf("sing-box 配置生成失败: %w", err)
 		}
 
@@ -116,6 +118,14 @@ func (m *SingBoxManager) EnsureBridge(proxyConfig string, proxies []config.Brows
 			cmd.Stderr = stderrFile
 		}
 
+		if err := reservation.Close(); err != nil {
+			if stderrFile != nil {
+				stderrFile.Close()
+			}
+			log.Error("sing-box 端口释放失败", logger.F("error", err), logger.F("port", port), logger.F("attempt", attempt))
+			lastErr = err
+			continue
+		}
 		if err := cmd.Start(); err != nil {
 			if stderrFile != nil {
 				stderrFile.Close()
@@ -132,9 +142,9 @@ func (m *SingBoxManager) EnsureBridge(proxyConfig string, proxies []config.Brows
 			Pid:     cmd.Process.Pid,
 			Running: true,
 		}
-		log.Info("sing-box 启动", logger.F("key", key[:8]), logger.F("pid", bridge.Pid), logger.F("port", port))
+		log.Info("sing-box 启动", logger.F("key", shortNodeKey(key)), logger.F("pid", bridge.Pid), logger.F("port", port))
 
-		if err := waitPortReady("127.0.0.1", port, 10*time.Second); err != nil {
+		if err := waitPortReadyForProcess("127.0.0.1", port, cmd, 10*time.Second); err != nil {
 			if stderrFile != nil {
 				stderrFile.Close()
 			}
@@ -157,7 +167,7 @@ func (m *SingBoxManager) EnsureBridge(proxyConfig string, proxies []config.Brows
 		}
 
 		if socksURL, reused := m.registerBridge(key, bridge); reused {
-			log.Info("复用已就绪 sing-box 桥接", logger.F("key", key[:8]), logger.F("socks_url", socksURL))
+			log.Info("复用已就绪 sing-box 桥接", logger.F("key", shortNodeKey(key)), logger.F("socks_url", socksURL))
 			bridge.Stopping = true
 			m.stopBridgeProcess(bridge)
 			return socksURL, nil
