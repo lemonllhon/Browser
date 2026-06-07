@@ -5,6 +5,7 @@ import (
 	"ant-chrome/backend/internal/config"
 	"ant-chrome/backend/internal/fsutil"
 	"ant-chrome/backend/internal/logger"
+	"context"
 	"fmt"
 	"net/url"
 	"os"
@@ -439,29 +440,23 @@ func (m *ClashBridgeManager) resolveBinary() (string, error) {
 		resolved := resolveEnvPath(configPath, m.AppRoot)
 		if resolved != "" {
 			if _, err := os.Stat(resolved); err == nil {
-				if err := fsutil.EnsureExecutable(resolved); err != nil {
-					return "", fmt.Errorf("mihomo 文件不可执行: %s: %w", resolved, err)
-				}
-				return resolved, nil
+				return ensureMihomoBinary(resolved)
 			}
 		}
 	}
-	for _, envName := range []string{"MIHOMO_BINARY_PATH", "CLASH_META_BINARY_PATH", "CLASH_BINARY_PATH"} {
+	for _, envName := range []string{"MIHOMO_BINARY_PATH", "CLASH_META_BINARY_PATH"} {
 		env := strings.TrimSpace(os.Getenv(envName))
 		if env == "" {
 			continue
 		}
 		if _, err := os.Stat(env); err == nil {
-			if err := fsutil.EnsureExecutable(env); err != nil {
-				return "", fmt.Errorf("mihomo 文件不可执行: %s: %w", env, err)
-			}
-			return env, nil
+			return ensureMihomoBinary(env)
 		}
 	}
 
-	binaryNames := []string{"mihomo", "clash-meta", "clash"}
+	binaryNames := []string{"mihomo", "clash-meta"}
 	if goruntime.GOOS == "windows" {
-		binaryNames = []string{"mihomo.exe", "clash-meta.exe", "clash.exe", "mihomo", "clash-meta", "clash"}
+		binaryNames = []string{"mihomo.exe", "clash-meta.exe", "mihomo", "clash-meta"}
 	}
 	platformDir := fmt.Sprintf("%s-%s", goruntime.GOOS, goruntime.GOARCH)
 
@@ -484,24 +479,68 @@ func (m *ClashBridgeManager) resolveBinary() (string, error) {
 		for _, name := range binaryNames {
 			candidate := filepath.Join(dir, name)
 			if _, err := os.Stat(candidate); err == nil {
-				if err := fsutil.EnsureExecutable(candidate); err != nil {
-					return "", fmt.Errorf("mihomo 文件不可执行: %s: %w", candidate, err)
-				}
-				return candidate, nil
+				return ensureMihomoBinary(candidate)
 			}
 		}
 	}
 
 	for _, name := range binaryNames {
 		if path, err := exec.LookPath(name); err == nil {
-			if err := fsutil.EnsureExecutable(path); err != nil {
-				return "", fmt.Errorf("mihomo 文件不可执行: %s: %w", path, err)
-			}
-			return path, nil
+			return ensureMihomoBinary(path)
 		}
 	}
 
 	return "", fmt.Errorf("未找到 mihomo/Clash.Meta 可执行文件。请将 mihomo 放到 bin/%s/ 或 bin/ 目录，或在配置中设置 ClashBinaryPath", platformDir)
+}
+
+func ensureMihomoBinary(path string) (string, error) {
+	if err := fsutil.EnsureExecutable(path); err != nil {
+		return "", fmt.Errorf("mihomo 文件不可执行: %s: %w", path, err)
+	}
+	if err := verifyMihomoCompatibleBinary(path); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+func verifyMihomoCompatibleBinary(path string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, path, "-v")
+	hideWindow(cmd)
+	output, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		return fmt.Errorf("mihomo 版本检测超时: %s: %w", path, ctx.Err())
+	}
+
+	text := strings.TrimSpace(string(output))
+	if isMihomoVersionText(text) {
+		return nil
+	}
+	if err != nil && text == "" {
+		return fmt.Errorf("mihomo 版本检测失败: %s: %w", path, err)
+	}
+	return fmt.Errorf("不是 mihomo/Clash.Meta 兼容内核: %s: %s", path, binaryVersionSnippet(text))
+}
+
+func isMihomoVersionText(text string) bool {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	return strings.Contains(lower, "mihomo") ||
+		strings.Contains(lower, "clash.meta") ||
+		strings.Contains(lower, "clash meta")
+}
+
+func binaryVersionSnippet(text string) string {
+	text = strings.TrimSpace(strings.ReplaceAll(text, "\r", " "))
+	text = strings.ReplaceAll(text, "\n", " ")
+	if text == "" {
+		return "版本输出为空"
+	}
+	if len(text) > 160 {
+		return text[:160] + "..."
+	}
+	return text
 }
 
 func (m *ClashBridgeManager) buildRuntimeConfig(key string, src string, port int, dnsServers string) (string, error) {

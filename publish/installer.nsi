@@ -122,9 +122,7 @@ SectionEnd
 Section "Proxy Runtime (xray / sing-box / mihomo)" SecRuntime
   SectionIn RO
   SetOutPath "$INSTDIR\bin"
-  File "${STAGINGDIR}\bin\xray.exe"
-  File "${STAGINGDIR}\bin\sing-box.exe"
-  File "${STAGINGDIR}\bin\mihomo.exe"
+  File "${STAGINGDIR}\bin\*.*"
 SectionEnd
 
 Section /o "Desktop Shortcut" SecDesktop

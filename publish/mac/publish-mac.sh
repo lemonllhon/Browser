@@ -120,10 +120,6 @@ PY
 fi
 
 TARGET="darwin-$ARCH"
-RUNTIME_DIR="$ROOT_DIR/bin/$TARGET"
-XRAY_SRC="$RUNTIME_DIR/xray"
-SINGBOX_SRC="$RUNTIME_DIR/sing-box"
-MIHOMO_SRC="$RUNTIME_DIR/mihomo"
 APP_BIN_DIR="$ROOT_DIR/build/bin"
 CHROME_README_SRC="$ROOT_DIR/chrome/README.md"
 CONFIG_INIT_SRC="$ROOT_DIR/publish/config.init.mac.yaml"
@@ -170,6 +166,62 @@ raise SystemExit(1)
 PY
 }
 
+runtime_entries_for_target() {
+  python3 - "$ROOT_DIR/publish/runtime-manifest.json" "$TARGET" <<'PY'
+import json
+import sys
+
+manifest_path = sys.argv[1]
+target = sys.argv[2]
+
+with open(manifest_path, "r", encoding="utf-8") as f:
+    data = json.load(f)
+
+found = False
+for item in data.get("files", []):
+    if target in (item.get("targets") or []):
+        rel = str(item.get("path", "")).strip()
+        if rel:
+            print(rel)
+            found = True
+
+raise SystemExit(0 if found else 1)
+PY
+}
+
+assert_runtime_files_for_target() {
+  local found=0
+  while IFS= read -r rel_path; do
+    [[ -z "$rel_path" ]] && continue
+    found=1
+    if [[ ! -f "$ROOT_DIR/$rel_path" ]]; then
+      echo "[ERROR] runtime file missing for $TARGET: $ROOT_DIR/$rel_path" >&2
+      exit 1
+    fi
+  done < <(runtime_entries_for_target)
+
+  if [[ "$found" -ne 1 ]]; then
+    echo "[ERROR] runtime manifest has no entries for $TARGET" >&2
+    exit 1
+  fi
+}
+
+copy_runtime_files_for_target() {
+  local dest_dir="$1"
+  mkdir -p "$dest_dir"
+  while IFS= read -r rel_path; do
+    [[ -z "$rel_path" ]] && continue
+    local src="$ROOT_DIR/$rel_path"
+    local dest="$dest_dir/$(basename "$rel_path")"
+    if [[ ! -f "$src" ]]; then
+      echo "[ERROR] runtime file missing for $TARGET: $src" >&2
+      exit 1
+    fi
+    cp "$src" "$dest"
+    chmod +x "$dest"
+  done < <(runtime_entries_for_target)
+}
+
 echo "========================================"
 echo "  Trace Browser macOS Publish"
 echo "========================================"
@@ -178,11 +230,7 @@ echo "Version: $VERSION"
 echo "Root   : $ROOT_DIR"
 echo
 
-if [[ ! -f "$XRAY_SRC" || ! -f "$SINGBOX_SRC" || ! -f "$MIHOMO_SRC" ]]; then
-  echo "[ERROR] runtime files missing for $TARGET" >&2
-  echo "        expected: $XRAY_SRC, $SINGBOX_SRC and $MIHOMO_SRC" >&2
-  exit 1
-fi
+assert_runtime_files_for_target
 
 if [[ ! -f "$CONFIG_INIT_SRC" ]]; then
   echo "[ERROR] mac config template missing: $CONFIG_INIT_SRC" >&2
@@ -233,11 +281,8 @@ if [[ ! -d "$APP_MACOS_DIR" ]]; then
 fi
 
 mkdir -p "$APP_MACOS_DIR/bin"
-cp "$XRAY_SRC" "$APP_MACOS_DIR/bin/xray"
-cp "$SINGBOX_SRC" "$APP_MACOS_DIR/bin/sing-box"
-cp "$MIHOMO_SRC" "$APP_MACOS_DIR/bin/mihomo"
+copy_runtime_files_for_target "$APP_MACOS_DIR/bin"
 cp "$CONFIG_INIT_SRC" "$APP_MACOS_DIR/config.yaml"
-chmod +x "$APP_MACOS_DIR/bin/xray" "$APP_MACOS_DIR/bin/sing-box" "$APP_MACOS_DIR/bin/mihomo"
 
 if [[ -f "$CHROME_README_SRC" ]]; then
   mkdir -p "$APP_MACOS_DIR/chrome"

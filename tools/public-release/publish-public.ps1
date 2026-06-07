@@ -801,21 +801,21 @@ try {
 
     if (-not $SkipRuntimeCheck) {
         Write-Step "Checking required runtime files in snapshot"
-        $requiredFiles = @(
-            "bin/xray.exe",
-            "bin/sing-box.exe",
-            "bin/mihomo.exe",
-            "bin/linux-amd64/xray",
-            "bin/linux-amd64/sing-box",
-            "bin/linux-amd64/mihomo",
-            "bin/linux-arm64/xray",
-            "bin/linux-arm64/sing-box",
-            "bin/linux-arm64/mihomo",
-            "publish/runtime-manifest.json",
-            "publish/runtime-sources.json"
-        )
+        $manifestPath = Join-Path $snapshotDir "publish/runtime-manifest.json"
+        $sourcesPath = Join-Path $snapshotDir "publish/runtime-sources.json"
+        foreach ($requiredMetadata in @($manifestPath, $sourcesPath)) {
+            if (-not (Test-Path -LiteralPath $requiredMetadata -PathType Leaf)) {
+                throw "Required runtime metadata missing in source snapshot: $requiredMetadata. Add it before publishing, or use -SkipRuntimeCheck."
+            }
+        }
+
+        $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+        $requiredFiles = @($manifest.files | ForEach-Object { [string]$_.path } | Where-Object { (Get-TrimmedText $_) -ne "" } | Sort-Object -Unique)
+        if ($requiredFiles.Count -eq 0) {
+            throw "No runtime file entries found in publish/runtime-manifest.json. Add entries before publishing, or use -SkipRuntimeCheck."
+        }
         foreach ($file in $requiredFiles) {
-            $path = Join-Path $snapshotDir $file
+            $path = Join-Path $snapshotDir ($file.Replace("/", [string][System.IO.Path]::DirectorySeparatorChar))
             if (-not (Test-Path -LiteralPath $path)) {
                 throw "Required runtime file missing in source snapshot: $file. Add it before publishing, or use -SkipRuntimeCheck."
             }

@@ -481,14 +481,27 @@ function New-WindowsStaging {
     $stagingBinDir = Join-Path $stagingDir "bin"
     New-Item -ItemType Directory -Path $stagingBinDir -Force | Out-Null
 
-    foreach ($required in @("xray.exe", "sing-box.exe", "mihomo.exe")) {
-        $source = Join-Path $binDir $required
-        if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
-            throw "缺少运行时文件: bin\$required"
-        }
-        Copy-Item -LiteralPath $source -Destination (Join-Path $stagingBinDir $required) -Force
+    $runtimeManifestPath = Join-Path $repoRoot "publish/runtime-manifest.json"
+    if (-not (Test-Path -LiteralPath $runtimeManifestPath -PathType Leaf)) {
+        throw "未找到运行时清单: publish\runtime-manifest.json"
     }
-    Write-Host "✓ 复制 bin\（xray.exe, sing-box.exe, mihomo.exe）"
+    $runtimeManifest = Get-Content -LiteralPath $runtimeManifestPath -Raw | ConvertFrom-Json
+    $runtimeEntries = @($runtimeManifest.files | Where-Object { @($_.targets) -contains "windows-amd64" })
+    if ($runtimeEntries.Count -eq 0) {
+        throw "运行时清单中没有 windows-amd64 条目"
+    }
+
+    foreach ($entry in $runtimeEntries) {
+        $relativePath = ([string]$entry.path).Replace("/", [string][System.IO.Path]::DirectorySeparatorChar)
+        $source = Join-Path $repoRoot $relativePath
+        if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+            throw "缺少运行时文件: $relativePath"
+        }
+        $dest = Join-Path $stagingDir $relativePath
+        New-Item -ItemType Directory -Path (Split-Path $dest -Parent) -Force | Out-Null
+        Copy-Item -LiteralPath $source -Destination $dest -Force
+    }
+    Write-Host "✓ 按 publish\runtime-manifest.json 复制 windows-amd64 运行时"
 
     Copy-WindowsChromePayload -ChromeRoot $chromeRoot -StagingDir $stagingDir
 

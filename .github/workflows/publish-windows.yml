@@ -227,12 +227,19 @@ jobs:
           Copy-Item -LiteralPath "publish/config.init.yaml" -Destination (Join-Path $staging "config.yaml") -Force
 
           New-Item -ItemType Directory -Path (Join-Path $staging "bin") -Force | Out-Null
-          foreach ($runtime in @("xray.exe", "sing-box.exe", "mihomo.exe")) {
-            $source = Join-Path "bin" $runtime
+          $manifest = Get-Content -LiteralPath "publish/runtime-manifest.json" -Raw | ConvertFrom-Json
+          $runtimeEntries = @($manifest.files | Where-Object { @($_.targets) -contains "windows-amd64" })
+          if ($runtimeEntries.Count -eq 0) {
+            throw "No windows-amd64 runtime entries found in publish/runtime-manifest.json"
+          }
+          foreach ($entry in $runtimeEntries) {
+            $source = ([string]$entry.path).Replace("/", [string][System.IO.Path]::DirectorySeparatorChar)
             if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
               throw "Missing runtime file: $source"
             }
-            Copy-Item -LiteralPath $source -Destination (Join-Path $staging "bin/$runtime") -Force
+            $dest = Join-Path $staging $source
+            New-Item -ItemType Directory -Path (Split-Path $dest -Parent) -Force | Out-Null
+            Copy-Item -LiteralPath $source -Destination $dest -Force
           }
 
           if (Test-Path -LiteralPath "chrome" -PathType Container) {

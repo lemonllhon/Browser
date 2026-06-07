@@ -127,10 +127,6 @@ PY
 fi
 
 TARGET="linux-$ARCH"
-RUNTIME_DIR="$ROOT_DIR/bin/$TARGET"
-XRAY_SRC="$RUNTIME_DIR/xray"
-SINGBOX_SRC="$RUNTIME_DIR/sing-box"
-MIHOMO_SRC="$RUNTIME_DIR/mihomo"
 APP_ICON_SRC="$ROOT_DIR/build/appicon.png"
 APP_BIN="$ROOT_DIR/build/bin/trace-browser"
 BUILD_CONFIG="$ROOT_DIR/build/config.yml"
@@ -148,6 +144,62 @@ APP_HOMEPAGE="https://github.com/black-ant/Ant-Browser"
 BUILD_DATE_UTC="$(date -u +%F)"
 ICON_SIZES=(16 24 32 48 64 128 256 512)
 
+runtime_entries_for_target() {
+  python3 - "$ROOT_DIR/publish/runtime-manifest.json" "$TARGET" <<'PY'
+import json
+import sys
+
+manifest_path = sys.argv[1]
+target = sys.argv[2]
+
+with open(manifest_path, "r", encoding="utf-8") as f:
+    data = json.load(f)
+
+found = False
+for item in data.get("files", []):
+    if target in (item.get("targets") or []):
+        rel = str(item.get("path", "")).strip()
+        if rel:
+            print(rel)
+            found = True
+
+raise SystemExit(0 if found else 1)
+PY
+}
+
+assert_runtime_files_for_target() {
+  local found=0
+  while IFS= read -r rel_path; do
+    [[ -z "$rel_path" ]] && continue
+    found=1
+    if [[ ! -f "$ROOT_DIR/$rel_path" ]]; then
+      echo "[ERROR] runtime file missing for $TARGET: $ROOT_DIR/$rel_path" >&2
+      exit 1
+    fi
+  done < <(runtime_entries_for_target)
+
+  if [[ "$found" -ne 1 ]]; then
+    echo "[ERROR] runtime manifest has no entries for $TARGET" >&2
+    exit 1
+  fi
+}
+
+copy_runtime_files_for_target() {
+  local dest_dir="$1"
+  mkdir -p "$dest_dir"
+  while IFS= read -r rel_path; do
+    [[ -z "$rel_path" ]] && continue
+    local src="$ROOT_DIR/$rel_path"
+    local dest="$dest_dir/$(basename "$rel_path")"
+    if [[ ! -f "$src" ]]; then
+      echo "[ERROR] runtime file missing for $TARGET: $src" >&2
+      exit 1
+    fi
+    cp "$src" "$dest"
+    chmod +x "$dest"
+  done < <(runtime_entries_for_target)
+}
+
 echo "========================================"
 echo "  Trace Browser Linux Publish"
 echo "========================================"
@@ -162,11 +214,7 @@ else
   echo "[WARN] runtime verification skipped"
 fi
 
-if [[ ! -f "$XRAY_SRC" || ! -f "$SINGBOX_SRC" || ! -f "$MIHOMO_SRC" ]]; then
-  echo "[ERROR] runtime files missing for $TARGET" >&2
-  echo "        expected: $XRAY_SRC, $SINGBOX_SRC and $MIHOMO_SRC" >&2
-  exit 1
-fi
+assert_runtime_files_for_target
 
 if [[ ! -f "$APP_ICON_SRC" ]]; then
   echo "[ERROR] app icon missing: $APP_ICON_SRC" >&2
@@ -228,10 +276,8 @@ mkdir -p "$APP_STAGE/bin" "$APP_STAGE/data" "$DEB_STAGE"
 
 cp "$APP_BIN" "$APP_STAGE/trace-browser"
 cp "$ROOT_DIR/publish/config.init.linux.yaml" "$APP_STAGE/config.yaml"
-cp "$XRAY_SRC" "$APP_STAGE/bin/xray"
-cp "$SINGBOX_SRC" "$APP_STAGE/bin/sing-box"
-cp "$MIHOMO_SRC" "$APP_STAGE/bin/mihomo"
-chmod +x "$APP_STAGE/trace-browser" "$APP_STAGE/bin/xray" "$APP_STAGE/bin/sing-box" "$APP_STAGE/bin/mihomo"
+copy_runtime_files_for_target "$APP_STAGE/bin"
+chmod +x "$APP_STAGE/trace-browser"
 
 if [[ -f "$CHROME_README_SRC" ]]; then
   mkdir -p "$APP_STAGE/chrome"
@@ -256,9 +302,7 @@ done
 
 cp "$APP_STAGE/trace-browser" "$INSTALL_ROOT/trace-browser"
 cp "$APP_STAGE/config.yaml" "$INSTALL_ROOT/config.yaml"
-cp "$APP_STAGE/bin/xray" "$INSTALL_ROOT/bin/xray"
-cp "$APP_STAGE/bin/sing-box" "$INSTALL_ROOT/bin/sing-box"
-cp "$APP_STAGE/bin/mihomo" "$INSTALL_ROOT/bin/mihomo"
+cp "$APP_STAGE/bin/"* "$INSTALL_ROOT/bin/"
 if [[ -f "$APP_STAGE/chrome/README.md" ]]; then
   mkdir -p "$INSTALL_ROOT/chrome"
   cp "$APP_STAGE/chrome/README.md" "$INSTALL_ROOT/chrome/README.md"
@@ -271,7 +315,7 @@ for size in "${ICON_SIZES[@]}"; do
 done
 ln -sf "../icons/hicolor/512x512/apps/${APP_ICON_NAME}.png" "$PIXMAPS_ROOT/${APP_ICON_NAME}.png"
 touch "$INSTALL_ROOT/data/.keep"
-chmod +x "$INSTALL_ROOT/trace-browser" "$INSTALL_ROOT/bin/xray" "$INSTALL_ROOT/bin/sing-box" "$INSTALL_ROOT/bin/mihomo"
+chmod +x "$INSTALL_ROOT/trace-browser" "$INSTALL_ROOT/bin/"*
 
 cat > "$DESKTOP_ROOT/$APP_DESKTOP_ID" <<EOF
 [Desktop Entry]
@@ -351,7 +395,7 @@ cat > "$PKG_ROOT/DEBIAN/postinst" <<'EOF'
 #!/bin/sh
 set -e
 ln -sf /opt/trace-browser/trace-browser /usr/bin/trace-browser
-chmod +x /opt/trace-browser/trace-browser /opt/trace-browser/bin/xray /opt/trace-browser/bin/sing-box /opt/trace-browser/bin/mihomo || true
+chmod +x /opt/trace-browser/trace-browser /opt/trace-browser/bin/* || true
 if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
 fi

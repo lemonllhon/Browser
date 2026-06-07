@@ -98,3 +98,15 @@ func TestRequiresClashBridgeResolvesProxyID(t *testing.T) {
 		t.Fatalf("expected proxyId-backed Clash YAML to require mihomo bridge")
 	}
 }
+
+func TestMihomoVersionTextDetection(t *testing.T) {
+	if !isMihomoVersionText("Mihomo Meta v1.19.27 windows amd64") {
+		t.Fatalf("expected Mihomo version text to be accepted")
+	}
+	if !isMihomoVersionText("Clash.Meta v1.18.0 linux amd64") {
+		t.Fatalf("expected Clash.Meta version text to be accepted")
+	}
+	if isMihomoVersionText("Clash v1.18.0 windows amd64") {
+		t.Fatalf("plain Clash must not be accepted as mihomo-compatible")
+	}
+}
