@@ -645,6 +645,7 @@ func (a *App) isProfileRunning(profileId string) bool {
 	if a.browserMgr == nil {
 		return false
 	}
+	a.refreshBrowserProfileSharedRuntimeOverlay()
 	a.browserMgr.Mutex.Lock()
 	defer a.browserMgr.Mutex.Unlock()
 	profile, ok := a.browserMgr.Profiles[strings.TrimSpace(profileId)]

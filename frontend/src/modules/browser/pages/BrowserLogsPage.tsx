@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { RefreshCw, Trash2 } from 'lucide-react'
 import { Badge, Button, Card } from '../../../shared/components'
 import { clearAppLogs, listAppLogs, type ProtoJSONObject } from '../../../shared/backend/client'
+import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
 
 interface LogEntry {
   time: string
@@ -63,9 +64,9 @@ export function BrowserLogsPage() {
 
   useEffect(() => {
     load()
-    const timer = setInterval(load, 3000)
-    return () => clearInterval(timer)
   }, [])
+
+  useVisibleRefresh(load, 3000)
 
   useEffect(() => {
     if (autoScroll) {

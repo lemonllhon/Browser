@@ -120,6 +120,49 @@ func TestBrowserInstanceStartAppliesLatestSharedBrowserDefaults(t *testing.T) {
 	}
 }
 
+func TestBrowserInstanceStartInternalRefreshesLatestSharedProfileFromDAO(t *testing.T) {
+	app := newRuntimeStateTestApp(t.TempDir())
+	profileID := "profile-shared-start"
+	app.browserMgr.Profiles[profileID] = &BrowserProfile{
+		ProfileId:       profileID,
+		ProfileName:     "Stale profile",
+		FingerprintArgs: []string{"--fingerprint-brand=Stale"},
+		LaunchArgs:      []string{"--stale-launch"},
+		GroupId:         "stale-group",
+	}
+	app.browserMgr.ProfileDAO = &profileDAOListStub{profiles: []*BrowserProfile{
+		{
+			ProfileId:       profileID,
+			ProfileName:     "Latest profile",
+			UserDataDir:     "latest-data-dir",
+			FingerprintArgs: []string{"--fingerprint-brand=Latest"},
+			LaunchArgs:      []string{"--latest-launch"},
+			GroupId:         "latest-group",
+		},
+	}}
+
+	_, err := app.browserInstanceStartInternal(profileID, nil, nil, false, false)
+	if err == nil || !strings.Contains(err.Error(), "未配置可用浏览器内核") {
+		t.Fatalf("expected start to stop at missing core after loading latest profile, got %v", err)
+	}
+
+	app.browserMgr.Mutex.Lock()
+	got := app.browserMgr.Profiles[profileID]
+	app.browserMgr.Mutex.Unlock()
+	if got == nil {
+		t.Fatal("expected profile to remain cached")
+	}
+	if got.ProfileName != "Latest profile" || got.UserDataDir != "latest-data-dir" || got.GroupId != "latest-group" {
+		t.Fatalf("expected latest shared profile fields, got %#v", got)
+	}
+	if !reflect.DeepEqual(got.FingerprintArgs, []string{"--fingerprint-brand=Latest"}) {
+		t.Fatalf("expected latest fingerprint args, got %#v", got.FingerprintArgs)
+	}
+	if !reflect.DeepEqual(got.LaunchArgs, []string{"--latest-launch"}) {
+		t.Fatalf("expected latest launch args, got %#v", got.LaunchArgs)
+	}
+}
+
 func TestWaitBrowserDebugPortStableKeepsListeningPort(t *testing.T) {
 	t.Parallel()
 

@@ -24,6 +24,7 @@ func (a *App) deleteProfileWithData(profileId string) error {
 	}
 
 	log := logger.New("Browser")
+	a.refreshBrowserProfileSharedRuntimeOverlay()
 	var snapshot browser.Profile
 	a.browserMgr.Mutex.Lock()
 	profile, exists := a.browserMgr.Profiles[profileId]

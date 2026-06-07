@@ -5,6 +5,7 @@ import (
 	"ant-chrome/backend/internal/config"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -326,6 +327,48 @@ func TestBrowserProfileCreateRefreshesBeforeWriting(t *testing.T) {
 	}
 }
 
+func TestDeleteProfileWithDataRefreshesLatestSharedUserDataDir(t *testing.T) {
+	appRoot := t.TempDir()
+	app := newRuntimeStateTestApp(appRoot)
+	profileID := "profile-delete"
+	staleDir := filepath.Join(appRoot, "data", "stale-data")
+	latestDir := filepath.Join(appRoot, "data", "latest-data")
+	if err := os.MkdirAll(staleDir, 0755); err != nil {
+		t.Fatalf("create stale data dir failed: %v", err)
+	}
+	if err := os.MkdirAll(latestDir, 0755); err != nil {
+		t.Fatalf("create latest data dir failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(staleDir, "keep.txt"), []byte("stale"), 0644); err != nil {
+		t.Fatalf("write stale data failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(latestDir, "delete.txt"), []byte("latest"), 0644); err != nil {
+		t.Fatalf("write latest data failed: %v", err)
+	}
+	app.browserMgr.Profiles[profileID] = &BrowserProfile{
+		ProfileId:   profileID,
+		ProfileName: "Stale profile",
+		UserDataDir: "stale-data",
+	}
+	app.browserMgr.ProfileDAO = &profileDAOListStub{profiles: []*BrowserProfile{
+		{
+			ProfileId:   profileID,
+			ProfileName: "Latest profile",
+			UserDataDir: "latest-data",
+		},
+	}}
+
+	if err := app.deleteProfileWithData(profileID); err != nil {
+		t.Fatalf("deleteProfileWithData failed: %v", err)
+	}
+	if _, err := os.Stat(staleDir); err != nil {
+		t.Fatalf("expected stale cached user data dir to remain, stat err=%v", err)
+	}
+	if _, err := os.Stat(latestDir); !os.IsNotExist(err) {
+		t.Fatalf("expected latest shared user data dir to be deleted, stat err=%v", err)
+	}
+}
+
 func TestBrowserProfileWriteRejectsDeletedSharedGroup(t *testing.T) {
 	app := newRuntimeStateTestApp(t.TempDir())
 	dao := &profileDAOListStub{profiles: []*BrowserProfile{
@@ -622,6 +665,23 @@ func TestBrowserProfileSwitchProxyNowUsesSharedSwitchBridge(t *testing.T) {
 	}
 	if updated == nil || updated.AutoProxySwitchLastProxyId == "" {
 		t.Fatalf("expected remote switch to return current proxy id, got %#v", updated)
+	}
+}
+
+func TestIsProfileRunningUsesSharedRuntimeState(t *testing.T) {
+	ln := mustListenLoopback(t)
+	defer ln.Close()
+
+	appRoot := t.TempDir()
+	app1 := newRuntimeStateTestApp(appRoot)
+	app1.browserMgr.Profiles["profile-1"] = &BrowserProfile{ProfileId: "profile-1", ProfileName: "Profile 1"}
+	app1.markProfileRunningLocked("profile-1", app1.browserMgr.Profiles["profile-1"], nil, 0, listenerPort(t, ln), true, "")
+
+	app2 := newRuntimeStateTestApp(appRoot)
+	app2.browserMgr.Profiles["profile-1"] = &BrowserProfile{ProfileId: "profile-1", ProfileName: "Profile 1"}
+
+	if !app2.isProfileRunning("profile-1") {
+		t.Fatalf("expected shared runtime state to mark profile as running")
 	}
 }
 

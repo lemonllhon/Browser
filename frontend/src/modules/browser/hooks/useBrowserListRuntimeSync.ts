@@ -73,6 +73,8 @@ export function useBrowserListRuntimeSync({
   useEffect(() => {
     let profileRefreshInFlight = false
     let groupRefreshInFlight = false
+    let proxyRefreshInFlight = false
+    let coreRefreshInFlight = false
     const refreshProfiles = () => {
       if (profileRefreshInFlight) return
       profileRefreshInFlight = true
@@ -99,6 +101,32 @@ export function useBrowserListRuntimeSync({
         groupRefreshInFlight = false
       }
     }
+    const refreshProxies = () => {
+      if (proxyRefreshInFlight) return
+      proxyRefreshInFlight = true
+      try {
+        void loadProxies()
+          .catch(() => undefined)
+          .finally(() => {
+            proxyRefreshInFlight = false
+          })
+      } catch {
+        proxyRefreshInFlight = false
+      }
+    }
+    const refreshCores = () => {
+      if (coreRefreshInFlight) return
+      coreRefreshInFlight = true
+      try {
+        void loadCores()
+          .catch(() => undefined)
+          .finally(() => {
+            coreRefreshInFlight = false
+          })
+      } catch {
+        coreRefreshInFlight = false
+      }
+    }
     const clearPendingAndRefresh = (payload: unknown) => {
       const profileId = resolveRuntimeProfileID(payload)
       if (profileId) {
@@ -112,8 +140,8 @@ export function useBrowserListRuntimeSync({
     const offUpdated = onRuntimeEvent('browser:instance:updated', refreshProfiles)
     const offProfilesUpdated = onRuntimeEvent('browser:profiles:updated', refreshProfiles)
     const offGroupsUpdated = onRuntimeEvent('browser:groups:updated', refreshGroups)
-    const offProxiesUpdated = onRuntimeEvent('browser:proxies:updated', () => { void loadProxies() })
-    const offCoresUpdated = onRuntimeEvent('browser:cores:updated', () => { void loadCores() })
+    const offProxiesUpdated = onRuntimeEvent('browser:proxies:updated', refreshProxies)
+    const offCoresUpdated = onRuntimeEvent('browser:cores:updated', refreshCores)
     const offStopped = onRuntimeEvent('browser:instance:stopped', clearPendingAndRefresh)
     const offCrashed = onRuntimeEvent('browser:instance:crashed', clearPendingAndRefresh)
     const offWindowSyncChanged = onWindowSyncStateChanged(state => {

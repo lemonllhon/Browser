@@ -104,13 +104,20 @@ export function WindowSyncFloatingToolbar() {
   const [settingsPanelOpen, setSettingsPanelOpen] = useState(false)
   const [settingsDraft, setSettingsDraft] = useState<WindowSyncSettings>(() => stateToSettings(null))
   const differentInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
+  const loadStateInFlightRef = useRef(false)
 
   const loadState = async () => {
+    if (loadStateInFlightRef.current) {
+      return
+    }
+    loadStateInFlightRef.current = true
     try {
       const next = await getWindowSyncState()
       setState(next?.active ? next : null)
     } catch {
       setState(null)
+    } finally {
+      loadStateInFlightRef.current = false
     }
   }
 
