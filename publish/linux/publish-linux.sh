@@ -130,6 +130,7 @@ TARGET="linux-$ARCH"
 RUNTIME_DIR="$ROOT_DIR/bin/$TARGET"
 XRAY_SRC="$RUNTIME_DIR/xray"
 SINGBOX_SRC="$RUNTIME_DIR/sing-box"
+MIHOMO_SRC="$RUNTIME_DIR/mihomo"
 APP_ICON_SRC="$ROOT_DIR/build/appicon.png"
 APP_BIN="$ROOT_DIR/build/bin/trace-browser"
 BUILD_CONFIG="$ROOT_DIR/build/config.yml"
@@ -161,9 +162,9 @@ else
   echo "[WARN] runtime verification skipped"
 fi
 
-if [[ ! -f "$XRAY_SRC" || ! -f "$SINGBOX_SRC" ]]; then
+if [[ ! -f "$XRAY_SRC" || ! -f "$SINGBOX_SRC" || ! -f "$MIHOMO_SRC" ]]; then
   echo "[ERROR] runtime files missing for $TARGET" >&2
-  echo "        expected: $XRAY_SRC and $SINGBOX_SRC" >&2
+  echo "        expected: $XRAY_SRC, $SINGBOX_SRC and $MIHOMO_SRC" >&2
   exit 1
 fi
 
@@ -229,7 +230,8 @@ cp "$APP_BIN" "$APP_STAGE/trace-browser"
 cp "$ROOT_DIR/publish/config.init.linux.yaml" "$APP_STAGE/config.yaml"
 cp "$XRAY_SRC" "$APP_STAGE/bin/xray"
 cp "$SINGBOX_SRC" "$APP_STAGE/bin/sing-box"
-chmod +x "$APP_STAGE/trace-browser" "$APP_STAGE/bin/xray" "$APP_STAGE/bin/sing-box"
+cp "$MIHOMO_SRC" "$APP_STAGE/bin/mihomo"
+chmod +x "$APP_STAGE/trace-browser" "$APP_STAGE/bin/xray" "$APP_STAGE/bin/sing-box" "$APP_STAGE/bin/mihomo"
 
 if [[ -f "$CHROME_README_SRC" ]]; then
   mkdir -p "$APP_STAGE/chrome"
@@ -256,6 +258,7 @@ cp "$APP_STAGE/trace-browser" "$INSTALL_ROOT/trace-browser"
 cp "$APP_STAGE/config.yaml" "$INSTALL_ROOT/config.yaml"
 cp "$APP_STAGE/bin/xray" "$INSTALL_ROOT/bin/xray"
 cp "$APP_STAGE/bin/sing-box" "$INSTALL_ROOT/bin/sing-box"
+cp "$APP_STAGE/bin/mihomo" "$INSTALL_ROOT/bin/mihomo"
 if [[ -f "$APP_STAGE/chrome/README.md" ]]; then
   mkdir -p "$INSTALL_ROOT/chrome"
   cp "$APP_STAGE/chrome/README.md" "$INSTALL_ROOT/chrome/README.md"
@@ -268,7 +271,7 @@ for size in "${ICON_SIZES[@]}"; do
 done
 ln -sf "../icons/hicolor/512x512/apps/${APP_ICON_NAME}.png" "$PIXMAPS_ROOT/${APP_ICON_NAME}.png"
 touch "$INSTALL_ROOT/data/.keep"
-chmod +x "$INSTALL_ROOT/trace-browser" "$INSTALL_ROOT/bin/xray" "$INSTALL_ROOT/bin/sing-box"
+chmod +x "$INSTALL_ROOT/trace-browser" "$INSTALL_ROOT/bin/xray" "$INSTALL_ROOT/bin/sing-box" "$INSTALL_ROOT/bin/mihomo"
 
 cat > "$DESKTOP_ROOT/$APP_DESKTOP_ID" <<EOF
 [Desktop Entry]
@@ -348,7 +351,7 @@ cat > "$PKG_ROOT/DEBIAN/postinst" <<'EOF'
 #!/bin/sh
 set -e
 ln -sf /opt/trace-browser/trace-browser /usr/bin/trace-browser
-chmod +x /opt/trace-browser/trace-browser /opt/trace-browser/bin/xray /opt/trace-browser/bin/sing-box || true
+chmod +x /opt/trace-browser/trace-browser /opt/trace-browser/bin/xray /opt/trace-browser/bin/sing-box /opt/trace-browser/bin/mihomo || true
 if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
 fi

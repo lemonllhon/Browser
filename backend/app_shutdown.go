@@ -27,6 +27,11 @@ func (a *App) stopRuntimeServices() {
 		}
 		a.clearProfileXrayBridges()
 
+		if a.clashBridgeMgr != nil {
+			a.clashBridgeMgr.StopAll()
+		}
+		a.clearProfileClashBridges()
+
 		if a.singboxMgr != nil {
 			a.singboxMgr.StopAll()
 		}

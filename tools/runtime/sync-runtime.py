@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import gzip
 import hashlib
 import http.client
 import json
@@ -60,7 +61,7 @@ def parse_args() -> argparse.Namespace:
 def load_sources(path: Path) -> list[dict]:
     if not path.is_file():
         raise RuntimeError(f"sources file not found: {path}")
-    data = json.loads(path.read_text(encoding="utf-8"))
+    data = json.loads(path.read_text(encoding="utf-8-sig"))
     items = data.get("sources", [])
     if not isinstance(items, list):
         raise RuntimeError("invalid sources file: sources must be an array")
@@ -142,6 +143,9 @@ def extract_binary(archive: Path, archive_type: str, inner_path: str, dest: Path
                 raise RuntimeError(f"file not found in tar.gz archive: {member}")
             with fobj, dest.open("wb") as out:
                 shutil.copyfileobj(fobj, out)
+    elif archive_type == "gz":
+        with gzip.open(archive, "rb") as src, dest.open("wb") as out:
+            shutil.copyfileobj(src, out)
     else:
         raise RuntimeError(f"unsupported archiveType: {archive_type}")
 

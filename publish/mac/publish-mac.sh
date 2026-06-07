@@ -123,6 +123,7 @@ TARGET="darwin-$ARCH"
 RUNTIME_DIR="$ROOT_DIR/bin/$TARGET"
 XRAY_SRC="$RUNTIME_DIR/xray"
 SINGBOX_SRC="$RUNTIME_DIR/sing-box"
+MIHOMO_SRC="$RUNTIME_DIR/mihomo"
 APP_BIN_DIR="$ROOT_DIR/build/bin"
 CHROME_README_SRC="$ROOT_DIR/chrome/README.md"
 CONFIG_INIT_SRC="$ROOT_DIR/publish/config.init.mac.yaml"
@@ -177,9 +178,9 @@ echo "Version: $VERSION"
 echo "Root   : $ROOT_DIR"
 echo
 
-if [[ ! -f "$XRAY_SRC" || ! -f "$SINGBOX_SRC" ]]; then
+if [[ ! -f "$XRAY_SRC" || ! -f "$SINGBOX_SRC" || ! -f "$MIHOMO_SRC" ]]; then
   echo "[ERROR] runtime files missing for $TARGET" >&2
-  echo "        expected: $XRAY_SRC and $SINGBOX_SRC" >&2
+  echo "        expected: $XRAY_SRC, $SINGBOX_SRC and $MIHOMO_SRC" >&2
   exit 1
 fi
 
@@ -234,8 +235,9 @@ fi
 mkdir -p "$APP_MACOS_DIR/bin"
 cp "$XRAY_SRC" "$APP_MACOS_DIR/bin/xray"
 cp "$SINGBOX_SRC" "$APP_MACOS_DIR/bin/sing-box"
+cp "$MIHOMO_SRC" "$APP_MACOS_DIR/bin/mihomo"
 cp "$CONFIG_INIT_SRC" "$APP_MACOS_DIR/config.yaml"
-chmod +x "$APP_MACOS_DIR/bin/xray" "$APP_MACOS_DIR/bin/sing-box"
+chmod +x "$APP_MACOS_DIR/bin/xray" "$APP_MACOS_DIR/bin/sing-box" "$APP_MACOS_DIR/bin/mihomo"
 
 if [[ -f "$CHROME_README_SRC" ]]; then
   mkdir -p "$APP_MACOS_DIR/chrome"

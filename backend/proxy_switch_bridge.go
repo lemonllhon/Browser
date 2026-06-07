@@ -455,6 +455,20 @@ func (b *switchingProxyBridge) effectiveProxyURL() (string, uint64, func(), erro
 	if strings.EqualFold(src, "direct://") {
 		return "", generation, noopRelease, nil
 	}
+	if proxy.RequiresClashBridge(src, proxies, current.ProxyId) {
+		if b.app.clashBridgeMgr == nil {
+			return "", generation, nil, fmt.Errorf("mihomo 管理器未初始化")
+		}
+		socksURL, bridgeKey, err := b.app.clashBridgeMgr.AcquireBridge(src, proxies, current.ProxyId)
+		if err != nil {
+			return "", generation, nil, err
+		}
+		return socksURL, generation, func() {
+			if bridgeKey != "" {
+				b.app.clashBridgeMgr.ReleaseBridge(bridgeKey)
+			}
+		}, nil
+	}
 	if proxy.IsSingBoxProtocol(src) {
 		if b.app.singboxMgr == nil {
 			return "", generation, nil, fmt.Errorf("sing-box 管理器未初始化")

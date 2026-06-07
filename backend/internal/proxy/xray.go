@@ -84,6 +84,13 @@ func ValidateProxyConfig(proxyConfig string, proxies []config.BrowserProxy, prox
 	if strings.HasPrefix(l, "http://") || strings.HasPrefix(l, "https://") || strings.HasPrefix(l, "socks5://") {
 		return true, ""
 	}
+	// Clash YAML/config nodes are supported natively by mihomo/Clash.Meta.
+	if IsClashNativeProtocol(src) {
+		if err := ValidateClashNativeConfig(src); err != nil {
+			return false, fmt.Sprintf("代理配置解析失败: %v", err)
+		}
+		return true, ""
+	}
 	// hysteria2/tuic/anytls 通过 sing-box 支持，先做可解析性校验
 	if IsSingBoxProtocol(src) {
 		if _, err := BuildSingBoxOutbound(src); err != nil {

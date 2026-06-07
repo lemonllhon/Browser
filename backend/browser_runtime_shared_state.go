@@ -149,6 +149,7 @@ func (a *App) refreshBrowserProfileConfigCacheFromStore() {
 
 	for _, profileID := range cleanupProfileIDs {
 		a.releaseProfileXrayBridge(profileID)
+		a.releaseProfileClashBridge(profileID)
 		a.releaseProfileSwitchBridge(profileID)
 		a.releaseProfileAuthProxyBridge(profileID)
 		if a.launchServer != nil {

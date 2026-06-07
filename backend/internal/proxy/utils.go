@@ -6,13 +6,11 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"ant-chrome/backend/internal/config"
-	xproxy "golang.org/x/net/proxy"
 	"gopkg.in/yaml.v3"
 )
 
@@ -227,6 +225,16 @@ func TestRealConnectivityWithSingBox(
 	xrayMgr *XrayManager,
 	singboxMgr *SingBoxManager,
 ) TestResult {
+	return TestRealConnectivityWithBridges(proxyId, proxies, xrayMgr, singboxMgr, nil)
+}
+
+func TestRealConnectivityWithBridges(
+	proxyId string,
+	proxies []config.BrowserProxy,
+	xrayMgr *XrayManager,
+	singboxMgr *SingBoxManager,
+	clashMgr *ClashBridgeManager,
+) TestResult {
 	src := ""
 	for _, item := range proxies {
 		if strings.EqualFold(item.ProxyId, proxyId) {
@@ -241,57 +249,9 @@ func TestRealConnectivityWithSingBox(
 	const targetURL = "http://www.gstatic.com/generate_204"
 	const timeout = 15 * time.Second
 
-	var client *http.Client
-
-	if IsSingBoxProtocol(src) {
-		// hysteria2/tuic → sing-box 桥接
-		if singboxMgr == nil {
-			return TestResult{ProxyId: proxyId, Ok: false, Error: "sing-box 管理器未初始化，无法测试 hysteria2"}
-		}
-		socks5Addr, err := singboxMgr.EnsureBridge(src, proxies, proxyId)
-		if err != nil {
-			return TestResult{ProxyId: proxyId, Ok: false, Error: fmt.Sprintf("sing-box 桥接启动失败: %v", err)}
-		}
-		socks5Host := strings.TrimPrefix(socks5Addr, "socks5://")
-		dialer, err := xproxy.SOCKS5("tcp", socks5Host, nil, xproxy.Direct)
-		if err != nil {
-			return TestResult{ProxyId: proxyId, Ok: false, Error: fmt.Sprintf("SOCKS5 dialer 创建失败: %v", err)}
-		}
-		contextDialer, ok := dialer.(xproxy.ContextDialer)
-		if !ok {
-			return TestResult{ProxyId: proxyId, Ok: false, Error: "SOCKS5 dialer 不支持 ContextDialer"}
-		}
-		transport := &http.Transport{DialContext: contextDialer.DialContext}
-		client = &http.Client{Transport: transport, Timeout: timeout}
-	} else if RequiresBridge(src, proxies, proxyId) {
-		// BridgeProxy：通过 xray socks5 桥接
-		if xrayMgr == nil {
-			return TestResult{ProxyId: proxyId, Ok: false, Error: "xray 管理器未初始化"}
-		}
-		socks5Addr, err := xrayMgr.EnsureBridge(src, proxies, proxyId)
-		if err != nil {
-			return TestResult{ProxyId: proxyId, Ok: false, Error: fmt.Sprintf("桥接启动失败: %v", err)}
-		}
-		// 解析 socks5://127.0.0.1:port
-		socks5Host := strings.TrimPrefix(socks5Addr, "socks5://")
-		dialer, err := xproxy.SOCKS5("tcp", socks5Host, nil, xproxy.Direct)
-		if err != nil {
-			return TestResult{ProxyId: proxyId, Ok: false, Error: fmt.Sprintf("SOCKS5 dialer 创建失败: %v", err)}
-		}
-		contextDialer, ok := dialer.(xproxy.ContextDialer)
-		if !ok {
-			return TestResult{ProxyId: proxyId, Ok: false, Error: "SOCKS5 dialer 不支持 ContextDialer"}
-		}
-		transport := &http.Transport{DialContext: contextDialer.DialContext}
-		client = &http.Client{Transport: transport, Timeout: timeout}
-	} else {
-		// DirectProxy：http/https/socks5 直接代理
-		proxyURL, err := url.Parse(src)
-		if err != nil {
-			return TestResult{ProxyId: proxyId, Ok: false, Error: fmt.Sprintf("代理地址解析失败: %v", err)}
-		}
-		transport := &http.Transport{Proxy: http.ProxyURL(proxyURL)}
-		client = &http.Client{Transport: transport, Timeout: timeout}
+	client, err := buildProxyHTTPClient(src, proxyId, proxies, xrayMgr, singboxMgr, clashMgr, timeout)
+	if err != nil {
+		return TestResult{ProxyId: proxyId, Ok: false, Error: err.Error()}
 	}
 
 	start := time.Now()

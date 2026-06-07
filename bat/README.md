@@ -143,6 +143,7 @@ Windows 分支使用的项目路径：
 - publish\config.init.yaml
 - bin\xray.exe
 - bin\sing-box.exe
+- bin\mihomo.exe
 
 临时目录：
 - publish\staging\

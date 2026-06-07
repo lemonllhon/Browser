@@ -133,12 +133,17 @@ func (a *App) browserInstanceStartInternal(profileId string, extraLaunchArgs []s
 
 	proxies := a.getLatestProxies()
 	acquiredXrayBridgeKey := ""
+	acquiredClashBridgeKey := ""
 	releaseXrayBridge := false
+	releaseClashBridge := false
 	releaseSwitchBridge := false
 	releaseAuthProxyBridge := false
 	defer func() {
 		if releaseXrayBridge && acquiredXrayBridgeKey != "" && a.xrayMgr != nil {
 			a.xrayMgr.ReleaseBridge(acquiredXrayBridgeKey)
+		}
+		if releaseClashBridge && acquiredClashBridgeKey != "" && a.clashBridgeMgr != nil {
+			a.clashBridgeMgr.ReleaseBridge(acquiredClashBridgeKey)
 		}
 		if releaseSwitchBridge {
 			a.releaseProfileSwitchBridge(profileId)
@@ -220,7 +225,31 @@ func (a *App) browserInstanceStartInternal(profileId string, extraLaunchArgs []s
 		}
 	}
 
-	if !autoSwitchProxy && proxy.IsSingBoxProtocol(resolvedProxyConfig) {
+	if !autoSwitchProxy && proxy.RequiresClashBridge(resolvedProxyConfig, proxies, profile.ProxyId) {
+		// Clash YAML / Clash.Meta native nodes -> mihomo bridge
+		if a.clashBridgeMgr == nil {
+			startErr := fmt.Errorf("实例启动失败：代理桥接启动失败（mihomo）。原因：mihomo 管理器未初始化。")
+			log.Error("代理桥接失败(mihomo)", logger.F("reason", startErr.Error()))
+			return a.setProfileLastError(profileId, profile, startErr.Error()), startErr
+		}
+		socksURL, bridgeKey, bridgeErr := a.clashBridgeMgr.AcquireBridge(resolvedProxyConfig, proxies, profile.ProxyId)
+		if bridgeErr != nil {
+			startErr := fmt.Errorf("实例启动失败：代理桥接启动失败（mihomo）。原因：%v。请检查 Clash/Mihomo 节点配置、mihomo 可执行文件是否存在，以及本地端口是否被占用。", bridgeErr)
+			log.Error("代理桥接失败(mihomo)", logger.F("error", bridgeErr.Error()), logger.F("reason", startErr.Error()))
+			if a.ctx != nil {
+				a.emitEvent("proxy:bridge:failed", map[string]interface{}{
+					"profileId":   profileId,
+					"profileName": profile.ProfileName,
+					"error":       startErr.Error(),
+				})
+			}
+			return a.setProfileLastError(profileId, profile, startErr.Error()), startErr
+		}
+		acquiredClashBridgeKey = bridgeKey
+		releaseClashBridge = bridgeKey != ""
+		effectiveProxy = socksURL
+		log.Info("mihomo 桥接成功", logger.F("socks_url", socksURL))
+	} else if !autoSwitchProxy && proxy.IsSingBoxProtocol(resolvedProxyConfig) {
 		// hysteria2 / tuic / anytls → sing-box 桥接
 		socksURL, bridgeErr := a.singboxMgr.EnsureBridge(resolvedProxyConfig, proxies, profile.ProxyId)
 		if bridgeErr != nil {
@@ -371,6 +400,10 @@ func (a *App) browserInstanceStartInternal(profileId string, extraLaunchArgs []s
 				a.bindProfileXrayBridge(profileId, acquiredXrayBridgeKey)
 				releaseXrayBridge = false
 			}
+			if acquiredClashBridgeKey != "" {
+				a.bindProfileClashBridge(profileId, acquiredClashBridgeKey)
+				releaseClashBridge = false
+			}
 			releaseSwitchBridge = false
 			releaseAuthProxyBridge = false
 			startedSnapshot := copyBrowserProfileSnapshot(currentProfile)
@@ -435,6 +468,10 @@ func (a *App) browserInstanceStartInternal(profileId string, extraLaunchArgs []s
 		if acquiredXrayBridgeKey != "" {
 			a.bindProfileXrayBridge(profileId, acquiredXrayBridgeKey)
 			releaseXrayBridge = false
+		}
+		if acquiredClashBridgeKey != "" {
+			a.bindProfileClashBridge(profileId, acquiredClashBridgeKey)
+			releaseClashBridge = false
 		}
 		releaseSwitchBridge = false
 		releaseAuthProxyBridge = false
@@ -992,6 +1029,7 @@ func (a *App) markProfileStoppedLocked(profileId string, profile *BrowserProfile
 	profile.LastStopAt = time.Now().Format(time.RFC3339)
 	delete(a.browserMgr.BrowserProcesses, profileId)
 	a.releaseProfileXrayBridge(profileId)
+	a.releaseProfileClashBridge(profileId)
 	a.releaseProfileSwitchBridge(profileId)
 	a.releaseProfileAuthProxyBridge(profileId)
 	if a.launchServer != nil {

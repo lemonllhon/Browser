@@ -3,6 +3,17 @@
   "description": "Pinned upstream runtime archives for reproducible runtime refresh.",
   "sources": [
     {
+      "id": "mihomo-windows-amd64",
+      "target": "windows-amd64",
+      "runtime": "mihomo",
+      "version": "1.19.27",
+      "archiveType": "zip",
+      "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.27/mihomo-windows-amd64-v1.19.27.zip",
+      "archiveSha256": "34b4c5bc0c176eebd298f6624aa23ea41985a2c54efb04eb0e9c4542e45190ee",
+      "archiveBinaryPath": "mihomo-windows-amd64.exe",
+      "destPath": "bin/mihomo.exe"
+    },
+    {
       "id": "xray-linux-amd64",
       "target": "linux-amd64",
       "runtime": "xray",
@@ -36,6 +47,17 @@
       "destPath": "bin/linux-amd64/sing-box"
     },
     {
+      "id": "mihomo-linux-amd64",
+      "target": "linux-amd64",
+      "runtime": "mihomo",
+      "version": "1.19.27",
+      "archiveType": "gz",
+      "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.27/mihomo-linux-amd64-v1.19.27.gz",
+      "archiveSha256": "fb3e34c55844f389ff54679e5a3aec331d5ec38006c20f8dcc476fb47768a58f",
+      "archiveBinaryPath": "mihomo",
+      "destPath": "bin/linux-amd64/mihomo"
+    },
+    {
       "id": "sing-box-linux-arm64",
       "target": "linux-arm64",
       "runtime": "sing-box",
@@ -45,6 +67,17 @@
       "archiveSha256": "10fc1a95b34ec6cdd897f298ee6e7af34e2c2eab5648fc7e76d3a7ea4e2eaf41",
       "archiveBinaryPath": "sing-box-1.12.17-linux-arm64/sing-box",
       "destPath": "bin/linux-arm64/sing-box"
+    },
+    {
+      "id": "mihomo-linux-arm64",
+      "target": "linux-arm64",
+      "runtime": "mihomo",
+      "version": "1.19.27",
+      "archiveType": "gz",
+      "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.27/mihomo-linux-arm64-v1.19.27.gz",
+      "archiveSha256": "87db0c6660a9557a901b5750f997967e71d8c0af07ea1d1dd4d04c28da7f7e6f",
+      "archiveBinaryPath": "mihomo",
+      "destPath": "bin/linux-arm64/mihomo"
     },
     {
       "id": "xray-darwin-amd64",
@@ -80,6 +113,17 @@
       "destPath": "bin/darwin-amd64/sing-box"
     },
     {
+      "id": "mihomo-darwin-amd64",
+      "target": "darwin-amd64",
+      "runtime": "mihomo",
+      "version": "1.19.27",
+      "archiveType": "gz",
+      "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.27/mihomo-darwin-amd64-v1.19.27.gz",
+      "archiveSha256": "5392bea435a1c4b0a496571daafa977f744207cfafac18fb78a9b7d0747585c2",
+      "archiveBinaryPath": "mihomo",
+      "destPath": "bin/darwin-amd64/mihomo"
+    },
+    {
       "id": "sing-box-darwin-arm64",
       "target": "darwin-arm64",
       "runtime": "sing-box",
@@ -89,6 +133,17 @@
       "archiveSha256": "6dd10bb5bb100c3e9db17b0b88abd2eff00b9c1daea29fffda9142b67f169d9d",
       "archiveBinaryPath": "sing-box-1.12.17-darwin-arm64/sing-box",
       "destPath": "bin/darwin-arm64/sing-box"
+    },
+    {
+      "id": "mihomo-darwin-arm64",
+      "target": "darwin-arm64",
+      "runtime": "mihomo",
+      "version": "1.19.27",
+      "archiveType": "gz",
+      "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.27/mihomo-darwin-arm64-v1.19.27.gz",
+      "archiveSha256": "3617c9d8a5a55aecfe1ebd0f55ff59f2706c8ad68fd65c6c4e5f7cf2b74263f1",
+      "archiveBinaryPath": "mihomo",
+      "destPath": "bin/darwin-arm64/mihomo"
     }
   ]
 }

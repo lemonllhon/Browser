@@ -403,6 +403,10 @@ func (a *App) backupStopRuntimeForMaintenance() {
 		a.xrayMgr.StopAll()
 	}
 	a.clearProfileXrayBridges()
+	if a.clashBridgeMgr != nil {
+		a.clashBridgeMgr.StopAll()
+	}
+	a.clearProfileClashBridges()
 	a.clearProfileSwitchBridges()
 	if a.singboxMgr != nil {
 		a.singboxMgr.StopAll()
@@ -432,6 +436,9 @@ func (a *App) backupReloadAfterMutation() error {
 	if a.clashMgr != nil {
 		a.clashMgr.Config = a.config
 	}
+	if a.clashBridgeMgr != nil {
+		a.clashBridgeMgr.Config = a.config
+	}
 	if a.singboxMgr != nil {
 		a.singboxMgr.Config = a.config
 	}
@@ -454,7 +461,7 @@ func (a *App) backupReloadAfterMutation() error {
 		a.speedScheduler = browser.NewProxySpeedScheduler(
 			a.browserMgr.ProxyDAO,
 			func(proxyID string) (bool, int64, string) {
-				r := proxy.SpeedTest(proxyID, a.getLatestProxies(), a.xrayMgr, a.singboxMgr, nil)
+				r := proxy.SpeedTestWithClash(proxyID, a.getLatestProxies(), a.xrayMgr, a.singboxMgr, a.clashBridgeMgr, nil)
 				return r.Ok, r.LatencyMs, r.Error
 			},
 			5*time.Minute,

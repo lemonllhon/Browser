@@ -39,6 +39,7 @@ type App struct {
 	browserMgr         *browser.Manager
 	xrayMgr            *proxy.XrayManager
 	clashMgr           *proxy.ClashManager
+	clashBridgeMgr     *proxy.ClashBridgeManager
 	singboxMgr         *proxy.SingBoxManager
 	launchCodeSvc      *launchcode.LaunchCodeService
 	launchServer       *launchcode.LaunchServer
@@ -65,6 +66,7 @@ type App struct {
 	profileOpLocks           map[string]*sync.Mutex
 	bridgeMu                 sync.Mutex
 	xrayBridgeRefs           map[string]string
+	clashBridgeRefs          map[string]string
 	switchBridgeRefs         map[string]*switchingProxyBridge
 	authProxyBridgeRefs      map[string]*authenticatedProxyBridge
 	windowSyncMu             sync.Mutex
@@ -95,6 +97,7 @@ func NewApp(appRoot string, appVersion ...string) *App {
 		platformRuntime:     platform.DefaultRuntime(),
 		profileOpLocks:      make(map[string]*sync.Mutex),
 		xrayBridgeRefs:      make(map[string]string),
+		clashBridgeRefs:     make(map[string]string),
 		switchBridgeRefs:    make(map[string]*switchingProxyBridge),
 		authProxyBridgeRefs: make(map[string]*authenticatedProxyBridge),
 		localDataReady:      make(chan struct{}),
@@ -243,6 +246,7 @@ func (a *App) startup(ctx context.Context) {
 	a.browserMgr = browser.NewManager(cfg, a.appRoot)
 	a.xrayMgr = proxy.NewXrayManager(cfg, a.appRoot)
 	a.clashMgr = proxy.NewClashManager(cfg, a.appRoot)
+	a.clashBridgeMgr = proxy.NewClashBridgeManager(cfg, a.appRoot)
 	a.singboxMgr = proxy.NewSingBoxManager(cfg, a.appRoot)
 
 	// 注入 DAO（必须在 InitData 之前）
@@ -291,12 +295,21 @@ func (a *App) startup(ctx context.Context) {
 			})
 		}
 	}
+	a.clashBridgeMgr.OnBridgeDied = func(key string, err error) {
+		if a.ctx != nil {
+			a.emitEvent("proxy:bridge:died", map[string]interface{}{
+				"engine": "mihomo",
+				"key":    shortKeyPrefix(key),
+				"error":  err.Error(),
+			})
+		}
+	}
 
 	// 启动代理测速定时调度器（每5分钟一轮，并发5）
 	a.speedScheduler = browser.NewProxySpeedScheduler(
 		a.browserMgr.ProxyDAO,
 		func(proxyId string) (bool, int64, string) {
-			r := proxy.SpeedTest(proxyId, a.getLatestProxies(), a.xrayMgr, a.singboxMgr, nil)
+			r := proxy.SpeedTestWithClash(proxyId, a.getLatestProxies(), a.xrayMgr, a.singboxMgr, a.clashBridgeMgr, nil)
 			return r.Ok, r.LatencyMs, r.Error
 		},
 		5*time.Minute,
@@ -431,6 +444,9 @@ func (a *App) ReloadConfig() error {
 	}
 	if a.clashMgr != nil {
 		a.clashMgr.Config = cfg
+	}
+	if a.clashBridgeMgr != nil {
+		a.clashBridgeMgr.Config = cfg
 	}
 	if a.singboxMgr != nil {
 		a.singboxMgr.Config = cfg
@@ -595,9 +611,43 @@ func (a *App) releaseProfileXrayBridge(profileId string) {
 	}
 }
 
+func (a *App) bindProfileClashBridge(profileId string, bridgeKey string) {
+	profileId = strings.TrimSpace(profileId)
+	bridgeKey = strings.TrimSpace(bridgeKey)
+	if profileId == "" || bridgeKey == "" {
+		return
+	}
+
+	a.bridgeMu.Lock()
+	a.clashBridgeRefs[profileId] = bridgeKey
+	a.bridgeMu.Unlock()
+}
+
+func (a *App) releaseProfileClashBridge(profileId string) {
+	profileId = strings.TrimSpace(profileId)
+	if profileId == "" {
+		return
+	}
+
+	a.bridgeMu.Lock()
+	bridgeKey := a.clashBridgeRefs[profileId]
+	delete(a.clashBridgeRefs, profileId)
+	a.bridgeMu.Unlock()
+
+	if bridgeKey != "" && a.clashBridgeMgr != nil {
+		a.clashBridgeMgr.ReleaseBridge(bridgeKey)
+	}
+}
+
 func (a *App) clearProfileXrayBridges() {
 	a.bridgeMu.Lock()
 	a.xrayBridgeRefs = make(map[string]string)
+	a.bridgeMu.Unlock()
+}
+
+func (a *App) clearProfileClashBridges() {
+	a.bridgeMu.Lock()
+	a.clashBridgeRefs = make(map[string]string)
 	a.bridgeMu.Unlock()
 }
 
@@ -1286,14 +1336,14 @@ func (a *App) TestProxyConnectivity(proxyId string, proxyConfig string) ProxyTes
 // 参考 Clash URLTest 策略：多 URL fallback + 复用桥接 + TCP ping 降级
 func (a *App) TestProxyRealConnectivity(proxyId string) ProxyTestResult {
 	proxies := a.getLatestProxies()
-	r := proxy.SpeedTest(proxyId, proxies, a.xrayMgr, a.singboxMgr, nil)
+	r := proxy.SpeedTestWithClash(proxyId, proxies, a.xrayMgr, a.singboxMgr, a.clashBridgeMgr, nil)
 	return ProxyTestResult{ProxyId: r.ProxyId, Ok: r.Ok, LatencyMs: r.LatencyMs, Error: r.Error}
 }
 
 // BrowserProxyTestSpeed 手动触发单个代理测速并持久化结果
 func (a *App) BrowserProxyTestSpeed(proxyId string) ProxyTestResult {
 	proxies := a.getLatestProxies()
-	r := proxy.SpeedTest(proxyId, proxies, a.xrayMgr, a.singboxMgr, nil)
+	r := proxy.SpeedTestWithClash(proxyId, proxies, a.xrayMgr, a.singboxMgr, a.clashBridgeMgr, nil)
 	if a.browserMgr.ProxyDAO != nil {
 		testedAt := time.Now().Format(time.RFC3339)
 		if err := a.browserMgr.ProxyDAO.UpdateSpeedResult(proxyId, r.Ok, r.LatencyMs, testedAt); err == nil {
@@ -1331,7 +1381,7 @@ func (a *App) BrowserProxyBatchTestSpeed(proxyIds []string, concurrency int) []P
 		go func() {
 			defer wg.Done()
 			for job := range jobs {
-				r := proxy.SpeedTest(job.ProxyId, proxies, a.xrayMgr, a.singboxMgr, nil)
+				r := proxy.SpeedTestWithClash(job.ProxyId, proxies, a.xrayMgr, a.singboxMgr, a.clashBridgeMgr, nil)
 				if a.browserMgr.ProxyDAO != nil {
 					testedAt := time.Now().Format(time.RFC3339)
 					if err := a.browserMgr.ProxyDAO.UpdateSpeedResult(job.ProxyId, r.Ok, r.LatencyMs, testedAt); err == nil {
@@ -1390,7 +1440,7 @@ func (a *App) BrowserProxyPreviewBatchTestSpeed(items []ProxyPreviewTestInput, c
 		go func() {
 			defer wg.Done()
 			for job := range jobs {
-				r := proxy.SpeedTest(job.ProxyId, proxies, a.xrayMgr, a.singboxMgr, nil)
+				r := proxy.SpeedTestWithClash(job.ProxyId, proxies, a.xrayMgr, a.singboxMgr, a.clashBridgeMgr, nil)
 				result := ProxyTestResult{ProxyId: r.ProxyId, Ok: r.Ok, LatencyMs: r.LatencyMs, Error: r.Error}
 				results[job.Idx] = result
 				if a.ctx != nil {
@@ -1412,7 +1462,7 @@ func (a *App) BrowserProxyPreviewBatchTestSpeed(items []ProxyPreviewTestInput, c
 // BrowserProxyCheckIPHealth 检测单个代理的出口 IP 健康信息（通过 IPPure 接口）
 func (a *App) BrowserProxyCheckIPHealth(proxyId string) ProxyIPHealthResult {
 	proxies := a.getLatestProxies()
-	data, err := proxy.FetchIPPureInfo(proxyId, proxies, a.xrayMgr, a.singboxMgr)
+	data, err := proxy.FetchIPPureInfoWithClash(proxyId, proxies, a.xrayMgr, a.singboxMgr, a.clashBridgeMgr)
 	result := buildProxyIPHealthResult(proxyId, data, err)
 	if a.persistProxyIPHealthResult(result) {
 		a.emitBrowserProxiesUpdated()
@@ -1451,7 +1501,7 @@ func (a *App) BrowserProxyBatchCheckIPHealth(proxyIds []string, concurrency int)
 		go func() {
 			defer wg.Done()
 			for job := range jobs {
-				data, err := proxy.FetchIPPureInfo(job.ProxyId, proxies, a.xrayMgr, a.singboxMgr)
+				data, err := proxy.FetchIPPureInfoWithClash(job.ProxyId, proxies, a.xrayMgr, a.singboxMgr, a.clashBridgeMgr)
 				result := buildProxyIPHealthResult(job.ProxyId, data, err)
 				if a.persistProxyIPHealthResult(result) {
 					persistedMu.Lock()
@@ -1505,7 +1555,7 @@ func (a *App) BrowserProxyPreviewBatchCheckIPHealth(items []ProxyPreviewTestInpu
 		go func() {
 			defer wg.Done()
 			for job := range jobs {
-				data, err := proxy.FetchIPPureInfo(job.ProxyId, proxies, a.xrayMgr, a.singboxMgr)
+				data, err := proxy.FetchIPPureInfoWithClash(job.ProxyId, proxies, a.xrayMgr, a.singboxMgr, a.clashBridgeMgr)
 				result := buildProxyIPHealthResult(job.ProxyId, data, err)
 				results[job.Idx] = result
 				if a.ctx != nil {

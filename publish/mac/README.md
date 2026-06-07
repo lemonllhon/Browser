@@ -66,7 +66,7 @@ macOS is not difficult because of Wails alone. The real complexity comes from fo
 
 1. Installed `.app` bundles under `/Applications` should be treated as read-only.
 2. User data must not be written inside the `.app` bundle.
-3. External helper binaries such as `xray` and `sing-box` must exist for Darwin and must be bundled correctly.
+3. External helper binaries such as `xray`, `sing-box` and `mihomo` must exist for Darwin and must be bundled correctly.
 4. Public distribution usually requires code signing and notarization, otherwise Gatekeeper may block launch.
 
 ## Recommended Scope
@@ -107,6 +107,7 @@ Recommended structure inside the built app:
 - `Trace Browser.app/Contents/MacOS/trace-browser`
 - `Trace Browser.app/Contents/Resources/bin/xray`
 - `Trace Browser.app/Contents/Resources/bin/sing-box`
+- `Trace Browser.app/Contents/Resources/bin/mihomo`
 - optional placeholder `chrome/README.md` if you want to keep behavior aligned with Linux
 
 ### User-Writable State
@@ -154,8 +155,10 @@ Required additions:
 
 - `bin/darwin-arm64/xray`
 - `bin/darwin-arm64/sing-box`
+- `bin/darwin-arm64/mihomo`
 - optional `bin/darwin-amd64/xray`
 - optional `bin/darwin-amd64/sing-box`
+- optional `bin/darwin-amd64/mihomo`
 - manifest hash entries for the new targets
 
 Status:

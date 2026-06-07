@@ -804,10 +804,13 @@ try {
         $requiredFiles = @(
             "bin/xray.exe",
             "bin/sing-box.exe",
+            "bin/mihomo.exe",
             "bin/linux-amd64/xray",
             "bin/linux-amd64/sing-box",
+            "bin/linux-amd64/mihomo",
             "bin/linux-arm64/xray",
             "bin/linux-arm64/sing-box",
+            "bin/linux-arm64/mihomo",
             "publish/runtime-manifest.json",
             "publish/runtime-sources.json"
         )

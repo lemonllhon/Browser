@@ -46,6 +46,17 @@ func SpeedTest(
 	singboxMgr *SingBoxManager,
 	cfg *SpeedTestConfig,
 ) TestResult {
+	return SpeedTestWithClash(proxyId, proxies, xrayMgr, singboxMgr, nil, cfg)
+}
+
+func SpeedTestWithClash(
+	proxyId string,
+	proxies []config.BrowserProxy,
+	xrayMgr *XrayManager,
+	singboxMgr *SingBoxManager,
+	clashMgr *ClashBridgeManager,
+	cfg *SpeedTestConfig,
+) TestResult {
 	log := logger.New("SpeedTest")
 
 	if cfg == nil {
@@ -74,11 +85,14 @@ func SpeedTest(
 		testURL = cfg.URLs[0]
 	}
 
+	if RequiresClashBridge(src, proxies, proxyId) && clashMgr != nil {
+		return bridgeDelayTest(proxyId, src, proxies, xrayMgr, singboxMgr, clashMgr, testURL, cfg.Timeout)
+	}
 	if IsSingBoxProtocol(src) && singboxMgr != nil {
-		return bridgeDelayTest(proxyId, src, proxies, xrayMgr, singboxMgr, testURL, cfg.Timeout)
+		return bridgeDelayTest(proxyId, src, proxies, xrayMgr, singboxMgr, clashMgr, testURL, cfg.Timeout)
 	}
 	if RequiresBridge(src, proxies, proxyId) && xrayMgr != nil {
-		return bridgeDelayTest(proxyId, src, proxies, xrayMgr, singboxMgr, testURL, cfg.Timeout)
+		return bridgeDelayTest(proxyId, src, proxies, xrayMgr, singboxMgr, clashMgr, testURL, cfg.Timeout)
 	}
 
 	// 将代理配置转换为 mihomo mapping
@@ -112,10 +126,11 @@ func bridgeDelayTest(
 	proxies []config.BrowserProxy,
 	xrayMgr *XrayManager,
 	singboxMgr *SingBoxManager,
+	clashMgr *ClashBridgeManager,
 	testURL string,
 	timeout time.Duration,
 ) TestResult {
-	client, err := buildProxyHTTPClient(src, proxyId, proxies, xrayMgr, singboxMgr, timeout)
+	client, err := buildProxyHTTPClient(src, proxyId, proxies, xrayMgr, singboxMgr, clashMgr, timeout)
 	if err != nil {
 		return TestResult{ProxyId: proxyId, Ok: false, Error: err.Error()}
 	}

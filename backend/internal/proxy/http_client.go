@@ -19,11 +19,23 @@ func buildProxyHTTPClient(
 	proxies []config.BrowserProxy,
 	xrayMgr *XrayManager,
 	singboxMgr *SingBoxManager,
+	clashMgr *ClashBridgeManager,
 	timeout time.Duration,
 ) (*http.Client, error) {
 	l := strings.ToLower(strings.TrimSpace(src))
 	if l == "" || l == "direct://" || l == "__direct__" {
 		return &http.Client{Timeout: timeout}, nil
+	}
+
+	if RequiresClashBridge(src, proxies, proxyId) {
+		if clashMgr == nil {
+			return nil, fmt.Errorf("mihomo 管理器未初始化")
+		}
+		socks5Addr, err := clashMgr.EnsureBridge(src, proxies, proxyId)
+		if err != nil {
+			return nil, fmt.Errorf("mihomo 桥接启动失败: %w", err)
+		}
+		return buildSocks5HTTPClient(strings.TrimPrefix(socks5Addr, "socks5://"), timeout)
 	}
 
 	if IsSingBoxProtocol(src) {

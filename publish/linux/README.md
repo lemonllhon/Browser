@@ -22,8 +22,10 @@ Required files:
 
 - `bin/linux-amd64/xray`
 - `bin/linux-amd64/sing-box`
+- `bin/linux-amd64/mihomo`
 - `bin/linux-arm64/xray`
 - `bin/linux-arm64/sing-box`
+- `bin/linux-arm64/mihomo`
 
 Hashes are validated by:
 
@@ -69,7 +71,7 @@ bash publish/linux/publish-linux-all.sh
 - Linux packages do **not** include browser cores (`chrome/` is not bundled).
 - Build on native architecture runner for stability.
 - `.deb` installs app files under `/opt/trace-browser`.
-- `.deb` bundles `xray` and `sing-box` under `/opt/trace-browser/bin`.
+- `.deb` bundles `xray`, `sing-box` and `mihomo` under `/opt/trace-browser/bin`.
 - Linux packages keep an empty `chrome/` placeholder with `README.md`, but do **not** bundle browser core binaries.
 - `.deb` registers an application launcher at `/usr/share/applications/trace-browser.desktop`.
 - `.deb` installs standard Linux desktop icons under `/usr/share/icons/hicolor/*/apps/trace-browser.png` and `/usr/share/pixmaps/trace-browser.png`, so menus and launchers are more likely to pick up the app icon correctly.

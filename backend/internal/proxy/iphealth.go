@@ -22,6 +22,16 @@ func FetchIPPureInfo(
 	xrayMgr *XrayManager,
 	singboxMgr *SingBoxManager,
 ) (map[string]interface{}, error) {
+	return FetchIPPureInfoWithClash(proxyId, proxies, xrayMgr, singboxMgr, nil)
+}
+
+func FetchIPPureInfoWithClash(
+	proxyId string,
+	proxies []config.BrowserProxy,
+	xrayMgr *XrayManager,
+	singboxMgr *SingBoxManager,
+	clashMgr *ClashBridgeManager,
+) (map[string]interface{}, error) {
 	log := logger.New("IPPure")
 	src := ""
 	for _, item := range proxies {
@@ -36,7 +46,7 @@ func FetchIPPureInfo(
 	}
 	log.Info("IPPure 检测开始", logger.F("proxy_id", proxyId), logger.F("proxy_type", describeProxySource(src)))
 
-	client, err := buildIPPureHTTPClient(src, proxyId, proxies, xrayMgr, singboxMgr, 20*time.Second)
+	client, err := buildIPPureHTTPClient(src, proxyId, proxies, xrayMgr, singboxMgr, clashMgr, 20*time.Second)
 	if err != nil {
 		log.Error("IPPure HTTP 客户端创建失败", logger.F("proxy_id", proxyId), logger.F("error", err.Error()))
 		return nil, err
@@ -78,9 +88,10 @@ func buildIPPureHTTPClient(
 	proxies []config.BrowserProxy,
 	xrayMgr *XrayManager,
 	singboxMgr *SingBoxManager,
+	clashMgr *ClashBridgeManager,
 	timeout time.Duration,
 ) (*http.Client, error) {
-	return buildProxyHTTPClient(src, proxyId, proxies, xrayMgr, singboxMgr, timeout)
+	return buildProxyHTTPClient(src, proxyId, proxies, xrayMgr, singboxMgr, clashMgr, timeout)
 }
 
 func bodySnippet(body []byte, max int) string {
@@ -100,6 +111,8 @@ func describeProxySource(src string) string {
 		return "http"
 	case strings.HasPrefix(lower, "socks5://"):
 		return "socks5"
+	case IsClashNativeProtocol(src):
+		return "mihomo"
 	case strings.HasPrefix(lower, "hysteria2://"), strings.HasPrefix(lower, "hy2://"):
 		return "sing-box"
 	default:
