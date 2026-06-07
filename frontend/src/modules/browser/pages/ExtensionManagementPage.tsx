@@ -5,6 +5,7 @@ import type { TableColumn } from '../../../shared/components/Table'
 import type { BrowserExtension, BrowserExtensionBinding, BrowserExtensionImportResult, BrowserProfile } from '../types'
 import { assignBrowserExtensionProfiles, chooseBrowserExtensionArchive, chooseBrowserExtensionDirectory, deleteBrowserExtension, fetchBrowserExtension, fetchBrowserExtensionProfileBindings, fetchBrowserExtensions, fetchBrowserProfiles, importBrowserExtensionArchive, importBrowserExtensionDirectory, setBrowserExtensionAutoBind, syncBrowserExtensionData, unassignBrowserExtensionProfiles } from '../api'
 import { clearRuntimeFileDrop, onRuntimeEvent, onRuntimeFileDrop } from '../../../shared/backend/runtime'
+import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
 
 const sourceTypeText: Record<string, string> = {
   zip: '压缩包',
@@ -225,6 +226,12 @@ export function ExtensionManagementPage() {
       setBindingsLoading(false)
     }
   }
+
+  const canVisibleRefresh = !detailOpen && !bindingModalOpen && !autoBindModalOpen && !deleteConfirmOpen && !importModalOpen && !importing && !bindingSaving && !autoBindSaving && !syncingData
+  useVisibleRefresh(() => {
+    void loadData(true)
+    void loadProfiles()
+  }, 2000, canVisibleRefresh)
 
   useEffect(() => {
     const refreshSelectedExtension = async () => {

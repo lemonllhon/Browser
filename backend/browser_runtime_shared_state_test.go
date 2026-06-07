@@ -507,6 +507,85 @@ func TestBrowserProfileBatchTagsPersistConfigFallback(t *testing.T) {
 	}
 }
 
+func TestSaveBrowserProxiesDiffSavesAndPreservesProbeResults(t *testing.T) {
+	app := newRuntimeStateTestApp(t.TempDir())
+	dao := &proxyDAOListStub{proxies: []BrowserProxy{
+		{
+			ProxyId:          "__direct__",
+			ProxyName:        "直连（不走代理）",
+			ProxyConfig:      "direct://",
+			LastLatencyMs:    5,
+			LastTestOk:       true,
+			LastTestedAt:     "2026-06-07T00:00:00Z",
+			LastIPHealthJSON: `{"ok":true,"ip":"127.0.0.1"}`,
+		},
+		{
+			ProxyId:          "keep",
+			ProxyName:        "Keep",
+			ProxyConfig:      "http://127.0.0.1:18080",
+			LastLatencyMs:    123,
+			LastTestOk:       true,
+			LastTestedAt:     "2026-06-07T01:00:00Z",
+			LastIPHealthJSON: `{"ok":true,"ip":"203.0.113.10"}`,
+		},
+		{
+			ProxyId:     "remove",
+			ProxyName:   "Remove",
+			ProxyConfig: "http://127.0.0.1:18081",
+		},
+	}}
+	app.browserMgr.ProxyDAO = dao
+
+	err := app.SaveBrowserProxies([]BrowserProxy{
+		{
+			ProxyId:     "keep",
+			ProxyName:   "Keep Updated",
+			ProxyConfig: "http://127.0.0.1:18080",
+			GroupName:   "fresh",
+		},
+		{
+			ProxyId:     "add",
+			ProxyName:   "Add",
+			ProxyConfig: "http://127.0.0.1:18082",
+		},
+	})
+	if err != nil {
+		t.Fatalf("SaveBrowserProxies failed: %v", err)
+	}
+
+	if dao.deleteAllCalled {
+		t.Fatalf("expected diff save to avoid DeleteAll")
+	}
+	if !stringSliceContains(dao.deletedIDs, "remove") {
+		t.Fatalf("expected removed proxy to be deleted, deleted=%v", dao.deletedIDs)
+	}
+	if stringSliceContains(dao.deletedIDs, "keep") || stringSliceContains(dao.deletedIDs, "__direct__") {
+		t.Fatalf("expected unchanged proxies to stay in place, deleted=%v", dao.deletedIDs)
+	}
+
+	byID := map[string]BrowserProxy{}
+	for _, item := range dao.proxies {
+		byID[item.ProxyId] = item
+	}
+	if _, exists := byID["remove"]; exists {
+		t.Fatalf("expected removed proxy to be absent, got %#v", dao.proxies)
+	}
+	keep := byID["keep"]
+	if keep.ProxyName != "Keep Updated" || keep.GroupName != "fresh" {
+		t.Fatalf("expected keep proxy config fields to update, got %#v", keep)
+	}
+	if keep.LastLatencyMs != 123 || !keep.LastTestOk || keep.LastTestedAt != "2026-06-07T01:00:00Z" || keep.LastIPHealthJSON == "" {
+		t.Fatalf("expected keep proxy probe fields to be preserved, got %#v", keep)
+	}
+	direct := byID["__direct__"]
+	if direct.LastLatencyMs != 5 || !direct.LastTestOk || direct.LastTestedAt == "" || direct.LastIPHealthJSON == "" {
+		t.Fatalf("expected builtin proxy probe fields to be preserved, got %#v", direct)
+	}
+	if _, exists := byID["add"]; !exists {
+		t.Fatalf("expected new proxy to be inserted, got %#v", dao.proxies)
+	}
+}
+
 func TestBrowserProfileSwitchProxyNowUsesSharedSwitchBridge(t *testing.T) {
 	ln := mustListenLoopback(t)
 	defer ln.Close()
@@ -627,7 +706,10 @@ func (s *coreDAOListStub) Delete(string) error      { return nil }
 func (s *coreDAOListStub) SetDefault(string) error  { return nil }
 
 type proxyDAOListStub struct {
-	proxies []BrowserProxy
+	proxies         []BrowserProxy
+	deletedIDs      []string
+	upsertedIDs     []string
+	deleteAllCalled bool
 }
 
 func (s *proxyDAOListStub) List() ([]BrowserProxy, error) {
@@ -645,9 +727,38 @@ func (s *proxyDAOListStub) ListByGroup(groupName string) ([]BrowserProxy, error)
 }
 
 func (s *proxyDAOListStub) ListGroups() ([]string, error) { return nil, nil }
-func (s *proxyDAOListStub) Upsert(BrowserProxy) error     { return nil }
-func (s *proxyDAOListStub) Delete(string) error           { return nil }
-func (s *proxyDAOListStub) DeleteAll() error              { return nil }
+func (s *proxyDAOListStub) Upsert(proxy BrowserProxy) error {
+	s.upsertedIDs = append(s.upsertedIDs, proxy.ProxyId)
+	for i, existing := range s.proxies {
+		if existing.ProxyId != proxy.ProxyId {
+			continue
+		}
+		proxy.LastLatencyMs = existing.LastLatencyMs
+		proxy.LastTestOk = existing.LastTestOk
+		proxy.LastTestedAt = existing.LastTestedAt
+		proxy.LastIPHealthJSON = existing.LastIPHealthJSON
+		s.proxies[i] = proxy
+		return nil
+	}
+	s.proxies = append(s.proxies, proxy)
+	return nil
+}
+func (s *proxyDAOListStub) Delete(proxyId string) error {
+	s.deletedIDs = append(s.deletedIDs, proxyId)
+	next := s.proxies[:0]
+	for _, item := range s.proxies {
+		if item.ProxyId != proxyId {
+			next = append(next, item)
+		}
+	}
+	s.proxies = next
+	return nil
+}
+func (s *proxyDAOListStub) DeleteAll() error {
+	s.deleteAllCalled = true
+	s.proxies = nil
+	return nil
+}
 func (s *proxyDAOListStub) UpdateSpeedResult(string, bool, int64, string) error {
 	return nil
 }

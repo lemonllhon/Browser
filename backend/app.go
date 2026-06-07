@@ -1753,9 +1753,29 @@ func (a *App) SaveBrowserProxies(proxies []BrowserProxy) error {
 
 	// 优先写入 SQLite
 	if a.browserMgr.ProxyDAO != nil {
-		if err := a.browserMgr.ProxyDAO.DeleteAll(); err != nil {
-			log.Error("清空代理表失败", logger.F("error", err))
+		existing, err := a.browserMgr.ProxyDAO.List()
+		if err != nil {
+			log.Error("查询代理列表失败", logger.F("error", err))
 			return err
+		}
+		nextIDs := make(map[string]struct{}, len(normalized))
+		for _, p := range normalized {
+			nextIDs[p.ProxyId] = struct{}{}
+		}
+		deletedCount := 0
+		for _, existingProxy := range existing {
+			proxyId := strings.TrimSpace(existingProxy.ProxyId)
+			if proxyId == "" {
+				continue
+			}
+			if _, ok := nextIDs[proxyId]; ok {
+				continue
+			}
+			if err := a.browserMgr.ProxyDAO.Delete(proxyId); err != nil {
+				log.Error("删除已移除代理失败", logger.F("proxy_id", proxyId), logger.F("error", err))
+				return err
+			}
+			deletedCount++
 		}
 		for _, p := range normalized {
 			if err := a.browserMgr.ProxyDAO.Upsert(p); err != nil {
@@ -1763,7 +1783,7 @@ func (a *App) SaveBrowserProxies(proxies []BrowserProxy) error {
 				return err
 			}
 		}
-		log.Info("代理列表已保存到数据库", logger.F("count", len(normalized)))
+		log.Info("代理列表已差异保存到数据库", logger.F("count", len(normalized)), logger.F("deleted", deletedCount))
 		a.reconcileProfileProxyBindings()
 		a.emitBrowserProxiesUpdated()
 		a.emitProfileDataUpdated()
