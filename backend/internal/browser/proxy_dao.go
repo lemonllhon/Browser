@@ -13,7 +13,6 @@ type ProxyDAO interface {
 	ListGroups() ([]string, error)
 	Upsert(proxy Proxy) error
 	Delete(proxyId string) error
-	DeleteAll() error
 	UpdateSpeedResult(proxyId string, ok bool, latencyMs int64, testedAt string) error
 	UpdateIPHealthResult(proxyId string, healthJSON string) error
 }
@@ -130,15 +129,6 @@ func (d *SQLiteProxyDAO) Delete(proxyId string) error {
 	_, err := d.db.Exec(`DELETE FROM browser_proxies WHERE proxy_id = ?`, proxyId)
 	if err != nil {
 		return fmt.Errorf("删除代理失败: %w", err)
-	}
-	return nil
-}
-
-// DeleteAll 清空代理表（批量保存前使用）
-func (d *SQLiteProxyDAO) DeleteAll() error {
-	_, err := d.db.Exec(`DELETE FROM browser_proxies`)
-	if err != nil {
-		return fmt.Errorf("清空代理表失败: %w", err)
 	}
 	return nil
 }

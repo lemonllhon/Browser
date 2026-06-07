@@ -19,7 +19,7 @@ import { INITIAL_DIRECT_IMPORT_FORM, buildDirectImportCandidate, parseDirectProx
 import { parseClashImportText, proxyToYaml } from '../utils/clashProxyImport'
 import type { DirectImportForm } from '../utils/directProxyImport'
 import type { ClashProxy } from '../utils/clashProxyImport'
-import { buildManualSourceURL, collectURLImportSources, defaultImportSourceName, isRefreshableSourceURL, normalizeSourceMeta, parseManualSourceURL, readStoredSourceMetas, resolveImportSourceID, sourceHostLabel, writeStoredSourceMetas } from '../utils/proxySourceMeta'
+import { buildManualSourceURL, collectURLImportSources, defaultImportSourceName, isRefreshableSourceURL, normalizeSourceMeta, onStoredSourceMetasChanged, parseManualSourceURL, readStoredSourceMetas, resolveImportSourceID, sourceHostLabel, writeStoredSourceMetas } from '../utils/proxySourceMeta'
 import type { URLImportSourceMeta } from '../utils/proxySourceMeta'
 import { toLatencyValue } from '../utils/proxyProbeCache'
 import { buildSourceRefreshFilterSnapshot, normalizePreviewSearchText, parseSourceRefreshFilter, previewHealthMatchesFilter, previewItemMatchesSourceRefreshFilter, previewLatencyMatchesFilter, sourceRefreshFilterLabel } from '../utils/proxyPreviewFilters'
@@ -27,7 +27,8 @@ import type { PreviewHealthFilter, PreviewLatencyFilter, SourceRefreshFilter } f
 import { BUILTIN_PROXY_IDS, buildImportPreview, ensureBuiltinProxies, isBuiltinProxy, parseProxyInfo, toDisplayList } from '../utils/proxyDisplay'
 import type { ProxyDisplayInfo } from '../utils/proxyDisplay'
 import { appendSourceIgnoredProxyNames, applyIgnoredProxyNamesForSource, buildImportCandidatesFromClash, buildRefreshedSourceProxies, createExistingProxyIDPicker, nextProxyID, readSourceIgnoredProxyNames, renameSourceProxyName, resolveImportedProxyName } from '../utils/proxySourceRefresh'
-import { normalizeRefreshIntervalM, parseTimestampMs, readGlobalRefreshConfig, writeGlobalRefreshConfig } from '../utils/proxyRefreshConfig'
+import { normalizeRefreshIntervalM, onGlobalRefreshConfigChanged, parseTimestampMs, readGlobalRefreshConfig, writeGlobalRefreshConfig } from '../utils/proxyRefreshConfig'
+import { acquireProxyAutoRefreshLock, createProxyAutoRefreshOwnerId, releaseProxyAutoRefreshLock } from '../utils/proxyAutoRefreshLock'
 import { useProxyProbeState } from '../hooks/useProxyProbeState'
 import { useProxyPreviewProbeState } from '../hooks/useProxyPreviewProbeState'
 import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
@@ -101,6 +102,7 @@ async function applySourceRefreshFilterToParsedProxies(
 }
 
 export function ProxyPoolPage() {
+  const initialRefreshConfig = useMemo(() => readGlobalRefreshConfig(), [])
   const [proxies, setProxies] = useState<BrowserProxy[]>([])
   const [sourceArchive, setSourceArchive] = useState<URLImportSourceMeta[]>(readStoredSourceMetas)
   const [displayList, setDisplayList] = useState<ProxyDisplayInfo[]>([])
@@ -143,8 +145,8 @@ export function ProxyPoolPage() {
   const [fetchingImportUrl, setFetchingImportUrl] = useState(false)
   const [refreshingAllSources, setRefreshingAllSources] = useState(false)
   const [refreshingSourceIds, setRefreshingSourceIds] = useState<Set<string>>(new Set())
-  const [globalAutoRefreshEnabled, setGlobalAutoRefreshEnabled] = useState(false)
-  const [globalRefreshIntervalM, setGlobalRefreshIntervalM] = useState('60')
+  const [globalAutoRefreshEnabled, setGlobalAutoRefreshEnabled] = useState(initialRefreshConfig.enabled)
+  const [globalRefreshIntervalM, setGlobalRefreshIntervalM] = useState(String(initialRefreshConfig.intervalM))
   const [sourceEditModalOpen, setSourceEditModalOpen] = useState(false)
   const [editingSource, setEditingSource] = useState<URLImportSourceMeta | null>(null)
   const [sourceEditForm, setSourceEditForm] = useState({ sourceUrl: '', groupName: '', namePrefix: '', dnsServers: '' })
@@ -160,6 +162,8 @@ export function ProxyPoolPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const sourceArchiveRef = useRef<URLImportSourceMeta[]>(sourceArchive)
   const refreshingSourceIdsRef = useRef<Set<string>>(new Set())
+  const autoRefreshOwnerIdRef = useRef(createProxyAutoRefreshOwnerId())
+  const loadProxiesInFlightRef = useRef<Promise<void> | null>(null)
 
   const {
     latencyMap,
@@ -204,10 +208,26 @@ export function ProxyPoolPage() {
   }, [])
 
   useEffect(() => {
-    const cfg = readGlobalRefreshConfig()
-    setGlobalAutoRefreshEnabled(cfg.enabled)
-    setGlobalRefreshIntervalM(String(cfg.intervalM))
     loadProxies()
+  }, [])
+
+  useEffect(() => {
+    const syncRefreshConfig = () => {
+      const cfg = readGlobalRefreshConfig()
+      setGlobalAutoRefreshEnabled(cfg.enabled)
+      setGlobalRefreshIntervalM(String(cfg.intervalM))
+    }
+    const syncSourceArchive = () => {
+      const stored = readStoredSourceMetas()
+      sourceArchiveRef.current = stored
+      setSourceArchive(stored)
+    }
+    const offRefreshConfig = onGlobalRefreshConfigChanged(syncRefreshConfig)
+    const offSourceMetas = onStoredSourceMetasChanged(syncSourceArchive)
+    return () => {
+      offRefreshConfig()
+      offSourceMetas()
+    }
   }, [])
 
 
@@ -233,53 +253,76 @@ export function ProxyPoolPage() {
   }, [proxies])
 
   const loadProxies = async (silent = false) => {
-    if (!silent) {
-      setLoading(true)
+    if (loadProxiesInFlightRef.current) {
+      return loadProxiesInFlightRef.current
     }
-    try {
-      const proxyList = await fetchLatestProxyList()
-      const validProxyIds = new Set(proxyList.map(proxy => proxy.proxyId))
-      const persistedLatency: Record<string, number> = {}
-      const persistedIPHealth: Record<string, ProxyIPHealthResult> = {}
-      proxyList.forEach(proxy => {
-        if (proxy.lastTestedAt) {
-          persistedLatency[proxy.proxyId] = (proxy.lastTestOk ?? false)
-            ? (proxy.lastLatencyMs ?? -2)
-            : -2
-        }
-        if (proxy.lastIPHealthJson) {
-          try {
-            const parsed = JSON.parse(proxy.lastIPHealthJson) as ProxyIPHealthResult
-            if (parsed && typeof parsed === 'object' && parsed.proxyId) {
-              persistedIPHealth[proxy.proxyId] = parsed
-            }
-          } catch {
-            // ignore bad historical json
+    const task = (async () => {
+      if (!silent) {
+        setLoading(true)
+      }
+      try {
+        const proxyList = await fetchLatestProxyList()
+        const validProxyIds = new Set(proxyList.map(proxy => proxy.proxyId))
+        const persistedLatency: Record<string, number> = {}
+        const persistedIPHealth: Record<string, ProxyIPHealthResult> = {}
+        proxyList.forEach(proxy => {
+          if (proxy.lastTestedAt) {
+            persistedLatency[proxy.proxyId] = (proxy.lastTestOk ?? false)
+              ? (proxy.lastLatencyMs ?? -2)
+              : -2
           }
-        }
-      })
-
-      const archivedSources = collectURLImportSources(proxyList, sourceArchiveRef.current)
-      sourceArchiveRef.current = archivedSources
-      setSourceArchive(archivedSources)
-      writeStoredSourceMetas(archivedSources)
-      setProxies(proxyList)
-      setDisplayList(toDisplayList(proxyList))
-      setSelectedIds(prev => {
-        const next = new Set<string>()
-        prev.forEach(proxyId => {
-          if (validProxyIds.has(proxyId)) {
-            next.add(proxyId)
+          if (proxy.lastIPHealthJson) {
+            try {
+              const parsed = JSON.parse(proxy.lastIPHealthJson) as ProxyIPHealthResult
+              if (parsed && typeof parsed === 'object' && parsed.proxyId) {
+                persistedIPHealth[proxy.proxyId] = parsed
+              }
+            } catch {
+              // ignore bad historical json
+            }
           }
         })
-        return next
-      })
-      setLatencyMap(prev => ({ ...persistedLatency, ...prev }))
-      setIPHealthMap(prev => ({ ...persistedIPHealth, ...prev }))
-      const grps = await fetchBrowserProxyGroups()
-      setGroups(grps)
+
+        const archivedSources = collectURLImportSources(proxyList, sourceArchiveRef.current)
+        sourceArchiveRef.current = archivedSources
+        setSourceArchive(archivedSources)
+        writeStoredSourceMetas(archivedSources)
+        setProxies(proxyList)
+        setDisplayList(toDisplayList(proxyList))
+        setSelectedIds(prev => {
+          const next = new Set<string>()
+          prev.forEach(proxyId => {
+            if (validProxyIds.has(proxyId)) {
+              next.add(proxyId)
+            }
+          })
+          return next
+        })
+        setLatencyMap(prev => {
+          const next = { ...prev, ...persistedLatency }
+          Object.entries(prev).forEach(([proxyId, latency]) => {
+            if (latency === -1) {
+              next[proxyId] = latency
+            }
+          })
+          return next
+        })
+        setIPHealthMap(prev => ({ ...prev, ...persistedIPHealth }))
+        const grps = await fetchBrowserProxyGroups()
+        setGroups(grps)
+      } finally {
+        if (!silent) {
+          setLoading(false)
+        }
+      }
+    })()
+    loadProxiesInFlightRef.current = task
+    try {
+      return await task
     } finally {
-      setLoading(false)
+      if (loadProxiesInFlightRef.current === task) {
+        loadProxiesInFlightRef.current = null
+      }
     }
   }
 
@@ -416,13 +459,16 @@ export function ProxyPoolPage() {
 
     setRefreshingAllSources(true)
     let successCount = 0
-    for (const meta of metas) {
-      // 串行刷新，避免并发保存导致覆盖
-      // eslint-disable-next-line no-await-in-loop
-      const ok = await refreshSingleSource(meta.sourceId, true)
-      if (ok) successCount += 1
+    try {
+      for (const meta of metas) {
+        // 串行刷新，避免并发保存导致覆盖
+        // eslint-disable-next-line no-await-in-loop
+        const ok = await refreshSingleSource(meta.sourceId, true)
+        if (ok) successCount += 1
+      }
+    } finally {
+      setRefreshingAllSources(false)
     }
-    setRefreshingAllSources(false)
 
     if (!silent) {
       if (successCount === metas.length) {
@@ -435,31 +481,39 @@ export function ProxyPoolPage() {
 
   useEffect(() => {
     const runAutoRefresh = async () => {
-      if (autoRefreshRunningRef.current || refreshingAllSources) {
+      if (document.visibilityState !== 'visible') {
+        return
+      }
+      if (autoRefreshRunningRef.current || refreshingAllSources || refreshingSourceIdsRef.current.size > 0) {
         return
       }
       if (!globalAutoRefreshEnabled) {
         return
       }
-      const intervalMs = globalRefreshInterval * 60 * 1000
-      const latest = await fetchLatestProxyList()
-      const metas = collectURLImportSources(latest, sourceArchiveRef.current).filter(meta => {
-        if (!isRefreshableSourceURL(meta.sourceUrl)) return false
-        const last = parseTimestampMs(meta.sourceLastRefreshAt)
-        return last <= 0 || Date.now() - last >= intervalMs
-      })
-      if (metas.length === 0) {
+      const ownerId = autoRefreshOwnerIdRef.current
+      if (!acquireProxyAutoRefreshLock(ownerId)) {
         return
       }
-
       autoRefreshRunningRef.current = true
       try {
+        const intervalMs = globalRefreshInterval * 60 * 1000
+        const latest = await fetchLatestProxyList()
+        const metas = collectURLImportSources(latest, sourceArchiveRef.current).filter(meta => {
+          if (!isRefreshableSourceURL(meta.sourceUrl)) return false
+          const last = parseTimestampMs(meta.sourceLastRefreshAt)
+          return last <= 0 || Date.now() - last >= intervalMs
+        })
+        if (metas.length === 0) {
+          return
+        }
+
         for (const meta of metas) {
           // eslint-disable-next-line no-await-in-loop
           await refreshSingleSource(meta.sourceId, true)
         }
       } finally {
         autoRefreshRunningRef.current = false
+        releaseProxyAutoRefreshLock(ownerId)
       }
     }
 
@@ -467,9 +521,18 @@ export function ProxyPoolPage() {
     const timer = window.setInterval(() => {
       void runAutoRefresh()
     }, 60 * 1000)
+    const runWhenVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void runAutoRefresh()
+      }
+    }
+    document.addEventListener('visibilitychange', runWhenVisible)
+    window.addEventListener('focus', runWhenVisible)
 
     return () => {
       window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', runWhenVisible)
+      window.removeEventListener('focus', runWhenVisible)
     }
   }, [fetchLatestProxyList, globalAutoRefreshEnabled, globalRefreshInterval, refreshingAllSources, refreshSingleSource])
 

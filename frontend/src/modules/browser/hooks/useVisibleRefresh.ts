@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 
 export function useVisibleRefresh(refresh: () => void | Promise<void>, intervalMs = 2000, enabled = true) {
   const refreshRef = useRef(refresh)
+  const inFlightRef = useRef(false)
 
   useEffect(() => {
     refreshRef.current = refresh
@@ -11,8 +12,18 @@ export function useVisibleRefresh(refresh: () => void | Promise<void>, intervalM
     if (!enabled) return
 
     const run = () => {
-      if (document.visibilityState === 'visible') {
-        void refreshRef.current()
+      if (document.visibilityState !== 'visible' || inFlightRef.current) {
+        return
+      }
+      inFlightRef.current = true
+      try {
+        void Promise.resolve(refreshRef.current())
+          .catch(() => undefined)
+          .finally(() => {
+            inFlightRef.current = false
+          })
+      } catch {
+        inFlightRef.current = false
       }
     }
 

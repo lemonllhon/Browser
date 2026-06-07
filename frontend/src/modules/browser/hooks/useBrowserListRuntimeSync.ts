@@ -71,8 +71,33 @@ export function useBrowserListRuntimeSync({
   setWindowSyncLayout,
 }: UseBrowserListRuntimeSyncOptions) {
   useEffect(() => {
+    let profileRefreshInFlight = false
+    let groupRefreshInFlight = false
     const refreshProfiles = () => {
-      void loadProfiles({ silent: true, syncRuntimeState: true })
+      if (profileRefreshInFlight) return
+      profileRefreshInFlight = true
+      try {
+        void loadProfiles({ silent: true, syncRuntimeState: true })
+          .catch(() => undefined)
+          .finally(() => {
+            profileRefreshInFlight = false
+          })
+      } catch {
+        profileRefreshInFlight = false
+      }
+    }
+    const refreshGroups = () => {
+      if (groupRefreshInFlight) return
+      groupRefreshInFlight = true
+      try {
+        void loadGroups()
+          .catch(() => undefined)
+          .finally(() => {
+            groupRefreshInFlight = false
+          })
+      } catch {
+        groupRefreshInFlight = false
+      }
     }
     const clearPendingAndRefresh = (payload: unknown) => {
       const profileId = resolveRuntimeProfileID(payload)
@@ -86,7 +111,7 @@ export function useBrowserListRuntimeSync({
     const offStarted = onRuntimeEvent('browser:instance:started', clearPendingAndRefresh)
     const offUpdated = onRuntimeEvent('browser:instance:updated', refreshProfiles)
     const offProfilesUpdated = onRuntimeEvent('browser:profiles:updated', refreshProfiles)
-    const offGroupsUpdated = onRuntimeEvent('browser:groups:updated', () => { void loadGroups() })
+    const offGroupsUpdated = onRuntimeEvent('browser:groups:updated', refreshGroups)
     const offProxiesUpdated = onRuntimeEvent('browser:proxies:updated', () => { void loadProxies() })
     const offCoresUpdated = onRuntimeEvent('browser:cores:updated', () => { void loadCores() })
     const offStopped = onRuntimeEvent('browser:instance:stopped', clearPendingAndRefresh)
@@ -104,8 +129,8 @@ export function useBrowserListRuntimeSync({
     const timer = window.setInterval(() => {
       if (document.visibilityState !== 'visible') return
       refreshProfiles()
-      void loadGroups()
-    }, 2000)
+      refreshGroups()
+    }, 3000)
 
     return () => {
       window.clearInterval(timer)

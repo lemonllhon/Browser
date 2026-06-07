@@ -553,9 +553,6 @@ func TestSaveBrowserProxiesDiffSavesAndPreservesProbeResults(t *testing.T) {
 		t.Fatalf("SaveBrowserProxies failed: %v", err)
 	}
 
-	if dao.deleteAllCalled {
-		t.Fatalf("expected diff save to avoid DeleteAll")
-	}
 	if !stringSliceContains(dao.deletedIDs, "remove") {
 		t.Fatalf("expected removed proxy to be deleted, deleted=%v", dao.deletedIDs)
 	}
@@ -706,10 +703,9 @@ func (s *coreDAOListStub) Delete(string) error      { return nil }
 func (s *coreDAOListStub) SetDefault(string) error  { return nil }
 
 type proxyDAOListStub struct {
-	proxies         []BrowserProxy
-	deletedIDs      []string
-	upsertedIDs     []string
-	deleteAllCalled bool
+	proxies     []BrowserProxy
+	deletedIDs  []string
+	upsertedIDs []string
 }
 
 func (s *proxyDAOListStub) List() ([]BrowserProxy, error) {
@@ -752,11 +748,6 @@ func (s *proxyDAOListStub) Delete(proxyId string) error {
 		}
 	}
 	s.proxies = next
-	return nil
-}
-func (s *proxyDAOListStub) DeleteAll() error {
-	s.deleteAllCalled = true
-	s.proxies = nil
 	return nil
 }
 func (s *proxyDAOListStub) UpdateSpeedResult(string, bool, int64, string) error {

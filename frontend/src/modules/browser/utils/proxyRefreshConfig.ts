@@ -1,5 +1,10 @@
-const PROXY_GLOBAL_AUTO_REFRESH_KEY = 'browser:proxyPool:globalAutoRefreshEnabled:v1'
-const PROXY_GLOBAL_REFRESH_INTERVAL_KEY = 'browser:proxyPool:globalRefreshIntervalM:v1'
+export const PROXY_GLOBAL_AUTO_REFRESH_KEY = 'browser:proxyPool:globalAutoRefreshEnabled:v1'
+export const PROXY_GLOBAL_REFRESH_INTERVAL_KEY = 'browser:proxyPool:globalRefreshIntervalM:v1'
+const PROXY_GLOBAL_REFRESH_CHANGED_EVENT = 'browser:proxyPool:globalRefreshConfigChanged'
+
+function dispatchGlobalRefreshConfigChanged() {
+  window.dispatchEvent(new Event(PROXY_GLOBAL_REFRESH_CHANGED_EVENT))
+}
 
 export function parseTimestampMs(value: string): number {
   const v = (value || '').trim()
@@ -35,7 +40,22 @@ export function writeGlobalRefreshConfig(enabled: boolean, intervalM: number) {
   try {
     localStorage.setItem(PROXY_GLOBAL_AUTO_REFRESH_KEY, enabled ? '1' : '0')
     localStorage.setItem(PROXY_GLOBAL_REFRESH_INTERVAL_KEY, String(intervalM))
+    dispatchGlobalRefreshConfigChanged()
   } catch {
     // ignore write failures
+  }
+}
+
+export function onGlobalRefreshConfigChanged(listener: () => void) {
+  const handleStorage = (event: StorageEvent) => {
+    if (event.key === PROXY_GLOBAL_AUTO_REFRESH_KEY || event.key === PROXY_GLOBAL_REFRESH_INTERVAL_KEY) {
+      listener()
+    }
+  }
+  window.addEventListener('storage', handleStorage)
+  window.addEventListener(PROXY_GLOBAL_REFRESH_CHANGED_EVENT, listener)
+  return () => {
+    window.removeEventListener('storage', handleStorage)
+    window.removeEventListener(PROXY_GLOBAL_REFRESH_CHANGED_EVENT, listener)
   }
 }

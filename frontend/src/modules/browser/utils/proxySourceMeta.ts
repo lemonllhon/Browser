@@ -1,6 +1,7 @@
 import type { BrowserProxy } from '../types'
 
-const PROXY_SOURCE_META_STORAGE_KEY = 'browser:proxyPool:sourceMetas:v1'
+export const PROXY_SOURCE_META_STORAGE_KEY = 'browser:proxyPool:sourceMetas:v1'
+const PROXY_SOURCE_META_CHANGED_EVENT = 'browser:proxyPool:sourceMetasChanged'
 
 type ProxyImportMode = 'clash' | 'direct'
 
@@ -198,6 +199,21 @@ export function writeStoredSourceMetas(metas: URLImportSourceMeta[]) {
     }
   })
   localStorage.setItem(PROXY_SOURCE_META_STORAGE_KEY, JSON.stringify(Array.from(deduped.values())))
+  window.dispatchEvent(new Event(PROXY_SOURCE_META_CHANGED_EVENT))
+}
+
+export function onStoredSourceMetasChanged(listener: () => void) {
+  const handleStorage = (event: StorageEvent) => {
+    if (event.key === PROXY_SOURCE_META_STORAGE_KEY) {
+      listener()
+    }
+  }
+  window.addEventListener('storage', handleStorage)
+  window.addEventListener(PROXY_SOURCE_META_CHANGED_EVENT, listener)
+  return () => {
+    window.removeEventListener('storage', handleStorage)
+    window.removeEventListener(PROXY_SOURCE_META_CHANGED_EVENT, listener)
+  }
 }
 
 export function collectURLImportSources(list: BrowserProxy[], archived: URLImportSourceMeta[] = []): URLImportSourceMeta[] {

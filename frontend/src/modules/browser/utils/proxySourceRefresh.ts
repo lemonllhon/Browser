@@ -4,7 +4,8 @@ import { proxyToYaml } from './clashProxyImport'
 import type { ImportCandidate } from './directProxyImport'
 import type { URLImportSourceMeta } from './proxySourceMeta'
 
-const PROXY_SOURCE_IGNORED_NAMES_KEY = 'browser:proxyPool:sourceIgnoredProxyNames:v1'
+export const PROXY_SOURCE_IGNORED_NAMES_KEY = 'browser:proxyPool:sourceIgnoredProxyNames:v1'
+const PROXY_SOURCE_IGNORED_NAMES_CHANGED_EVENT = 'browser:proxyPool:sourceIgnoredProxyNamesChanged'
 
 export function nextProxyID(): string {
   return `proxy-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -135,8 +136,23 @@ function writeSourceIgnoredProxyNames(data: Record<string, string[]>) {
       }
     })
     localStorage.setItem(PROXY_SOURCE_IGNORED_NAMES_KEY, JSON.stringify(cleaned))
+    window.dispatchEvent(new Event(PROXY_SOURCE_IGNORED_NAMES_CHANGED_EVENT))
   } catch {
     // ignore write failures
+  }
+}
+
+export function onSourceIgnoredProxyNamesChanged(listener: () => void) {
+  const handleStorage = (event: StorageEvent) => {
+    if (event.key === PROXY_SOURCE_IGNORED_NAMES_KEY) {
+      listener()
+    }
+  }
+  window.addEventListener('storage', handleStorage)
+  window.addEventListener(PROXY_SOURCE_IGNORED_NAMES_CHANGED_EVENT, listener)
+  return () => {
+    window.removeEventListener('storage', handleStorage)
+    window.removeEventListener(PROXY_SOURCE_IGNORED_NAMES_CHANGED_EVENT, listener)
   }
 }
 
