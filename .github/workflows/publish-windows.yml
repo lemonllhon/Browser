@@ -227,8 +227,13 @@ jobs:
           Copy-Item -LiteralPath "publish/config.init.yaml" -Destination (Join-Path $staging "config.yaml") -Force
 
           New-Item -ItemType Directory -Path (Join-Path $staging "bin") -Force | Out-Null
-          Copy-Item -LiteralPath "bin/xray.exe" -Destination (Join-Path $staging "bin/xray.exe") -Force
-          Copy-Item -LiteralPath "bin/sing-box.exe" -Destination (Join-Path $staging "bin/sing-box.exe") -Force
+          foreach ($runtime in @("xray.exe", "sing-box.exe", "mihomo.exe")) {
+            $source = Join-Path "bin" $runtime
+            if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+              throw "Missing runtime file: $source"
+            }
+            Copy-Item -LiteralPath $source -Destination (Join-Path $staging "bin/$runtime") -Force
+          }
 
           if (Test-Path -LiteralPath "chrome" -PathType Container) {
             New-Item -ItemType Directory -Path (Join-Path $staging "chrome") -Force | Out-Null
