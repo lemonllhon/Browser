@@ -2,6 +2,7 @@ const PROXY_AUTO_REFRESH_LOCK_KEY = 'browser:proxyPool:autoRefreshLock:v1'
 
 interface ProxyAutoRefreshLock {
   ownerId: string
+  token: string
   expiresAt: number
 }
 
@@ -11,19 +12,24 @@ function readLock(): ProxyAutoRefreshLock | null {
     if (!raw) return null
     const parsed = JSON.parse(raw) as Partial<ProxyAutoRefreshLock>
     const ownerId = typeof parsed.ownerId === 'string' ? parsed.ownerId.trim() : ''
+    const token = typeof parsed.token === 'string' ? parsed.token.trim() : ''
     const expiresAt = Number(parsed.expiresAt || 0)
-    if (!ownerId || !Number.isFinite(expiresAt)) return null
-    return { ownerId, expiresAt }
+    if (!ownerId || !token || !Number.isFinite(expiresAt)) return null
+    return { ownerId, token, expiresAt }
   } catch {
     return null
   }
+}
+
+function createLockToken() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`
 }
 
 export function createProxyAutoRefreshOwnerId() {
   return `proxy-auto-refresh-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 
-export function acquireProxyAutoRefreshLock(ownerId: string, ttlMs = 10 * 60 * 1000): boolean {
+export async function acquireProxyAutoRefreshLock(ownerId: string, ttlMs = 10 * 60 * 1000): Promise<boolean> {
   const owner = ownerId.trim()
   if (!owner) return false
   const now = Date.now()
@@ -32,9 +38,11 @@ export function acquireProxyAutoRefreshLock(ownerId: string, ttlMs = 10 * 60 * 1
     if (current && current.ownerId !== owner && current.expiresAt > now) {
       return false
     }
-    const next: ProxyAutoRefreshLock = { ownerId: owner, expiresAt: now + ttlMs }
+    const next: ProxyAutoRefreshLock = { ownerId: owner, token: createLockToken(), expiresAt: now + ttlMs }
     localStorage.setItem(PROXY_AUTO_REFRESH_LOCK_KEY, JSON.stringify(next))
-    return readLock()?.ownerId === owner
+    await new Promise(resolve => window.setTimeout(resolve, 30))
+    const confirmed = readLock()
+    return confirmed?.ownerId === owner && confirmed.token === next.token
   } catch {
     return true
   }

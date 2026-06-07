@@ -23,6 +23,10 @@ func (a *App) deleteProfileWithData(profileId string) error {
 		return fmt.Errorf("browser manager is not initialized")
 	}
 
+	opLock := a.profileOperationLock(profileId)
+	opLock.Lock()
+	defer opLock.Unlock()
+
 	log := logger.New("Browser")
 	a.refreshBrowserProfileSharedRuntimeOverlay()
 	var snapshot browser.Profile
@@ -37,7 +41,7 @@ func (a *App) deleteProfileWithData(profileId string) error {
 	a.browserMgr.Mutex.Unlock()
 
 	if wasRunning {
-		if _, err := a.BrowserInstanceStop(profileId); err != nil {
+		if _, err := a.browserInstanceStopWithProfileLock(profileId); err != nil {
 			return fmt.Errorf("删除实例前停止浏览器失败: %w", err)
 		}
 		a.browserMgr.Mutex.Lock()

@@ -491,7 +491,7 @@ export function ProxyPoolPage() {
         return
       }
       const ownerId = autoRefreshOwnerIdRef.current
-      if (!acquireProxyAutoRefreshLock(ownerId)) {
+      if (!(await acquireProxyAutoRefreshLock(ownerId))) {
         return
       }
       autoRefreshRunningRef.current = true

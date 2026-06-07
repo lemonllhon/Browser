@@ -61,6 +61,8 @@ type App struct {
 	forceQuit                bool       // 强制退出标志，用于跳过 OnBeforeClose 的拦截
 	quitMode                 quitMode   // 退出模式：全量退出 / 仅退出应用
 	maintenanceMu            sync.Mutex // 维护类操作（初始化/导入/导出）互斥锁
+	profileOpMu              sync.Mutex
+	profileOpLocks           map[string]*sync.Mutex
 	bridgeMu                 sync.Mutex
 	xrayBridgeRefs           map[string]string
 	switchBridgeRefs         map[string]*switchingProxyBridge
@@ -91,6 +93,7 @@ func NewApp(appRoot string, appVersion ...string) *App {
 		appRoot:             strings.TrimSpace(appRoot),
 		version:             version,
 		platformRuntime:     platform.DefaultRuntime(),
+		profileOpLocks:      make(map[string]*sync.Mutex),
 		xrayBridgeRefs:      make(map[string]string),
 		switchBridgeRefs:    make(map[string]*switchingProxyBridge),
 		authProxyBridgeRefs: make(map[string]*authenticatedProxyBridge),
@@ -274,7 +277,7 @@ func (a *App) startup(ctx context.Context) {
 		if a.ctx != nil {
 			a.emitEvent("proxy:bridge:died", map[string]interface{}{
 				"engine": "xray",
-				"key":    key[:8],
+				"key":    shortKeyPrefix(key),
 				"error":  err.Error(),
 			})
 		}
@@ -283,7 +286,7 @@ func (a *App) startup(ctx context.Context) {
 		if a.ctx != nil {
 			a.emitEvent("proxy:bridge:died", map[string]interface{}{
 				"engine": "singbox",
-				"key":    key[:8],
+				"key":    shortKeyPrefix(key),
 				"error":  err.Error(),
 			})
 		}

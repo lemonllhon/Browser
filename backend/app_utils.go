@@ -9,7 +9,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"time"
+	"strings"
+	"sync"
 
 	"github.com/google/uuid"
 )
@@ -28,26 +29,71 @@ func generateUUID() string {
 	return uuid.NewString()
 }
 
-func nextAvailablePort() (int, error) {
-	// 二次验证策略：分配端口后立即再次绑定确认未被抢占，最多重试 10 次
-	for i := 0; i < 10; i++ {
-		l, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			continue
-		}
-		port := l.Addr().(*net.TCPAddr).Port
-		l.Close()
-		// 短暂等待 OS 释放端口
-		time.Sleep(5 * time.Millisecond)
-		// 二次验证端口未被其他进程抢占
-		v, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
-		if err != nil {
-			continue
-		}
-		v.Close()
-		return port, nil
+func shortKeyPrefix(key string) string {
+	key = strings.TrimSpace(key)
+	if len(key) <= 8 {
+		return key
 	}
-	return 0, fmt.Errorf("无法分配可用端口")
+	return key[:8]
+}
+
+func (a *App) profileOperationLock(profileId string) *sync.Mutex {
+	profileId = strings.TrimSpace(profileId)
+	a.profileOpMu.Lock()
+	defer a.profileOpMu.Unlock()
+
+	if a.profileOpLocks == nil {
+		a.profileOpLocks = make(map[string]*sync.Mutex)
+	}
+	lock, ok := a.profileOpLocks[profileId]
+	if !ok || lock == nil {
+		lock = &sync.Mutex{}
+		a.profileOpLocks[profileId] = lock
+	}
+	return lock
+}
+
+type portReservation struct {
+	Port     int
+	listener net.Listener
+}
+
+func (r *portReservation) Close() error {
+	if r == nil || r.listener == nil {
+		return nil
+	}
+	err := r.listener.Close()
+	r.listener = nil
+	return err
+}
+
+func reserveAvailablePort() (*portReservation, error) {
+	return reserveAvailablePortWithRetry(10)
+}
+
+func reserveAvailablePortWithRetry(maxRetries int) (*portReservation, error) {
+	for i := 0; i < maxRetries; i++ {
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			continue
+		}
+		tcpAddr, ok := listener.Addr().(*net.TCPAddr)
+		if !ok || tcpAddr.Port == 0 {
+			listener.Close()
+			continue
+		}
+		return &portReservation{Port: tcpAddr.Port, listener: listener}, nil
+	}
+	return nil, fmt.Errorf("无法保留可用端口，已重试 %d 次", maxRetries)
+}
+
+func nextAvailablePort() (int, error) {
+	reservation, err := reserveAvailablePort()
+	if err != nil {
+		return 0, err
+	}
+	port := reservation.Port
+	return port, reservation.Close()
 }
 
 // ============================================================================
