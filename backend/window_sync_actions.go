@@ -783,7 +783,7 @@ func normalizeWindowSyncOpenURL(rawURL string) (string, error) {
 		return "", fmt.Errorf("网址格式不正确：%s", rawURL)
 	}
 	switch strings.ToLower(parsed.Scheme) {
-	case "http", "https", "about":
+	case "http", "https", "about", "ftp":
 	default:
 		return "", fmt.Errorf("暂不支持该网址协议：%s", parsed.Scheme)
 	}
