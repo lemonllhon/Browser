@@ -22,6 +22,7 @@ import {
   RotateCcw,
   Trash2,
   Archive,
+  KeyRound,
 } from 'lucide-react'
 import { FormEvent, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -43,6 +44,8 @@ import {
   restoreSyncBackup,
   deleteSyncBackup,
   onSyncBackupProgress,
+  setupSyncEncryption,
+  unlockSyncEncryption,
   type SyncBackupItem,
   type SyncBackupProgress,
   type SyncAuthSession,
@@ -80,6 +83,13 @@ export function ProfilePage() {
   const [syncBackupLoading, setSyncBackupLoading] = useState(false)
   const [syncBackupAction, setSyncBackupAction] = useState('')
   const [syncBackupProgress, setSyncBackupProgress] = useState<SyncBackupProgress | null>(null)
+  const [syncEncryptionOpen, setSyncEncryptionOpen] = useState(false)
+  const [syncEncryptionMode, setSyncEncryptionMode] = useState<'setup' | 'unlock'>('setup')
+  const [syncEncryptionLoading, setSyncEncryptionLoading] = useState(false)
+  const [syncEncryptionForm, setSyncEncryptionForm] = useState({
+    password: '',
+    confirm: '',
+  })
   const [syncForm, setSyncForm] = useState({
     serverURL: syncSession?.serverURL || 'http://127.0.0.1:8000',
     username: syncSession?.user.username || 'admin',
@@ -252,6 +262,11 @@ export function ProfilePage() {
 
   const handleSyncBackupUpload = async () => {
     if (!syncSession?.authorized) return
+    if (!isSyncEncryptionReady(syncSession)) {
+      openSyncEncryption(syncSession.encryption?.configured ? 'unlock' : 'setup')
+      toast.error(syncSession.encryption?.configured ? '请先解锁同步加密密码' : '请先设置同步加密密码')
+      return
+    }
     setSyncBackupAction('upload')
     setSyncBackupProgress({ phase: 'starting', progress: 0, message: '准备上传全量云端备份...' })
     try {
@@ -266,6 +281,11 @@ export function ProfilePage() {
   }
 
   const handleSyncBackupDownload = async (backup: SyncBackupItem) => {
+    if (backup.encrypted && !syncSession?.encryption?.unlocked) {
+      openSyncEncryption('unlock')
+      toast.error('请先解锁同步加密密码')
+      return
+    }
     setSyncBackupAction(`download:${backup.id}`)
     setSyncBackupProgress({ phase: 'starting', progress: 0, message: '准备下载云端备份...' })
     try {
@@ -279,6 +299,11 @@ export function ProfilePage() {
   }
 
   const handleSyncBackupRestore = async (backup: SyncBackupItem) => {
+    if (backup.encrypted && !syncSession?.encryption?.unlocked) {
+      openSyncEncryption('unlock')
+      toast.error('请先解锁同步加密密码')
+      return
+    }
     if (!window.confirm(`确定从云端备份「${backup.name || backup.id}」恢复吗？恢复前会自动创建本地恢复点。`)) {
       return
     }
@@ -310,10 +335,45 @@ export function ProfilePage() {
     }
   }
 
+  const openSyncEncryption = (mode: 'setup' | 'unlock') => {
+    setSyncEncryptionMode(mode)
+    setSyncEncryptionForm({ password: '', confirm: '' })
+    setSyncEncryptionOpen(true)
+  }
+
+  const handleSyncEncryptionSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const password = syncEncryptionForm.password.trim()
+    if (syncEncryptionMode === 'setup' && password !== syncEncryptionForm.confirm.trim()) {
+      toast.error('两次输入的同步加密密码不一致')
+      return
+    }
+    setSyncEncryptionLoading(true)
+    try {
+      const encryption = syncEncryptionMode === 'setup'
+        ? await setupSyncEncryption({ password })
+        : await unlockSyncEncryption({ password })
+      setSyncSession(prev => prev ? { ...prev, encryption } : prev)
+      setSyncEncryptionOpen(false)
+      toast.success(syncEncryptionMode === 'setup' ? '同步加密已启用' : '同步加密已解锁')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '同步加密操作失败')
+    } finally {
+      setSyncEncryptionLoading(false)
+    }
+  }
+
   const authorInfo = pageData.author
   const projectInfo = pageData.project
   const syncOnline = isSyncSessionOnline(syncSession)
   const syncUserDisplayName = formatSyncUserDisplayName(syncSession, '未登录')
+  const syncEncryption = syncSession?.encryption
+  const syncEncryptionReady = isSyncEncryptionReady(syncSession)
+  const syncEncryptionText = syncEncryptionReady
+    ? '已启用并解锁'
+    : syncEncryption?.configured
+      ? '已启用，待解锁'
+      : '未设置'
   const syncBackupProgressStatus = syncBackupProgress?.phase === 'error'
     ? 'error'
     : syncBackupProgress?.phase === 'done'
@@ -530,17 +590,30 @@ export function ProfilePage() {
                   <p className="text-sm text-[var(--color-text-muted)]">手动上传全量配置 ZIP，并从云端下载或恢复。</p>
                 </div>
               </div>
-              <p className="rounded-xl bg-[var(--color-warning)]/10 px-4 py-2 text-xs leading-6 text-[var(--color-text-muted)]">
-                当前为可信内网测试版：备份包会以未加密 ZIP 上传到同步服务。正式版将切换为客户端侧加密。
-              </p>
+              <div className="flex flex-wrap items-center gap-2 rounded-xl bg-[var(--color-bg-muted)] px-4 py-2 text-xs text-[var(--color-text-muted)]">
+                <KeyRound className="h-3.5 w-3.5" />
+                <span>正式版客户端加密</span>
+                <Badge variant={syncEncryptionReady ? 'success' : syncEncryption?.configured ? 'warning' : 'default'}>
+                  {syncEncryptionText}
+                </Badge>
+                {syncEncryption?.algorithm ? <span>{syncEncryption.algorithm}</span> : null}
+              </div>
             </div>
 
             <div className="flex flex-wrap gap-2 lg:justify-end">
               <Button
+                variant="secondary"
+                onClick={() => openSyncEncryption(syncEncryption?.configured ? 'unlock' : 'setup')}
+                disabled={!syncSession?.authorized || syncEncryptionReady || Boolean(syncBackupAction)}
+              >
+                <KeyRound className="h-4 w-4" />
+                {syncEncryptionReady ? '已解锁' : syncEncryption?.configured ? '解锁加密' : '设置加密'}
+              </Button>
+              <Button
                 variant="primary"
                 onClick={handleSyncBackupUpload}
                 loading={syncBackupAction === 'upload'}
-                disabled={!syncSession?.authorized || Boolean(syncBackupAction)}
+                disabled={!syncSession?.authorized || !syncEncryptionReady || Boolean(syncBackupAction)}
               >
                 <UploadCloud className="h-4 w-4" />
                 上传全量备份
@@ -599,7 +672,7 @@ export function ProfilePage() {
                         size="sm"
                         onClick={() => handleSyncBackupDownload(backup)}
                         loading={syncBackupAction === `download:${backup.id}`}
-                        disabled={Boolean(syncBackupAction)}
+                        disabled={Boolean(syncBackupAction) || (backup.encrypted && !syncEncryptionReady)}
                       >
                         <Download className="h-3.5 w-3.5" />
                         下载
@@ -609,7 +682,7 @@ export function ProfilePage() {
                         size="sm"
                         onClick={() => handleSyncBackupRestore(backup)}
                         loading={syncBackupAction === `restore:${backup.id}`}
-                        disabled={Boolean(syncBackupAction)}
+                        disabled={Boolean(syncBackupAction) || (backup.encrypted && !syncEncryptionReady)}
                       >
                         <RotateCcw className="h-3.5 w-3.5" />
                         恢复
@@ -834,6 +907,52 @@ export function ProfilePage() {
           </div>
         </form>
       </Modal>
+
+      <Modal
+        open={syncEncryptionOpen}
+        onClose={() => !syncEncryptionLoading && setSyncEncryptionOpen(false)}
+        title={syncEncryptionMode === 'setup' ? '设置同步加密密码' : '解锁同步加密'}
+        width="520px"
+      >
+        <form className="space-y-4" onSubmit={handleSyncEncryptionSubmit}>
+          <div className="space-y-1">
+            <label className="text-sm font-medium text-[var(--color-text-secondary)]">同步加密密码</label>
+            <Input
+              type="password"
+              value={syncEncryptionForm.password}
+              onChange={(event) => setSyncEncryptionForm(prev => ({ ...prev, password: event.target.value }))}
+              placeholder="至少 8 个字符"
+              autoComplete="new-password"
+              required
+            />
+          </div>
+          {syncEncryptionMode === 'setup' && (
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-[var(--color-text-secondary)]">确认密码</label>
+              <Input
+                type="password"
+                value={syncEncryptionForm.confirm}
+                onChange={(event) => setSyncEncryptionForm(prev => ({ ...prev, confirm: event.target.value }))}
+                placeholder="再次输入同步加密密码"
+                autoComplete="new-password"
+                required
+              />
+            </div>
+          )}
+          <div className="rounded-xl bg-[var(--color-bg-muted)] px-4 py-3 text-xs leading-6 text-[var(--color-text-muted)]">
+            新设备恢复加密备份时需要输入同一个同步加密密码。
+          </div>
+          <div className="flex justify-end gap-3 pt-1">
+            <Button type="button" variant="secondary" onClick={() => setSyncEncryptionOpen(false)} disabled={syncEncryptionLoading}>
+              取消
+            </Button>
+            <Button type="submit" loading={syncEncryptionLoading}>
+              <KeyRound className="h-4 w-4" />
+              {syncEncryptionMode === 'setup' ? '启用加密' : '解锁'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   )
 }
@@ -861,6 +980,10 @@ function normalizeSyncBackupProgress(progress: SyncBackupProgress): SyncBackupPr
     progress: nextProgress,
     message: typeof progress.message === 'string' && progress.message.trim() ? progress.message.trim() : '正在处理云端备份...',
   }
+}
+
+function isSyncEncryptionReady(session: SyncAuthSession | null): boolean {
+  return Boolean(session?.encryption?.enabled && session.encryption.configured && session.encryption.unlocked)
 }
 
 function formatBytes(bytes: number): string {

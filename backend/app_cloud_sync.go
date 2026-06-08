@@ -26,6 +26,9 @@ type CloudSyncBackupDownloadResult = cloudsync.BackupDownloadResult
 type CloudSyncBackupRestoreInput = cloudsync.BackupRestoreInput
 type CloudSyncBackupRestoreResult = cloudsync.BackupRestoreResult
 type CloudSyncBackupDeleteInput = cloudsync.BackupDeleteInput
+type CloudSyncEncryptionStatus = cloudsync.EncryptionStatus
+type CloudSyncEncryptionSetupInput = cloudsync.EncryptionSetupInput
+type CloudSyncEncryptionUnlockInput = cloudsync.EncryptionUnlockInput
 
 type CloudSyncProfileBackupUploadResult struct {
 	Backup        cloudsync.BackupItem      `json:"backup"`
@@ -97,6 +100,21 @@ func (a *App) CloudSyncLogout() (CloudSyncStatus, error) {
 	return manager.GetStatus()
 }
 
+func (a *App) CloudSyncSetupEncryption(input CloudSyncEncryptionSetupInput) (CloudSyncEncryptionStatus, error) {
+	manager := a.ensureCloudSyncManager()
+	return manager.SetupEncryption(input.Password)
+}
+
+func (a *App) CloudSyncUnlockEncryption(input CloudSyncEncryptionUnlockInput) (CloudSyncEncryptionStatus, error) {
+	manager := a.ensureCloudSyncManager()
+	return manager.UnlockEncryption(input.Password)
+}
+
+func (a *App) CloudSyncDisableEncryption() (CloudSyncEncryptionStatus, error) {
+	manager := a.ensureCloudSyncManager()
+	return manager.DisableEncryption()
+}
+
 func (a *App) CloudSyncListBackups(input CloudSyncBackupListInput) (CloudSyncBackupListResult, error) {
 	manager := a.ensureCloudSyncManager()
 	ctx, cancel := a.operationContext(45 * time.Second)
@@ -129,7 +147,14 @@ func (a *App) CloudSyncUploadFullBackup(input CloudSyncBackupUploadInput) (Cloud
 		return CloudSyncBackupUploadResult{}, err
 	}
 	defer os.Remove(zipPath)
-	a.cloudSyncEmitProgress("uploading", 64, "备份包生成完成，准备上传到云端...")
+	encryptedPath := strings.TrimSuffix(zipPath, filepath.Ext(zipPath)) + ".enc"
+	defer os.Remove(encryptedPath)
+	a.cloudSyncEmitProgress("encrypting", 62, "备份包生成完成，正在执行客户端加密...")
+	if err := manager.EncryptBackupFile(zipPath, encryptedPath, a.cloudSyncTransferProgress("encrypting", 62, 66, "正在加密全量备份包")); err != nil {
+		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("加密云端备份失败: %v", err))
+		return CloudSyncBackupUploadResult{}, err
+	}
+	a.cloudSyncEmitProgress("uploading", 68, "备份包已加密，准备上传到云端...")
 
 	name := strings.TrimSpace(input.Name)
 	if name == "" {
@@ -144,10 +169,10 @@ func (a *App) CloudSyncUploadFullBackup(input CloudSyncBackupUploadInput) (Cloud
 		"appName":        a.appName(),
 		"appVersion":     a.appVersion(),
 		"sourceOs":       runtime.GOOS,
-		"encrypted":      "false",
-		"encryptionAlg":  "",
+		"encrypted":      "true",
+		"encryptionAlg":  cloudsync.EncryptionAlgorithm,
 	}
-	item, err := manager.UploadBackupFile(ctx, zipPath, fields, a.cloudSyncTransferProgress("uploading", 66, 96, "正在上传全量备份到云端"))
+	item, err := manager.UploadBackupFile(ctx, encryptedPath, fields, a.cloudSyncTransferProgress("uploading", 68, 96, "正在上传全量备份到云端"))
 	if err != nil {
 		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("上传云端备份失败: %v", err))
 		return CloudSyncBackupUploadResult{}, err
@@ -173,10 +198,11 @@ func (a *App) CloudSyncDownloadBackup(input CloudSyncBackupDownloadInput) (Cloud
 		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("下载云端备份失败: %v", err))
 		return CloudSyncBackupDownloadResult{}, err
 	}
-	a.cloudSyncEmitProgress("verifying", 92, "正在校验云端备份包...")
-	if err := verifyCloudSyncBackupChecksum(result.LocalPath, result.Backup.ChecksumSHA256); err != nil {
-		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("云端备份校验失败: %v", err))
+	if prepared, err := a.cloudSyncPrepareDownloadedBackup(manager, result, 90, 98, "云端备份"); err != nil {
+		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("云端备份处理失败: %v", err))
 		return CloudSyncBackupDownloadResult{}, err
+	} else {
+		result = prepared
 	}
 	a.cloudSyncEmitProgress("done", 100, "云端备份下载完成")
 	return result, nil
@@ -193,10 +219,11 @@ func (a *App) CloudSyncRestoreBackup(input CloudSyncBackupRestoreInput) (CloudSy
 		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("下载云端备份失败: %v", err))
 		return CloudSyncBackupRestoreResult{}, err
 	}
-	a.cloudSyncEmitProgress("verifying", 40, "正在校验云端备份包...")
-	if err := verifyCloudSyncBackupChecksum(download.LocalPath, download.Backup.ChecksumSHA256); err != nil {
-		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("云端备份校验失败: %v", err))
+	if prepared, err := a.cloudSyncPrepareDownloadedBackup(manager, download, 40, 50, "云端备份"); err != nil {
+		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("云端备份处理失败: %v", err))
 		return CloudSyncBackupRestoreResult{}, err
+	} else {
+		download = prepared
 	}
 
 	a.maintenanceMu.Lock()
@@ -208,14 +235,14 @@ func (a *App) CloudSyncRestoreBackup(input CloudSyncBackupRestoreInput) (CloudSy
 		return CloudSyncBackupRestoreResult{}, err
 	}
 	restorePointPath := filepath.Join(restoreDir, fmt.Sprintf("before-cloud-restore-%s.zip", time.Now().Format("20060102-150405")))
-	a.cloudSyncEmitProgress("snapshotting", 44, "正在创建恢复前本地备份点...")
-	if _, _, _, err := a.cloudSyncExportFullBackupToPathLocked(restorePointPath, a.cloudSyncMapProgress("snapshotting", 44, 60, "正在创建恢复前本地备份点")); err != nil {
+	a.cloudSyncEmitProgress("snapshotting", 52, "正在创建恢复前本地备份点...")
+	if _, _, _, err := a.cloudSyncExportFullBackupToPathLocked(restorePointPath, a.cloudSyncMapProgress("snapshotting", 52, 66, "正在创建恢复前本地备份点")); err != nil {
 		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("创建恢复点失败: %v", err))
 		return CloudSyncBackupRestoreResult{}, err
 	}
 
-	a.cloudSyncEmitProgress("restoring", 62, "开始恢复云端备份内容...")
-	importResult, err := a.backupImportFromPathLockedWithEmitter(download.LocalPath, input.ResetFirst, a.cloudSyncMapSimpleProgress("restoring", 62, 98))
+	a.cloudSyncEmitProgress("restoring", 68, "开始恢复云端备份内容...")
+	importResult, err := a.backupImportFromPathLockedWithEmitter(download.LocalPath, input.ResetFirst, a.cloudSyncMapSimpleProgress("restoring", 68, 98))
 	if err != nil {
 		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("恢复云端备份失败: %v", err))
 		return CloudSyncBackupRestoreResult{}, err
@@ -278,6 +305,8 @@ func (a *App) CloudSyncUploadProfileBackup(input ProfileBackupExportRequest) (Cl
 		return CloudSyncProfileBackupUploadResult{}, err
 	}
 	defer os.Remove(zipPath)
+	encryptedPath := strings.TrimSuffix(zipPath, filepath.Ext(zipPath)) + ".enc"
+	defer os.Remove(encryptedPath)
 
 	name := fmt.Sprintf("实例备份 %s", time.Now().Format("2006-01-02 15:04"))
 	fields := map[string]string{
@@ -289,11 +318,16 @@ func (a *App) CloudSyncUploadProfileBackup(input ProfileBackupExportRequest) (Cl
 		"appName":        a.appName(),
 		"appVersion":     a.appVersion(),
 		"sourceOs":       runtime.GOOS,
-		"encrypted":      "false",
-		"encryptionAlg":  "",
+		"encrypted":      "true",
+		"encryptionAlg":  cloudsync.EncryptionAlgorithm,
 	}
-	a.cloudSyncEmitProgress("uploading", 62, "实例备份包生成完成，准备上传到云端...")
-	item, err := manager.UploadBackupFile(ctx, zipPath, fields, a.cloudSyncTransferProgress("uploading", 64, 96, "正在上传实例备份到云端"))
+	a.cloudSyncEmitProgress("encrypting", 60, "实例备份包生成完成，正在执行客户端加密...")
+	if err := manager.EncryptBackupFile(zipPath, encryptedPath, a.cloudSyncTransferProgress("encrypting", 60, 64, "正在加密实例备份包")); err != nil {
+		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("加密实例云端备份失败: %v", err))
+		return CloudSyncProfileBackupUploadResult{}, err
+	}
+	a.cloudSyncEmitProgress("uploading", 66, "实例备份包已加密，准备上传到云端...")
+	item, err := manager.UploadBackupFile(ctx, encryptedPath, fields, a.cloudSyncTransferProgress("uploading", 66, 96, "正在上传实例备份到云端"))
 	if err != nil {
 		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("上传实例云端备份失败: %v", err))
 		return CloudSyncProfileBackupUploadResult{}, err
@@ -323,10 +357,11 @@ func (a *App) CloudSyncPrepareProfileBackupRestore(input CloudSyncProfileBackupP
 		a.cloudSyncEmitProgress("error", 100, err.Error())
 		return ProfileBackupActionResult{}, err
 	}
-	a.cloudSyncEmitProgress("verifying", 92, "正在校验实例备份包...")
-	if err := verifyCloudSyncBackupChecksum(download.LocalPath, download.Backup.ChecksumSHA256); err != nil {
-		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("实例备份包校验失败: %v", err))
+	if prepared, err := a.cloudSyncPrepareDownloadedBackup(manager, download, 90, 96, "实例备份包"); err != nil {
+		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("实例备份包处理失败: %v", err))
 		return ProfileBackupActionResult{}, err
+	} else {
+		download = prepared
 	}
 	summary, err := readProfileBackupSummary(download.LocalPath)
 	if err != nil {
@@ -402,6 +437,45 @@ func (a *App) cloudSyncExportFullBackupToPathLocked(zipPath string, emitProgress
 	}
 	manifest := backup.BuildManifest(scope, a.appName(), a.appVersion(), time.Now())
 	return backupWritePackageZip(zipPath, scope, manifest, emitProgress)
+}
+
+func (a *App) cloudSyncPrepareDownloadedBackup(manager *cloudsync.Manager, result cloudsync.BackupDownloadResult, start int, end int, label string) (cloudsync.BackupDownloadResult, error) {
+	label = strings.TrimSpace(label)
+	if label == "" {
+		label = "云端备份"
+	}
+	verifyEnd := start + (end-start)/3
+	if verifyEnd < start {
+		verifyEnd = start
+	}
+	a.cloudSyncEmitProgress("verifying", start, fmt.Sprintf("正在校验%s...", label))
+	if err := verifyCloudSyncBackupChecksum(result.LocalPath, result.Backup.ChecksumSHA256); err != nil {
+		return result, err
+	}
+	if !result.Backup.Encrypted {
+		a.cloudSyncEmitProgress("verifying", end, fmt.Sprintf("%s校验完成", label))
+		return result, nil
+	}
+	decryptedPath := cloudSyncDecryptedBackupPath(result.LocalPath)
+	a.cloudSyncEmitProgress("decrypting", verifyEnd, fmt.Sprintf("正在解密%s...", label))
+	if err := manager.DecryptBackupFile(result.LocalPath, decryptedPath, a.cloudSyncTransferProgress("decrypting", verifyEnd, end, fmt.Sprintf("正在解密%s", label))); err != nil {
+		return result, err
+	}
+	_ = os.Remove(result.LocalPath)
+	result.LocalPath = decryptedPath
+	if strings.TrimSpace(result.Message) == "" || result.Message == "下载完成" {
+		result.Message = "下载并解密完成"
+	}
+	return result, nil
+}
+
+func cloudSyncDecryptedBackupPath(path string) string {
+	ext := filepath.Ext(path)
+	base := strings.TrimSuffix(path, ext)
+	if ext == "" {
+		ext = ".zip"
+	}
+	return base + ".decrypted" + ext
 }
 
 func (a *App) cloudSyncEmitProgress(phase string, progress int, message string) {

@@ -4,7 +4,9 @@ import {
   loginBindCloudSync,
   logoutCloudSync,
   refreshCloudSyncStatus,
+  setupCloudSyncEncryption,
   startCloudSyncOAuth,
+  unlockCloudSyncEncryption,
   uploadCloudSyncFullBackup,
   downloadCloudSyncBackup,
   restoreCloudSyncBackup,
@@ -17,6 +19,8 @@ import {
   type ProtoCloudSyncBackupRestoreResult,
   type ProtoCloudSyncBackupUploadResult,
   type ProtoCloudSyncBackupDownloadResult,
+  type ProtoCloudSyncEncryptionPasswordInput,
+  type ProtoCloudSyncEncryptionStatus,
   type ProtoCloudSyncOAuthStartInput,
   type ProtoCloudSyncStatus,
 } from '../../shared/backend/client'
@@ -30,6 +34,7 @@ export type SyncBackupUploadResult = ProtoCloudSyncBackupUploadResult
 export type SyncBackupDownloadResult = ProtoCloudSyncBackupDownloadResult
 export type SyncBackupRestoreResult = ProtoCloudSyncBackupRestoreResult
 export type SyncBackupProgress = ProtoCloudSyncBackupProgress
+export type SyncEncryptionStatus = ProtoCloudSyncEncryptionStatus
 
 let cachedSession: SyncAuthSession | null = null
 
@@ -79,6 +84,20 @@ export async function startOAuthSyncServer(input: ProtoCloudSyncOAuthStartInput)
 export async function heartbeatSyncServer(_session: SyncAuthSession): Promise<SyncAuthSession> {
   const status = await refreshCloudSyncStatus()
   notify(status)
+  return status
+}
+
+export async function setupSyncEncryption(input: ProtoCloudSyncEncryptionPasswordInput): Promise<SyncEncryptionStatus> {
+  const status = await setupCloudSyncEncryption(input)
+  cachedSession = cachedSession ? { ...cachedSession, encryption: status } : cachedSession
+  if (cachedSession) notify(cachedSession)
+  return status
+}
+
+export async function unlockSyncEncryption(input: ProtoCloudSyncEncryptionPasswordInput): Promise<SyncEncryptionStatus> {
+  const status = await unlockCloudSyncEncryption(input)
+  cachedSession = cachedSession ? { ...cachedSession, encryption: status } : cachedSession
+  if (cachedSession) notify(cachedSession)
   return status
 }
 

@@ -27,19 +27,20 @@ type Device struct {
 }
 
 type Status struct {
-	Configured      bool   `json:"configured"`
-	Authorized      bool   `json:"authorized"`
-	AuthState       string `json:"authState"`
-	ServerURL       string `json:"serverURL"`
-	ServerInstance  string `json:"serverInstanceId"`
-	ExpiresAt       string `json:"expiresAt"`
-	ConnectedAt     string `json:"connectedAt"`
-	LastHeartbeatAt string `json:"lastHeartbeatAt"`
-	ServerTime      string `json:"serverTime"`
-	Online          bool   `json:"online"`
-	User            User   `json:"user"`
-	Device          Device `json:"device"`
-	Error           string `json:"error,omitempty"`
+	Configured      bool             `json:"configured"`
+	Authorized      bool             `json:"authorized"`
+	AuthState       string           `json:"authState"`
+	ServerURL       string           `json:"serverURL"`
+	ServerInstance  string           `json:"serverInstanceId"`
+	ExpiresAt       string           `json:"expiresAt"`
+	ConnectedAt     string           `json:"connectedAt"`
+	LastHeartbeatAt string           `json:"lastHeartbeatAt"`
+	ServerTime      string           `json:"serverTime"`
+	Online          bool             `json:"online"`
+	User            User             `json:"user"`
+	Device          Device           `json:"device"`
+	Encryption      EncryptionStatus `json:"encryption"`
+	Error           string           `json:"error,omitempty"`
 }
 
 type TransferProgress struct {

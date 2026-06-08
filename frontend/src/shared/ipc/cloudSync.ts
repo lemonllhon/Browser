@@ -4,6 +4,9 @@ import {
   METHOD_CLOUD_SYNC_BACKUP_LIST,
   METHOD_CLOUD_SYNC_BACKUP_RESTORE,
   METHOD_CLOUD_SYNC_BACKUP_UPLOAD,
+  METHOD_CLOUD_SYNC_ENCRYPTION_DISABLE,
+  METHOD_CLOUD_SYNC_ENCRYPTION_SETUP,
+  METHOD_CLOUD_SYNC_ENCRYPTION_UNLOCK,
   METHOD_CLOUD_SYNC_LOGIN_BIND,
   METHOD_CLOUD_SYNC_LOGOUT,
   METHOD_CLOUD_SYNC_OAUTH_START,
@@ -64,7 +67,17 @@ export type ProtoCloudSyncStatus = {
   online: boolean
   user: ProtoCloudSyncUser
   device: ProtoCloudSyncDevice
+  encryption: ProtoCloudSyncEncryptionStatus
   error?: string
+}
+
+export type ProtoCloudSyncEncryptionStatus = {
+  configured: boolean
+  enabled: boolean
+  unlocked: boolean
+  algorithm: string
+  kdf: string
+  updatedAt: string
 }
 
 export type ProtoCloudSyncLoginBindInput = {
@@ -77,6 +90,10 @@ export type ProtoCloudSyncLoginBindInput = {
 export type ProtoCloudSyncOAuthStartInput = {
   serverURL: string
   deviceName: string
+}
+
+export type ProtoCloudSyncEncryptionPasswordInput = {
+  password: string
 }
 
 export type ProtoCloudSyncBackupItem = {
@@ -204,6 +221,33 @@ export async function logoutCloudSync(): Promise<ProtoCloudSyncStatus> {
   return decodeCloudSyncStatus(payload)
 }
 
+export async function setupCloudSyncEncryption(input: ProtoCloudSyncEncryptionPasswordInput): Promise<ProtoCloudSyncEncryptionStatus> {
+  const payload = await cloudSyncProtoClient.request(
+    METHOD_CLOUD_SYNC_ENCRYPTION_SETUP,
+    encodeCloudSyncJSONMessage(JSON.stringify(input)),
+    30000,
+  )
+  return decodeCloudSyncJSONMessage<ProtoCloudSyncEncryptionStatus>(payload)
+}
+
+export async function unlockCloudSyncEncryption(input: ProtoCloudSyncEncryptionPasswordInput): Promise<ProtoCloudSyncEncryptionStatus> {
+  const payload = await cloudSyncProtoClient.request(
+    METHOD_CLOUD_SYNC_ENCRYPTION_UNLOCK,
+    encodeCloudSyncJSONMessage(JSON.stringify(input)),
+    30000,
+  )
+  return decodeCloudSyncJSONMessage<ProtoCloudSyncEncryptionStatus>(payload)
+}
+
+export async function disableCloudSyncEncryption(): Promise<ProtoCloudSyncEncryptionStatus> {
+  const payload = await cloudSyncProtoClient.request(
+    METHOD_CLOUD_SYNC_ENCRYPTION_DISABLE,
+    new Uint8Array(),
+    20000,
+  )
+  return decodeCloudSyncJSONMessage<ProtoCloudSyncEncryptionStatus>(payload)
+}
+
 export async function listCloudSyncBackups(input: ProtoCloudSyncBackupListInput = {}): Promise<ProtoCloudSyncBackupListResult> {
   const payload = await cloudSyncProtoClient.request(
     METHOD_CLOUD_SYNC_BACKUP_LIST,
@@ -294,6 +338,10 @@ function decodeCloudSyncStatus(payload: Uint8Array): ProtoCloudSyncStatus {
       ...emptyCloudSyncStatus().device,
       ...(parsed.device || {}),
     },
+    encryption: {
+      ...emptyCloudSyncStatus().encryption,
+      ...(parsed.encryption || {}),
+    },
   }
 }
 
@@ -344,6 +392,14 @@ function emptyCloudSyncStatus(): ProtoCloudSyncStatus {
       lastSeenAt: '',
       revokedAt: '',
       createdAt: '',
+      updatedAt: '',
+    },
+    encryption: {
+      configured: false,
+      enabled: false,
+      unlocked: false,
+      algorithm: 'AES-256-GCM+PBKDF2-SHA256',
+      kdf: 'PBKDF2-SHA256',
       updatedAt: '',
     },
   }

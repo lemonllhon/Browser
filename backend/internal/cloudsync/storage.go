@@ -84,6 +84,54 @@ func (s *Store) Clear() error {
 	return nil
 }
 
+func (s *Store) LoadEncryptionConfig() (encryptionConfig, error) {
+	if s == nil {
+		return encryptionConfig{}, os.ErrNotExist
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	data, err := os.ReadFile(filepath.Join(s.dir, "encryption.json"))
+	if err != nil {
+		return encryptionConfig{}, err
+	}
+	var cfg encryptionConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return encryptionConfig{}, err
+	}
+	if strings.TrimSpace(cfg.Salt) == "" || strings.TrimSpace(cfg.Verifier) == "" {
+		return encryptionConfig{}, os.ErrNotExist
+	}
+	return cfg, nil
+}
+
+func (s *Store) SaveEncryptionConfig(cfg encryptionConfig) error {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := os.MkdirAll(s.dir, 0700); err != nil {
+		return err
+	}
+	payload, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(s.dir, "encryption.json"), payload, 0600)
+}
+
+func (s *Store) ClearEncryptionConfig() error {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := os.Remove(filepath.Join(s.dir, "encryption.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
 func (s *Store) LoadFingerprint() (string, error) {
 	if s == nil {
 		return "", os.ErrNotExist

@@ -16,6 +16,7 @@ type Manager struct {
 	store           *Store
 	client          *Client
 	appVersion      string
+	encryptionKey   []byte
 	heartbeatCancel context.CancelFunc
 }
 
@@ -53,11 +54,11 @@ func (m *Manager) GetStatus() (Status, error) {
 	session, err := m.store.Load()
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return Status{AuthState: "disconnected"}, nil
+			return m.withEncryptionStatus(Status{AuthState: "disconnected"}), nil
 		}
-		return Status{AuthState: "disconnected", Error: err.Error()}, err
+		return m.withEncryptionStatus(Status{AuthState: "disconnected", Error: err.Error()}), err
 	}
-	return session.Status(), nil
+	return m.withEncryptionStatus(session.Status()), nil
 }
 
 func (m *Manager) LoginBind(ctx context.Context, input LoginBindInput) (Status, error) {
@@ -124,9 +125,9 @@ func (m *Manager) RefreshStatus(ctx context.Context) (Status, error) {
 	session, err := m.store.Load()
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return Status{AuthState: "disconnected"}, nil
+			return m.withEncryptionStatus(Status{AuthState: "disconnected"}), nil
 		}
-		return Status{AuthState: "disconnected", Error: err.Error()}, err
+		return m.withEncryptionStatus(Status{AuthState: "disconnected", Error: err.Error()}), err
 	}
 	status, err := m.heartbeat(ctx, session)
 	if err != nil {
@@ -145,6 +146,11 @@ func (m *Manager) Logout(ctx context.Context) error {
 		_ = m.client.Logout(ctx, session)
 	}
 	return m.store.Clear()
+}
+
+func (m *Manager) withEncryptionStatus(status Status) Status {
+	status.Encryption = m.EncryptionStatus()
+	return status
 }
 
 func (m *Manager) ListBackups(ctx context.Context, input BackupListInput) (BackupListResult, error) {
@@ -262,7 +268,7 @@ func (m *Manager) startHeartbeatLoop(ctx context.Context) {
 
 func (m *Manager) heartbeat(ctx context.Context, session *Session) (Status, error) {
 	if session == nil {
-		return Status{AuthState: "disconnected"}, nil
+		return m.withEncryptionStatus(Status{AuthState: "disconnected"}), nil
 	}
 	resp, err := m.client.Heartbeat(ctx, session, heartbeatRequest{
 		DeviceID:      session.Device.ID,
@@ -287,14 +293,14 @@ func (m *Manager) heartbeat(ctx context.Context, session *Session) (Status, erro
 					session.Device.Status = "revoked"
 				}
 				_ = m.store.Save(session)
-				return session.Status(), err
+				return m.withEncryptionStatus(session.Status()), err
 			}
 		}
 		session.AuthState = "offline"
 		session.LastError = err.Error()
 		session.Device.Online = false
 		_ = m.store.Save(session)
-		return session.Status(), err
+		return m.withEncryptionStatus(session.Status()), err
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	session.User = resp.User
@@ -308,9 +314,9 @@ func (m *Manager) heartbeat(ctx context.Context, session *Session) (Status, erro
 		session.Device.DeviceFingerprint = session.DeviceFingerprint
 	}
 	if err := m.store.Save(session); err != nil {
-		return session.Status(), err
+		return m.withEncryptionStatus(session.Status()), err
 	}
-	return session.Status(), nil
+	return m.withEncryptionStatus(session.Status()), nil
 }
 
 func (m *Manager) refreshToken(ctx context.Context, session *Session) error {

@@ -16,6 +16,9 @@ func registerProtoCloudSyncHandlers(app *App, dispatcher *protoipc.Dispatcher) {
 	dispatcher.Register(protoipc.MethodCloudSyncOAuthStart, app.handleProtoCloudSyncOAuthStart)
 	dispatcher.Register(protoipc.MethodCloudSyncRefreshStatus, app.handleProtoCloudSyncRefreshStatus)
 	dispatcher.Register(protoipc.MethodCloudSyncLogout, app.handleProtoCloudSyncLogout)
+	dispatcher.Register(protoipc.MethodCloudSyncEncryptionSetup, app.handleProtoCloudSyncEncryptionSetup)
+	dispatcher.Register(protoipc.MethodCloudSyncEncryptionUnlock, app.handleProtoCloudSyncEncryptionUnlock)
+	dispatcher.Register(protoipc.MethodCloudSyncEncryptionDisable, app.handleProtoCloudSyncEncryptionDisable)
 	dispatcher.Register(protoipc.MethodCloudSyncBackupList, app.handleProtoCloudSyncBackupList)
 	dispatcher.Register(protoipc.MethodCloudSyncBackupUpload, app.handleProtoCloudSyncBackupUpload)
 	dispatcher.Register(protoipc.MethodCloudSyncBackupDownload, app.handleProtoCloudSyncBackupDownload)
@@ -71,6 +74,38 @@ func (a *App) handleProtoCloudSyncLogout(ctx context.Context, request protoipc.E
 		return nil, protoBrowserOperationError("退出云端同步授权失败", err)
 	}
 	return encodeCloudSyncStatus(status)
+}
+
+func (a *App) handleProtoCloudSyncEncryptionSetup(ctx context.Context, request protoipc.Envelope) ([]byte, *protoipc.RPCError) {
+	var input CloudSyncEncryptionSetupInput
+	if rpcErr := decodeCloudSyncInput(request.Payload, &input, "CloudSyncEncryptionSetupRequest"); rpcErr != nil {
+		return nil, rpcErr
+	}
+	status, err := a.CloudSyncSetupEncryption(input)
+	if err != nil {
+		return nil, protoBrowserOperationError("设置同步加密失败", err)
+	}
+	return encodeCloudSyncJSONResult(status)
+}
+
+func (a *App) handleProtoCloudSyncEncryptionUnlock(ctx context.Context, request protoipc.Envelope) ([]byte, *protoipc.RPCError) {
+	var input CloudSyncEncryptionUnlockInput
+	if rpcErr := decodeCloudSyncInput(request.Payload, &input, "CloudSyncEncryptionUnlockRequest"); rpcErr != nil {
+		return nil, rpcErr
+	}
+	status, err := a.CloudSyncUnlockEncryption(input)
+	if err != nil {
+		return nil, protoBrowserOperationError("解锁同步加密失败", err)
+	}
+	return encodeCloudSyncJSONResult(status)
+}
+
+func (a *App) handleProtoCloudSyncEncryptionDisable(ctx context.Context, request protoipc.Envelope) ([]byte, *protoipc.RPCError) {
+	status, err := a.CloudSyncDisableEncryption()
+	if err != nil {
+		return nil, protoBrowserOperationError("关闭同步加密失败", err)
+	}
+	return encodeCloudSyncJSONResult(status)
 }
 
 func (a *App) handleProtoCloudSyncBackupList(ctx context.Context, request protoipc.Envelope) ([]byte, *protoipc.RPCError) {
