@@ -189,7 +189,20 @@ export async function prepareCloudProfileBackupRestore(backupId: string): Promis
 }
 
 export function onCloudProfileBackupProgress(callback: (progress: BrowserProfileBackupProgress) => void): () => void {
-  return onCloudSyncBackupProgressProto(callback)
+  return onCloudSyncBackupProgressProto(progress => {
+    if (isCloudProfileBackupProgress(progress)) {
+      callback(progress)
+    }
+  })
+}
+
+function isCloudProfileBackupProgress(progress: BrowserProfileBackupProgress): boolean {
+  const componentId = String(progress.componentId || '').trim()
+  if (componentId) return componentId === 'profile_bundle'
+  const message = String(progress.message || '').trim()
+  return message.includes('实例云端备份') ||
+    message.includes('实例备份包') ||
+    message.includes('上传实例备份')
 }
 
 // ============================================================================

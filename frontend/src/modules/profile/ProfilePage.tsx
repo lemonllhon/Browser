@@ -171,6 +171,7 @@ export function ProfilePage() {
   useEffect(() => {
     return onSyncBackupProgress(progress => {
       if (!progress || typeof progress !== 'object') return
+      if (!isFullCloudSyncProgress(progress)) return
       if (progress.phase === 'cancelled') {
         setSyncBackupProgress(null)
         return
@@ -540,54 +541,58 @@ export function ProfilePage() {
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-2 lg:justify-end">
-            <Button
-              variant={syncSession ? 'secondary' : 'primary'}
-              onClick={() => {
-                setSyncForm(prev => ({
-                  ...prev,
-                  serverURL: syncSession?.serverURL || prev.serverURL,
-                  deviceName: syncSession?.device.deviceName || prev.deviceName,
-                }))
-                setSyncOAuthOpen(true)
-              }}
-            >
-              <LogIn className="h-4 w-4" />
-              {syncSession ? '重新授权' : '浏览器授权'}
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setSyncForm(prev => ({
-                  ...prev,
-                  serverURL: syncSession?.serverURL || prev.serverURL,
-                  username: syncSession?.user.username || prev.username,
-                  deviceName: syncSession?.device.deviceName || prev.deviceName,
-                  password: '',
-                }))
-                setSyncLoginOpen(true)
-              }}
-            >
-              <ShieldCheck className="h-4 w-4" />
-              调试登录
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={handleSyncRefresh}
-              loading={syncRefreshLoading}
-              disabled={!syncSession}
-            >
-              <RefreshCw className="h-4 w-4" />
-              刷新状态
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={handleSyncLogout}
-              disabled={!syncSession}
-            >
-              <LogOut className="h-4 w-4" />
-              退出授权
-            </Button>
+          <div className="flex flex-col gap-2 lg:items-end">
+            <div className="flex flex-wrap gap-2 lg:justify-end">
+              <Button
+                variant={syncSession ? 'secondary' : 'primary'}
+                onClick={() => {
+                  setSyncForm(prev => ({
+                    ...prev,
+                    serverURL: syncSession?.serverURL || prev.serverURL,
+                    deviceName: syncSession?.device.deviceName || prev.deviceName,
+                  }))
+                  setSyncOAuthOpen(true)
+                }}
+              >
+                <LogIn className="h-4 w-4" />
+                {syncSession ? '重新授权' : '浏览器授权'}
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setSyncForm(prev => ({
+                    ...prev,
+                    serverURL: syncSession?.serverURL || prev.serverURL,
+                    username: syncSession?.user.username || prev.username,
+                    deviceName: syncSession?.device.deviceName || prev.deviceName,
+                    password: '',
+                  }))
+                  setSyncLoginOpen(true)
+                }}
+              >
+                <ShieldCheck className="h-4 w-4" />
+                调试登录
+              </Button>
+            </div>
+            <div className="flex flex-wrap gap-2 lg:justify-end">
+              <Button
+                variant="secondary"
+                onClick={handleSyncRefresh}
+                loading={syncRefreshLoading}
+                disabled={!syncSession}
+              >
+                <RefreshCw className="h-4 w-4" />
+                刷新状态
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={handleSyncLogout}
+                disabled={!syncSession}
+              >
+                <LogOut className="h-4 w-4" />
+                退出登录
+              </Button>
+            </div>
           </div>
         </div>
       </Card>
@@ -987,6 +992,19 @@ function stripProtocol(value: string): string {
 function backupTypeText(value: string): string {
   if (value === 'profile_bundle') return '实例备份'
   return '全量配置'
+}
+
+function isFullCloudSyncProgress(progress: SyncBackupProgress): boolean {
+  const componentId = String(progress.componentId || '').trim()
+  if (componentId) return componentId === 'full_config'
+  const message = String(progress.message || '').trim()
+  return !isLegacyProfileCloudSyncMessage(message)
+}
+
+function isLegacyProfileCloudSyncMessage(message: string): boolean {
+  return message.includes('实例云端备份') ||
+    message.includes('实例备份包') ||
+    message.includes('上传实例备份')
 }
 
 function normalizeSyncBackupProgress(progress: SyncBackupProgress): SyncBackupProgress {
