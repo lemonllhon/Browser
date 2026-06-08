@@ -130,7 +130,7 @@ func BuildScope(opts BuildOptions) (Scope, error) {
 		Required:    true,
 		SourcePath:  appDataRoot,
 		ArchivePath: "payload/app/data/",
-		Description: "应用数据目录（含数据库、快照及默认浏览器数据）",
+		Description: "应用数据目录（含数据库、快照、扩展插件及默认浏览器数据）",
 	})
 
 	userDataRootSetting := strings.TrimSpace(cfg.Browser.UserDataRoot)

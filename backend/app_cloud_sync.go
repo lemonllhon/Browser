@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"ant-chrome/backend/internal/apppath"
 	"ant-chrome/backend/internal/backup"
 	"ant-chrome/backend/internal/cloudsync"
 	"context"
@@ -395,7 +396,7 @@ func (a *App) cloudSyncExportFullBackupToPathLocked(zipPath string, emitProgress
 	if a == nil {
 		return 0, 0, 0, fmt.Errorf("应用未初始化")
 	}
-	scope, err := backup.BuildScope(backup.BuildOptions{AppRoot: a.appRoot, Config: a.config})
+	scope, err := backup.BuildScope(backup.BuildOptions{AppRoot: apppath.StateRoot(a.appRoot), Config: a.config})
 	if err != nil {
 		return 0, 0, 0, err
 	}

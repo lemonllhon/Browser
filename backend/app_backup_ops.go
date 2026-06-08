@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"ant-chrome/backend/internal/apppath"
 	"ant-chrome/backend/internal/backup"
 	"ant-chrome/backend/internal/browser"
 	"ant-chrome/backend/internal/config"
@@ -63,7 +64,7 @@ func (a *App) BackupExportPackage() (map[string]interface{}, error) {
 	savePath = backupEnsureZipSuffix(savePath)
 	a.backupEmitExportProgress("preparing", 8, "正在收集导出范围...")
 
-	scope, err := backup.BuildScope(backup.BuildOptions{AppRoot: a.appRoot, Config: a.config})
+	scope, err := backup.BuildScope(backup.BuildOptions{AppRoot: apppath.StateRoot(a.appRoot), Config: a.config})
 	if err != nil {
 		a.backupEmitExportProgress("error", 100, fmt.Sprintf("导出失败: %v", err))
 		return nil, err
@@ -738,7 +739,10 @@ func backupShouldSkipZipRelPath(rel string) bool {
 	if rel == "" {
 		return false
 	}
-	return rel == "cloud-sync" || strings.HasPrefix(rel, "cloud-sync/")
+	return rel == "cloud-sync" ||
+		strings.HasPrefix(rel, "cloud-sync/") ||
+		rel == "extensions/tmp" ||
+		strings.HasPrefix(rel, "extensions/tmp/")
 }
 
 func backupExtractAndValidate(zipPath string) (string, backup.Manifest, error) {
@@ -1258,13 +1262,13 @@ func (a *App) backupImportFileTrees(payloadRoot string, incomingCfg *config.Conf
 	if backupPathExists(appDataSrc) {
 		if resetFirst {
 			if err := backupRemoveContentsExcept(appDataDst, keepDB); err != nil {
-				report("app_data_root", "应用数据目录（含数据库、快照及默认浏览器数据）", err)
-			} else if err := backupSyncDir(appDataSrc, appDataDst, true, stats, backupShouldSkipAppDBFile); err != nil {
-				report("app_data_root", "应用数据目录（含数据库、快照及默认浏览器数据）", err)
+				report("app_data_root", "应用数据目录（含数据库、快照、扩展插件及默认浏览器数据）", err)
+			} else if err := backupSyncDir(appDataSrc, appDataDst, true, stats, backupShouldSkipAppDataImportRelPath); err != nil {
+				report("app_data_root", "应用数据目录（含数据库、快照、扩展插件及默认浏览器数据）", err)
 			}
 		} else {
-			if err := backupSyncDir(appDataSrc, appDataDst, false, stats, backupShouldSkipAppDBFile); err != nil {
-				report("app_data_root", "应用数据目录（含数据库、快照及默认浏览器数据）", err)
+			if err := backupSyncDir(appDataSrc, appDataDst, false, stats, backupShouldSkipAppDataImportRelPath); err != nil {
+				report("app_data_root", "应用数据目录（含数据库、快照、扩展插件及默认浏览器数据）", err)
 			}
 		}
 	}
@@ -1527,6 +1531,14 @@ func backupSHA256File(path string) (string, error) {
 func backupShouldSkipAppDBFile(rel string) bool {
 	r := strings.TrimSpace(filepath.ToSlash(rel))
 	return r == "app.db" || r == "app.db-wal" || r == "app.db-shm"
+}
+
+func backupShouldSkipAppDataImportRelPath(rel string) bool {
+	r := strings.Trim(strings.TrimSpace(filepath.ToSlash(rel)), "/")
+	if r == "" {
+		return false
+	}
+	return backupShouldSkipAppDBFile(r) || backupShouldSkipZipRelPath(r)
 }
 
 func backupRemoveContentsExcept(dir string, keep map[string]struct{}) error {

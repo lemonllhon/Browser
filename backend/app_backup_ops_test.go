@@ -141,6 +141,25 @@ func TestBackupZipAddDirSkipsCloudSyncSession(t *testing.T) {
 	if err := os.WriteFile(sessionPath, []byte(`{"refreshToken":"secret"}`), 0644); err != nil {
 		t.Fatal(err)
 	}
+	extensionFiles := map[string]string{
+		filepath.Join("extensions", "library", "extension-1", "manifest.json"):                                            `{"name":"Trace Helper"}`,
+		filepath.Join("extensions", "packages", "extension-1.zip"):                                                        "zip-data",
+		filepath.Join("extensions", "exclusive", "profile-1", "extension-1", "manifest.json"):                             `{"name":"Trace Helper Exclusive"}`,
+		filepath.Join("extensions", "shared-data", "extension-1", "chromeid", "local-extension-settings", "000003.log"):   "shared-state",
+		filepath.Join("profile-1", "Default", "Local Extension Settings", "chromeid", "000003.log"):                       "profile-extension-state",
+		filepath.Join("profile-1", "Default", "IndexedDB", "chrome-extension_chromeid_0.indexeddb.leveldb", "000003.log"): "profile-indexeddb",
+		filepath.Join("profile-1", "Default", "Extension State", "chrome-extension_chromeid", "CURRENT"):                  "profile-extension-state-root",
+		filepath.Join("extensions", "tmp", "extension-1", "manifest.json"):                                                `{"name":"Temporary"}`,
+	}
+	for rel, content := range extensionFiles {
+		target := filepath.Join(src, rel)
+		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(target, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	zipPath := filepath.Join(t.TempDir(), "backup.zip")
 	out, err := os.Create(zipPath)
@@ -160,10 +179,78 @@ func TestBackupZipAddDirSkipsCloudSyncSession(t *testing.T) {
 	if fileCloseErr != nil {
 		t.Fatal(fileCloseErr)
 	}
-	if count != 1 {
+	if count != 8 {
 		t.Fatalf("unexpected archived file count: %d", count)
 	}
 
+	entries := readBackupZipEntries(t, zipPath)
+	if !entries["payload/app/data/app.db"] {
+		t.Fatalf("expected app data file in backup, got %+v", entries)
+	}
+	if entries["payload/app/data/cloud-sync/session.json"] {
+		t.Fatalf("cloud sync session should not be archived")
+	}
+	expectedExtensionEntries := []string{
+		"payload/app/data/extensions/library/extension-1/manifest.json",
+		"payload/app/data/extensions/packages/extension-1.zip",
+		"payload/app/data/extensions/exclusive/profile-1/extension-1/manifest.json",
+		"payload/app/data/extensions/shared-data/extension-1/chromeid/local-extension-settings/000003.log",
+		"payload/app/data/profile-1/Default/Local Extension Settings/chromeid/000003.log",
+		"payload/app/data/profile-1/Default/IndexedDB/chrome-extension_chromeid_0.indexeddb.leveldb/000003.log",
+		"payload/app/data/profile-1/Default/Extension State/chrome-extension_chromeid/CURRENT",
+	}
+	for _, name := range expectedExtensionEntries {
+		if !entries[name] {
+			t.Fatalf("expected extension data file in backup: %s", name)
+		}
+	}
+	if entries["payload/app/data/extensions/tmp/extension-1/manifest.json"] {
+		t.Fatalf("extension tmp data should not be archived")
+	}
+}
+
+func TestBackupSyncDirSkipsAppDataRuntimeOnlyPaths(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "src")
+	dst := filepath.Join(t.TempDir(), "dst")
+	sourceFiles := map[string]string{
+		"app.db": "database",
+		filepath.Join("cloud-sync", "session.json"):                            "secret",
+		filepath.Join("extensions", "tmp", "extension-1", "a.js"):              "temporary",
+		filepath.Join("extensions", "library", "extension-1", "manifest.json"): "extension",
+	}
+	for rel, content := range sourceFiles {
+		target := filepath.Join(src, rel)
+		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(target, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	stats := &backupMergeStats{}
+	if err := backupSyncDir(src, dst, true, stats, backupShouldSkipAppDataImportRelPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dst, "extensions", "library", "extension-1", "manifest.json")); err != nil {
+		t.Fatalf("extension library should be imported: %v", err)
+	}
+	skipped := []string{
+		"app.db",
+		filepath.Join("cloud-sync", "session.json"),
+		filepath.Join("extensions", "tmp", "extension-1", "a.js"),
+	}
+	for _, rel := range skipped {
+		if _, err := os.Stat(filepath.Join(dst, rel)); err == nil {
+			t.Fatalf("runtime-only app data path should be skipped: %s", rel)
+		} else if !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+	}
+}
+
+func readBackupZipEntries(t *testing.T, zipPath string) map[string]bool {
+	t.Helper()
 	reader, err := zip.OpenReader(zipPath)
 	if err != nil {
 		t.Fatal(err)
@@ -173,12 +260,7 @@ func TestBackupZipAddDirSkipsCloudSyncSession(t *testing.T) {
 	for _, file := range reader.File {
 		entries[file.Name] = true
 	}
-	if !entries["payload/app/data/app.db"] {
-		t.Fatalf("expected app data file in backup, got %+v", entries)
-	}
-	if entries["payload/app/data/cloud-sync/session.json"] {
-		t.Fatalf("cloud sync session should not be archived")
-	}
+	return entries
 }
 
 func TestBackupMergeDatabaseFromLegacySourceFillsMissingColumns(t *testing.T) {
