@@ -164,7 +164,7 @@ func (m *Manager) ListBackups(ctx context.Context, input BackupListInput) (Backu
 	return result, err
 }
 
-func (m *Manager) UploadBackupFile(ctx context.Context, filePath string, fields map[string]string) (BackupItem, error) {
+func (m *Manager) UploadBackupFile(ctx context.Context, filePath string, fields map[string]string, onProgress TransferProgressFunc) (BackupItem, error) {
 	session, err := m.loadAuthorizedSession()
 	if err != nil {
 		return BackupItem{}, err
@@ -177,7 +177,7 @@ func (m *Manager) UploadBackupFile(ctx context.Context, filePath string, fields 
 	fields["bindingId"] = session.Device.BindingID
 	var backup BackupItem
 	err = m.withTokenRefresh(ctx, session, func() error {
-		next, err := m.client.UploadBackup(ctx, session, filePath, fields)
+		next, err := m.client.UploadBackup(ctx, session, filePath, fields, onProgress)
 		if err != nil {
 			return err
 		}
@@ -187,7 +187,7 @@ func (m *Manager) UploadBackupFile(ctx context.Context, filePath string, fields 
 	return backup, err
 }
 
-func (m *Manager) DownloadBackup(ctx context.Context, input BackupDownloadInput) (BackupDownloadResult, error) {
+func (m *Manager) DownloadBackup(ctx context.Context, input BackupDownloadInput, onProgress TransferProgressFunc) (BackupDownloadResult, error) {
 	session, err := m.loadAuthorizedSession()
 	if err != nil {
 		return BackupDownloadResult{}, err
@@ -207,7 +207,7 @@ func (m *Manager) DownloadBackup(ctx context.Context, input BackupDownloadInput)
 	}
 	targetPath := filepath.Join(m.store.dir, "downloads", backupID+".zip")
 	err = m.withTokenRefresh(ctx, session, func() error {
-		return m.client.DownloadBackup(ctx, session, backupID, targetPath)
+		return m.client.DownloadBackup(ctx, session, backupID, targetPath, backup.SizeBytes, onProgress)
 	})
 	if err != nil {
 		return BackupDownloadResult{}, err

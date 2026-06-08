@@ -6,6 +6,7 @@ import { useNotificationStore, type Notification } from '../../store/notificatio
 import {
   SYNC_AUTH_CHANGED_EVENT,
   fetchSyncAuthSession,
+  formatSyncUserDisplayName,
   isSyncSessionOnline,
   loadSyncAuthSession,
   type SyncAuthSession
@@ -125,6 +126,7 @@ function NotificationDropdown({
 
 export function Topbar() {
   const [showNotifications, setShowNotifications] = useState(false)
+  const [syncSession, setSyncSession] = useState<SyncAuthSession | null>(() => loadSyncAuthSession())
   const [syncOnline, setSyncOnline] = useState(() => isSyncSessionOnline(loadSyncAuthSession()))
   const [syncConfigured, setSyncConfigured] = useState(() => !!loadSyncAuthSession())
   const { notifications, markAsRead, markAllAsRead, clearNotifications } = useNotificationStore()
@@ -145,6 +147,7 @@ export function Topbar() {
 
   useEffect(() => {
     const applySyncStatus = (session: SyncAuthSession | null) => {
+      setSyncSession(session)
       setSyncConfigured(!!session)
       setSyncOnline(isSyncSessionOnline(session))
     }
@@ -166,6 +169,8 @@ export function Topbar() {
       window.clearInterval(timer)
     }
   }, [])
+
+  const syncUserDisplayName = formatSyncUserDisplayName(syncSession, 'Admin')
 
   return (
     <header className="h-14 bg-[var(--color-bg-surface)] border-b border-[var(--color-border-default)] px-4 flex items-center justify-between gap-4">
@@ -236,7 +241,9 @@ export function Topbar() {
           <div className="w-7 h-7 bg-[var(--color-accent)] rounded-md flex items-center justify-center">
             <User className="w-3.5 h-3.5 text-[var(--color-text-inverse)]" />
           </div>
-          <span className="text-sm font-medium text-[var(--color-text-secondary)]">Admin</span>
+          <span className="max-w-40 truncate text-sm font-medium text-[var(--color-text-secondary)]" title={syncUserDisplayName}>
+            {syncUserDisplayName}
+          </span>
           <span
             className={clsx(
               'h-2 w-2 rounded-full',

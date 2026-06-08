@@ -7,6 +7,7 @@ export { checkBrowserProxyBatchIPHealth, checkBrowserProxyIPHealth, checkBrowser
 export { cancelBrowserCoreDownload, deleteBrowserCore, downloadBrowserCore, getBrowserCoreExtendedInfo, listBrowserCores, onBrowserCoreDownloadProgress, openBrowserCorePath, renameBrowserCorePath, saveBrowserCore, scanBrowserCores, setDefaultBrowserCore, validateBrowserCorePath } from './core'
 export { checkAppUpdate, downloadAndExtractPortableUpdate, downloadAppUpdate, installDownloadedAppUpdate, onAppUpdateDownloadProgress, onAppUpdatePending, onAppUpdatePendingInstallFailed, onAppUpdatePendingNotification } from './update'
 export { getBrowserSettings, saveBrowserSettings } from './browserSettings'
+export { deleteCloudSyncBackup, downloadCloudSyncBackup, getCloudSyncStatus, listCloudSyncBackups, loginBindCloudSync, logoutCloudSync, onCloudSyncBackupProgress, prepareCloudSyncProfileBackupRestore, refreshCloudSyncStatus, restoreCloudSyncBackup, uploadCloudSyncFullBackup, uploadCloudSyncProfileBackup } from './cloudSync'
 export { applyWindowSyncLayout, getWindowSyncLayoutSettings, getWindowSyncSettings, getWindowSyncState, listWindowSyncCandidates, onWindowSyncStateChanged, pauseWindowSync, resizeWindowSyncToolbar, resumeWindowSync, saveWindowSyncLayoutSettings, saveWindowSyncSettings, showAllWindowSyncWindows, startWindowSync, stopWindowSync, windowSyncBatchInputDifferent, windowSyncBatchInputSame, windowSyncCloseBlankTabs, windowSyncCloseCurrentTab, windowSyncCloseOtherTabs, windowSyncOpenUrls } from './windowSync'
 
 export const protoIpcClient = new ProtoIpcClient()

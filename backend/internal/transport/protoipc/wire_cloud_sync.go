@@ -3,15 +3,17 @@ package protoipc
 import "google.golang.org/protobuf/encoding/protowire"
 
 const (
-	MethodCloudSyncStatusGet      = "trace.cloudSync.StatusGet"
-	MethodCloudSyncLoginBind      = "trace.cloudSync.LoginBind"
-	MethodCloudSyncRefreshStatus  = "trace.cloudSync.RefreshStatus"
-	MethodCloudSyncLogout         = "trace.cloudSync.Logout"
-	MethodCloudSyncBackupList     = "trace.cloudSync.BackupList"
-	MethodCloudSyncBackupUpload   = "trace.cloudSync.BackupUpload"
-	MethodCloudSyncBackupDownload = "trace.cloudSync.BackupDownload"
-	MethodCloudSyncBackupRestore  = "trace.cloudSync.BackupRestore"
-	MethodCloudSyncBackupDelete   = "trace.cloudSync.BackupDelete"
+	MethodCloudSyncStatusGet                   = "trace.cloudSync.StatusGet"
+	MethodCloudSyncLoginBind                   = "trace.cloudSync.LoginBind"
+	MethodCloudSyncRefreshStatus               = "trace.cloudSync.RefreshStatus"
+	MethodCloudSyncLogout                      = "trace.cloudSync.Logout"
+	MethodCloudSyncBackupList                  = "trace.cloudSync.BackupList"
+	MethodCloudSyncBackupUpload                = "trace.cloudSync.BackupUpload"
+	MethodCloudSyncBackupDownload              = "trace.cloudSync.BackupDownload"
+	MethodCloudSyncBackupRestore               = "trace.cloudSync.BackupRestore"
+	MethodCloudSyncBackupDelete                = "trace.cloudSync.BackupDelete"
+	MethodCloudSyncProfileBackupUpload         = "trace.cloudSync.ProfileBackupUpload"
+	MethodCloudSyncProfileBackupPrepareRestore = "trace.cloudSync.ProfileBackupPrepareRestore"
 )
 
 type CloudSyncJSONMessage struct {

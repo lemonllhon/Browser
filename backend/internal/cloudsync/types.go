@@ -3,6 +3,7 @@ package cloudsync
 type User struct {
 	ID       string `json:"id"`
 	Username string `json:"username"`
+	Nickname string `json:"nickname"`
 	Role     string `json:"role"`
 }
 
@@ -40,6 +41,13 @@ type Status struct {
 	Device          Device `json:"device"`
 	Error           string `json:"error,omitempty"`
 }
+
+type TransferProgress struct {
+	TransferredBytes int64
+	TotalBytes       int64
+}
+
+type TransferProgressFunc func(TransferProgress)
 
 type LoginBindInput struct {
 	ServerURL  string `json:"serverURL"`

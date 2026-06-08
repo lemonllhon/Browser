@@ -1,13 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Download, FileArchive, Upload } from 'lucide-react'
+import { Cloud, Download, FileArchive, RefreshCw, Upload } from 'lucide-react'
 import { Button, Modal, Progress, toast } from '../../../shared/components'
 import {
   chooseProfileBackupImportPackage,
   exportProfileBackup,
   importProfileBackup,
+  listCloudProfileBackups,
+  onCloudProfileBackupProgress,
   onProfileBackupProgress,
+  prepareCloudProfileBackupRestore,
+  uploadCloudProfileBackup,
   type BrowserProfileBackupActionResult,
   type BrowserProfileBackupProgress,
+  type CloudSyncBackupItem,
 } from '../api'
 import type { BrowserProfile } from '../types'
 import { resolveActionErrorMessage } from '../utils/actionErrors'
@@ -46,6 +51,8 @@ export function InstanceBackupRestoreModal({
   demoTab,
 }: Props) {
   const [tab, setTab] = useState<'export' | 'restore'>('export')
+  const [exportTarget, setExportTarget] = useState<'local' | 'cloud'>('local')
+  const [restoreSource, setRestoreSource] = useState<'local' | 'cloud'>('local')
   const [scope, setScope] = useState<ExportScope>('all')
   const [includeCookies, setIncludeCookies] = useState(true)
   const [includePlainCookies, setIncludePlainCookies] = useState(false)
@@ -59,6 +66,8 @@ export function InstanceBackupRestoreModal({
   const [restoreProfileIds, setRestoreProfileIds] = useState<Set<string>>(new Set())
   const [exportCompleted, setExportCompleted] = useState(false)
   const [restoreCompleted, setRestoreCompleted] = useState(false)
+  const [cloudBackups, setCloudBackups] = useState<CloudSyncBackupItem[]>([])
+  const [cloudBackupsLoading, setCloudBackupsLoading] = useState(false)
 
   const selectedCount = selectedProfileIds.length
   const filteredCount = filteredProfileIds.length
@@ -67,6 +76,8 @@ export function InstanceBackupRestoreModal({
     if (!open) return
     setScope(selectedCount > 0 ? 'selected' : 'all')
     setTab(demoTab || 'export')
+    setExportTarget('local')
+    setRestoreSource('local')
     setProgress(null)
     setLogs([])
     setPreview(null)
@@ -84,7 +95,7 @@ export function InstanceBackupRestoreModal({
 
   useEffect(() => {
     if (!open) return
-    return onProfileBackupProgress(item => {
+    const applyProgress = (item: BrowserProfileBackupProgress) => {
       setProgress(item)
       setLogs(prev => [
         ...prev.slice(-39),
@@ -95,8 +106,19 @@ export function InstanceBackupRestoreModal({
           time: item.timestamp || new Date().toLocaleTimeString('zh-CN', { hour12: false }),
         },
       ])
-    })
+    }
+    const offProfile = onProfileBackupProgress(applyProgress)
+    const offCloud = onCloudProfileBackupProgress(applyProgress)
+    return () => {
+      offProfile()
+      offCloud()
+    }
   }, [open])
+
+  useEffect(() => {
+    if (!open || tab !== 'restore' || restoreSource !== 'cloud') return
+    void handleCloudBackupRefresh(false)
+  }, [open, tab, restoreSource])
 
   const exportCount = useMemo(() => {
     if (scope === 'selected') return selectedCount
@@ -148,18 +170,26 @@ export function InstanceBackupRestoreModal({
     setLogs([])
     setLastResult(null)
     try {
-      const result = await exportProfileBackup({
+      const input = {
         scope,
         profileIds: activeExportProfileIds(),
         includeCookies,
         includePlainCookiesWhenRunning: includePlainCookies,
-      })
+      }
+      const result = exportTarget === 'cloud'
+        ? (await uploadCloudProfileBackup(input)).profileBackup
+        : await exportProfileBackup(input)
       setLastResult(result)
       if (result.cancelled) {
         toast.info(result.message || '已取消导出')
       } else {
         setExportCompleted(true)
-        toast.success(`实例备份已导出：${result.profileCount || result.exported} 个实例`)
+        toast.success(exportTarget === 'cloud'
+          ? `实例云端备份已上传：${result.profileCount || result.exported} 个实例`
+          : `实例备份已导出：${result.profileCount || result.exported} 个实例`)
+        if (exportTarget === 'cloud') {
+          await handleCloudBackupRefresh(false)
+        }
       }
     } catch (error: unknown) {
       toast.error(resolveActionErrorMessage(error, '实例备份导出失败'))
@@ -169,6 +199,7 @@ export function InstanceBackupRestoreModal({
   }
 
   const handleChoosePackage = async () => {
+    setRestoreSource('local')
     setBusy(true)
     setProgress(null)
     setLogs([])
@@ -185,6 +216,38 @@ export function InstanceBackupRestoreModal({
       }
     } catch (error: unknown) {
       toast.error(resolveActionErrorMessage(error, '实例备份包校验失败'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleCloudBackupRefresh = async (notify = true) => {
+    setCloudBackupsLoading(true)
+    try {
+      const result = await listCloudProfileBackups()
+      setCloudBackups(result.list || [])
+      if (notify) toast.success('实例云端备份列表已刷新')
+    } catch (error: unknown) {
+      toast.error(resolveActionErrorMessage(error, '获取实例云端备份失败'))
+    } finally {
+      setCloudBackupsLoading(false)
+    }
+  }
+
+  const handlePrepareCloudRestore = async (backup: CloudSyncBackupItem) => {
+    setRestoreSource('cloud')
+    setBusy(true)
+    setProgress({ phase: 'starting', progress: 0, message: '准备下载实例云端备份...' })
+    setLogs([])
+    setLastResult(null)
+    try {
+      const result = await prepareCloudProfileBackupRestore(backup.id)
+      setPreview(result)
+      setRestoreProfileIds(new Set((result.profiles || []).map(item => item.profileId).filter(Boolean)))
+      setRestoreCompleted(false)
+      toast.success('实例云端备份已下载并校验通过')
+    } catch (error: unknown) {
+      toast.error(resolveActionErrorMessage(error, '实例云端备份校验失败'))
     } finally {
       setBusy(false)
     }
@@ -237,8 +300,8 @@ export function InstanceBackupRestoreModal({
           <Button variant="secondary" onClick={onClose} disabled={busy}>关闭</Button>
           {tab === 'export' ? (
             <Button onClick={handleExport} loading={busy} disabled={exportCount <= 0 || exportCompleted}>
-              <Download className="w-4 h-4" />
-              {exportCompleted ? '已导出' : '开始导出'}
+              {exportTarget === 'cloud' ? <Cloud className="w-4 h-4" /> : <Download className="w-4 h-4" />}
+              {exportCompleted ? (exportTarget === 'cloud' ? '已上传' : '已导出') : (exportTarget === 'cloud' ? '上传云端' : '开始导出')}
             </Button>
           ) : (
             <Button onClick={handleRestore} loading={busy} disabled={!canRestore}>
@@ -275,6 +338,20 @@ export function InstanceBackupRestoreModal({
 
         {tab === 'export' ? (
           <div className="space-y-4">
+            <div>
+              <div className="text-sm font-medium text-[var(--color-text-primary)] mb-2">备份位置</div>
+              <div className="inline-flex rounded-lg border border-[var(--color-border-default)] bg-[var(--color-bg-secondary)] p-1">
+                <ModeButton active={exportTarget === 'local'} label="本地文件" onClick={() => {
+                  setExportTarget('local')
+                  setExportCompleted(false)
+                }} />
+                <ModeButton active={exportTarget === 'cloud'} label="云端备份" onClick={() => {
+                  setExportTarget('cloud')
+                  setExportCompleted(false)
+                }} />
+              </div>
+            </div>
+
             <div>
               <div className="text-sm font-medium text-[var(--color-text-primary)] mb-2">导出范围</div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
@@ -359,15 +436,86 @@ export function InstanceBackupRestoreModal({
             </div>
 
             <div className="rounded-md border border-[var(--color-border-default)] bg-[var(--color-bg-secondary)] px-3 py-2 text-sm text-[var(--color-text-secondary)]">
-              将导出 {exportCount} 个实例，恢复时默认创建新实例并自动重命名。
+              将{exportTarget === 'cloud' ? '上传' : '导出'} {exportCount} 个实例，恢复时默认创建新实例并自动重命名。
             </div>
           </div>
         ) : (
           <div className="space-y-4">
-            <Button variant="secondary" onClick={handleChoosePackage} loading={busy}>
-              <FileArchive className="w-4 h-4" />
-              选择实例备份包
-            </Button>
+            <div>
+              <div className="text-sm font-medium text-[var(--color-text-primary)] mb-2">恢复来源</div>
+              <div className="inline-flex rounded-lg border border-[var(--color-border-default)] bg-[var(--color-bg-secondary)] p-1">
+                <ModeButton active={restoreSource === 'local'} label="本地文件" onClick={() => {
+                  setRestoreSource('local')
+                  setPreview(null)
+                  setRestoreCompleted(false)
+                }} />
+                <ModeButton active={restoreSource === 'cloud'} label="云端备份" onClick={() => {
+                  setRestoreSource('cloud')
+                  setPreview(null)
+                  setRestoreCompleted(false)
+                }} />
+              </div>
+            </div>
+
+            {restoreSource === 'local' ? (
+              <Button variant="secondary" onClick={handleChoosePackage} loading={busy}>
+                <FileArchive className="w-4 h-4" />
+                选择实例备份包
+              </Button>
+            ) : (
+              <div className="rounded-md border border-[var(--color-border-default)] bg-[var(--color-bg-secondary)] p-3 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium text-[var(--color-text-primary)]">实例云端备份</div>
+                    <div className="mt-1 text-xs text-[var(--color-text-muted)]">选择云端备份后会先下载并校验，再进行恢复。</div>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => handleCloudBackupRefresh(true)}
+                    loading={cloudBackupsLoading}
+                    disabled={busy}
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    刷新
+                  </Button>
+                </div>
+                {cloudBackups.length === 0 ? (
+                  <div className="rounded border border-[var(--color-border-muted)] bg-[var(--color-bg-primary)] px-3 py-6 text-center text-sm text-[var(--color-text-muted)]">
+                    {cloudBackupsLoading ? '正在加载实例云端备份...' : '暂无实例云端备份'}
+                  </div>
+                ) : (
+                  <div className="max-h-48 overflow-y-auto divide-y divide-[var(--color-border-muted)] rounded border border-[var(--color-border-muted)] bg-[var(--color-bg-primary)]">
+                    {cloudBackups.map(backup => (
+                      <div key={backup.id} className="flex items-center justify-between gap-3 px-3 py-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium text-[var(--color-text-primary)]" title={backup.name || backup.id}>
+                            {backup.name || backup.id}
+                          </div>
+                          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-[var(--color-text-muted)]">
+                            <span>{formatCloudBackupTime(backup.createdAt)}</span>
+                            <span>{formatBytes(backup.sizeBytes)}</span>
+                            <span className="max-w-[180px] truncate" title={backup.id}>{backup.id}</span>
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => handlePrepareCloudRestore(backup)}
+                          loading={busy && progress?.phase === 'downloading'}
+                          disabled={busy}
+                        >
+                          <Cloud className="w-3.5 h-3.5" />
+                          下载预览
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             {preview && !preview.cancelled && (
               <div className="rounded-md border border-[var(--color-border-default)] bg-[var(--color-bg-secondary)] p-3 space-y-3">
                 <div className="flex items-start justify-between gap-3">
@@ -506,6 +654,19 @@ function ScopeButton({ active, label, count, disabled, onClick }: { active: bool
   )
 }
 
+function ModeButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={`h-8 rounded-md px-4 text-sm font-medium transition-all duration-200 ${active ? 'bg-[var(--color-accent)] text-[var(--color-text-inverse)] shadow-sm' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text-primary)]'}`}
+    >
+      {label}
+    </button>
+  )
+}
+
 function SummaryItem({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded border border-[var(--color-border-muted)] bg-[var(--color-bg-primary)] px-2 py-2">
@@ -519,4 +680,22 @@ function formatSummaryTime(value?: string) {
   if (!value) return '-'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN')
+}
+
+function formatCloudBackupTime(value?: string) {
+  if (!value) return '时间未知'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN')
+}
+
+function formatBytes(bytes: number): string {
+  if (!bytes) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  let size = bytes
+  let index = 0
+  while (size >= 1024 && index < units.length - 1) {
+    size /= 1024
+    index += 1
+  }
+  return `${size.toFixed(1)} ${units[index]}`
 }

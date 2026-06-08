@@ -20,6 +20,8 @@ func registerProtoCloudSyncHandlers(app *App, dispatcher *protoipc.Dispatcher) {
 	dispatcher.Register(protoipc.MethodCloudSyncBackupDownload, app.handleProtoCloudSyncBackupDownload)
 	dispatcher.Register(protoipc.MethodCloudSyncBackupRestore, app.handleProtoCloudSyncBackupRestore)
 	dispatcher.Register(protoipc.MethodCloudSyncBackupDelete, app.handleProtoCloudSyncBackupDelete)
+	dispatcher.Register(protoipc.MethodCloudSyncProfileBackupUpload, app.handleProtoCloudSyncProfileBackupUpload)
+	dispatcher.Register(protoipc.MethodCloudSyncProfileBackupPrepareRestore, app.handleProtoCloudSyncProfileBackupPrepareRestore)
 }
 
 func (a *App) handleProtoCloudSyncStatusGet(ctx context.Context, request protoipc.Envelope) ([]byte, *protoipc.RPCError) {
@@ -115,6 +117,30 @@ func (a *App) handleProtoCloudSyncBackupDelete(ctx context.Context, request prot
 		return nil, protoBrowserOperationError("删除云端备份失败", err)
 	}
 	return encodeCloudSyncJSONResult(map[string]bool{"ok": true})
+}
+
+func (a *App) handleProtoCloudSyncProfileBackupUpload(ctx context.Context, request protoipc.Envelope) ([]byte, *protoipc.RPCError) {
+	var input ProfileBackupExportRequest
+	if rpcErr := decodeCloudSyncInput(request.Payload, &input, "CloudSyncProfileBackupUploadRequest"); rpcErr != nil {
+		return nil, rpcErr
+	}
+	result, err := a.CloudSyncUploadProfileBackup(input)
+	if err != nil {
+		return nil, protoBrowserOperationError("上传实例云端备份失败", err)
+	}
+	return encodeCloudSyncJSONResult(result)
+}
+
+func (a *App) handleProtoCloudSyncProfileBackupPrepareRestore(ctx context.Context, request protoipc.Envelope) ([]byte, *protoipc.RPCError) {
+	var input CloudSyncProfileBackupPrepareRestoreInput
+	if rpcErr := decodeCloudSyncInput(request.Payload, &input, "CloudSyncProfileBackupPrepareRestoreRequest"); rpcErr != nil {
+		return nil, rpcErr
+	}
+	result, err := a.CloudSyncPrepareProfileBackupRestore(input)
+	if err != nil {
+		return nil, protoBrowserOperationError("准备实例云端恢复失败", err)
+	}
+	return encodeCloudSyncJSONResult(result)
 }
 
 func encodeCloudSyncStatus(status CloudSyncStatus) ([]byte, *protoipc.RPCError) {

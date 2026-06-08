@@ -37,6 +37,7 @@ import {
   importBrowserExtensionDirectory as importBrowserExtensionDirectoryProto,
   importBrowserProfileBackup as importBrowserProfileBackupProto,
   importBrowserCookies as importBrowserCookiesProto,
+  listCloudSyncBackups as listCloudSyncBackupsProto,
   listBrowserBookmarks as listBrowserBookmarksProto,
   listBrowserCores as listBrowserCoresProto,
   listBrowserCookies as listBrowserCookiesProto,
@@ -61,12 +62,14 @@ import {
   onBrowserProxySpeedResult as onBrowserProxySpeedResultProto,
   onBrowserCoreDownloadProgress as onBrowserCoreDownloadProgressProto,
   onBrowserProfileBackupProgress as onBrowserProfileBackupProgressProto,
+  onCloudSyncBackupProgress as onCloudSyncBackupProgressProto,
   openBrowserProfileUserDataDir as openBrowserProfileUserDataDirProto,
   openBrowserCorePath as openBrowserCorePathProto,
   openBrowserUserDataDir as openBrowserUserDataDirProto,
   openBrowserURL as openBrowserURLProto,
   pauseWindowSync as pauseWindowSyncProto,
   pinCenterBrowserInstance as pinCenterBrowserInstanceProto,
+  prepareCloudSyncProfileBackupRestore as prepareCloudSyncProfileBackupRestoreProto,
   regenerateBrowserProfileCode as regenerateBrowserProfileCodeProto,
   renameBrowserCorePath as renameBrowserCorePathProto,
   renameBrowserTag as renameBrowserTagProto,
@@ -104,6 +107,7 @@ import {
   testProxyRealConnectivity as testProxyRealConnectivityProto,
   updateBrowserGroup as updateBrowserGroupProto,
   updateBrowserProfile as updateBrowserProfileProto,
+  uploadCloudSyncProfileBackup as uploadCloudSyncProfileBackupProto,
   unassignBrowserExtensionProfiles as unassignBrowserExtensionProfilesProto,
   validateBrowserCorePath as validateBrowserCorePathProto,
   validateProxyConfig as validateProxyConfigProto,
@@ -114,7 +118,7 @@ import {
   windowSyncCloseOtherTabs as windowSyncCloseOtherTabsProto,
   windowSyncOpenUrls as windowSyncOpenUrlsProto,
 } from '../../shared/backend/client'
-import type { ProtoBrowserProfileBackupActionResult, ProtoBrowserProfileBackupExportInput, ProtoBrowserProfileBackupImportInput, ProtoBackupProgress } from '../../shared/backend/client'
+import type { ProtoBrowserProfileBackupActionResult, ProtoBrowserProfileBackupExportInput, ProtoBrowserProfileBackupImportInput, ProtoBackupProgress, ProtoCloudSyncBackupItem, ProtoCloudSyncBackupListResult, ProtoCloudSyncProfileBackupUploadResult } from '../../shared/backend/client'
 
 // ============================================================================
 // Profile API
@@ -152,6 +156,9 @@ export type BrowserProfileBackupActionResult = ProtoBrowserProfileBackupActionRe
 export type BrowserProfileBackupExportInput = ProtoBrowserProfileBackupExportInput
 export type BrowserProfileBackupImportInput = ProtoBrowserProfileBackupImportInput
 export type BrowserProfileBackupProgress = ProtoBackupProgress
+export type CloudSyncBackupItem = ProtoCloudSyncBackupItem
+export type CloudSyncBackupListResult = ProtoCloudSyncBackupListResult
+export type CloudSyncProfileBackupUploadResult = ProtoCloudSyncProfileBackupUploadResult
 
 export async function exportProfileBackup(input: BrowserProfileBackupExportInput): Promise<BrowserProfileBackupActionResult> {
   return await exportBrowserProfileBackupProto(input)
@@ -167,6 +174,22 @@ export async function importProfileBackup(input: BrowserProfileBackupImportInput
 
 export function onProfileBackupProgress(callback: (progress: BrowserProfileBackupProgress) => void): () => void {
   return onBrowserProfileBackupProgressProto(callback)
+}
+
+export async function listCloudProfileBackups(): Promise<CloudSyncBackupListResult> {
+  return await listCloudSyncBackupsProto({ page: 1, pageSize: 20, status: 'ready', backupType: 'profile_bundle' })
+}
+
+export async function uploadCloudProfileBackup(input: BrowserProfileBackupExportInput): Promise<CloudSyncProfileBackupUploadResult> {
+  return await uploadCloudSyncProfileBackupProto(input)
+}
+
+export async function prepareCloudProfileBackupRestore(backupId: string): Promise<BrowserProfileBackupActionResult> {
+  return await prepareCloudSyncProfileBackupRestoreProto({ backupId })
+}
+
+export function onCloudProfileBackupProgress(callback: (progress: BrowserProfileBackupProgress) => void): () => void {
+  return onCloudSyncBackupProgressProto(callback)
 }
 
 // ============================================================================

@@ -25,6 +25,19 @@ type CloudSyncBackupRestoreInput = cloudsync.BackupRestoreInput
 type CloudSyncBackupRestoreResult = cloudsync.BackupRestoreResult
 type CloudSyncBackupDeleteInput = cloudsync.BackupDeleteInput
 
+type CloudSyncProfileBackupUploadResult struct {
+	Backup        cloudsync.BackupItem      `json:"backup"`
+	LocalPath     string                    `json:"localPath"`
+	ProfileBackup ProfileBackupActionResult `json:"profileBackup"`
+	Message       string                    `json:"message"`
+}
+
+type CloudSyncProfileBackupPrepareRestoreInput struct {
+	BackupID string `json:"backupId"`
+}
+
+const cloudSyncBackupProgressEvent = "cloud-sync:backup:progress"
+
 func (a *App) CloudSyncGetStatus() (CloudSyncStatus, error) {
 	manager := a.ensureCloudSyncManager()
 	return manager.GetStatus()
@@ -79,17 +92,22 @@ func (a *App) CloudSyncUploadFullBackup(input CloudSyncBackupUploadInput) (Cloud
 	manager := a.ensureCloudSyncManager()
 	ctx, cancel := a.operationContext(10 * time.Minute)
 	defer cancel()
+	a.cloudSyncEmitProgress("starting", 0, "准备上传全量云端备份...")
 
 	tempDir := a.resolveAppPath(filepath.Join("data", "cloud-sync", "temp"))
 	if err := os.MkdirAll(tempDir, 0700); err != nil {
+		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("创建临时目录失败: %v", err))
 		return CloudSyncBackupUploadResult{}, err
 	}
 	zipPath := filepath.Join(tempDir, fmt.Sprintf("trace-cloud-full-%s.zip", time.Now().Format("20060102-150405")))
-	included, skipped, fileCount, err := a.cloudSyncExportFullBackupToPath(zipPath)
+	a.cloudSyncEmitProgress("preparing", 5, "正在生成全量备份包...")
+	included, skipped, fileCount, err := a.cloudSyncExportFullBackupToPath(zipPath, a.cloudSyncMapProgress("preparing", 5, 62, "正在生成全量备份包"))
 	if err != nil {
+		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("生成全量备份包失败: %v", err))
 		return CloudSyncBackupUploadResult{}, err
 	}
 	defer os.Remove(zipPath)
+	a.cloudSyncEmitProgress("uploading", 64, "备份包生成完成，准备上传到云端...")
 
 	name := strings.TrimSpace(input.Name)
 	if name == "" {
@@ -107,10 +125,12 @@ func (a *App) CloudSyncUploadFullBackup(input CloudSyncBackupUploadInput) (Cloud
 		"encrypted":      "false",
 		"encryptionAlg":  "",
 	}
-	item, err := manager.UploadBackupFile(ctx, zipPath, fields)
+	item, err := manager.UploadBackupFile(ctx, zipPath, fields, a.cloudSyncTransferProgress("uploading", 66, 96, "正在上传全量备份到云端"))
 	if err != nil {
+		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("上传云端备份失败: %v", err))
 		return CloudSyncBackupUploadResult{}, err
 	}
+	a.cloudSyncEmitProgress("done", 100, "云端备份上传完成")
 	return CloudSyncBackupUploadResult{
 		Backup:          item,
 		LocalPath:       zipPath,
@@ -125,13 +145,18 @@ func (a *App) CloudSyncDownloadBackup(input CloudSyncBackupDownloadInput) (Cloud
 	manager := a.ensureCloudSyncManager()
 	ctx, cancel := a.operationContext(5 * time.Minute)
 	defer cancel()
-	result, err := manager.DownloadBackup(ctx, input)
+	a.cloudSyncEmitProgress("starting", 0, "准备下载云端备份...")
+	result, err := manager.DownloadBackup(ctx, input, a.cloudSyncTransferProgress("downloading", 5, 88, "正在下载云端备份"))
 	if err != nil {
+		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("下载云端备份失败: %v", err))
 		return CloudSyncBackupDownloadResult{}, err
 	}
+	a.cloudSyncEmitProgress("verifying", 92, "正在校验云端备份包...")
 	if err := verifyCloudSyncBackupChecksum(result.LocalPath, result.Backup.ChecksumSHA256); err != nil {
+		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("云端备份校验失败: %v", err))
 		return CloudSyncBackupDownloadResult{}, err
 	}
+	a.cloudSyncEmitProgress("done", 100, "云端备份下载完成")
 	return result, nil
 }
 
@@ -139,12 +164,16 @@ func (a *App) CloudSyncRestoreBackup(input CloudSyncBackupRestoreInput) (CloudSy
 	manager := a.ensureCloudSyncManager()
 	ctx, cancel := a.operationContext(10 * time.Minute)
 	defer cancel()
+	a.cloudSyncEmitProgress("starting", 0, "准备从云端恢复全量备份...")
 
-	download, err := manager.DownloadBackup(ctx, cloudsync.BackupDownloadInput{BackupID: input.BackupID})
+	download, err := manager.DownloadBackup(ctx, cloudsync.BackupDownloadInput{BackupID: input.BackupID}, a.cloudSyncTransferProgress("downloading", 5, 38, "正在下载云端备份"))
 	if err != nil {
+		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("下载云端备份失败: %v", err))
 		return CloudSyncBackupRestoreResult{}, err
 	}
+	a.cloudSyncEmitProgress("verifying", 40, "正在校验云端备份包...")
 	if err := verifyCloudSyncBackupChecksum(download.LocalPath, download.Backup.ChecksumSHA256); err != nil {
+		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("云端备份校验失败: %v", err))
 		return CloudSyncBackupRestoreResult{}, err
 	}
 
@@ -153,17 +182,27 @@ func (a *App) CloudSyncRestoreBackup(input CloudSyncBackupRestoreInput) (CloudSy
 
 	restoreDir := a.resolveAppPath(filepath.Join("data", "cloud-sync", "restore-points"))
 	if err := os.MkdirAll(restoreDir, 0700); err != nil {
+		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("创建恢复点目录失败: %v", err))
 		return CloudSyncBackupRestoreResult{}, err
 	}
 	restorePointPath := filepath.Join(restoreDir, fmt.Sprintf("before-cloud-restore-%s.zip", time.Now().Format("20060102-150405")))
-	if _, _, _, err := a.cloudSyncExportFullBackupToPathLocked(restorePointPath); err != nil {
+	a.cloudSyncEmitProgress("snapshotting", 44, "正在创建恢复前本地备份点...")
+	if _, _, _, err := a.cloudSyncExportFullBackupToPathLocked(restorePointPath, a.cloudSyncMapProgress("snapshotting", 44, 60, "正在创建恢复前本地备份点")); err != nil {
+		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("创建恢复点失败: %v", err))
 		return CloudSyncBackupRestoreResult{}, err
 	}
 
-	importResult, err := a.backupImportFromPathLocked(download.LocalPath, input.ResetFirst)
+	a.cloudSyncEmitProgress("restoring", 62, "开始恢复云端备份内容...")
+	importResult, err := a.backupImportFromPathLockedWithEmitter(download.LocalPath, input.ResetFirst, a.cloudSyncMapSimpleProgress("restoring", 62, 98))
 	if err != nil {
+		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("恢复云端备份失败: %v", err))
 		return CloudSyncBackupRestoreResult{}, err
 	}
+	message := mapString(importResult, "message")
+	if strings.TrimSpace(message) == "" {
+		message = "云端备份恢复完成"
+	}
+	a.cloudSyncEmitProgress("done", 100, message)
 	return CloudSyncBackupRestoreResult{
 		Backup:           download.Backup,
 		DownloadedPath:   download.LocalPath,
@@ -172,7 +211,121 @@ func (a *App) CloudSyncRestoreBackup(input CloudSyncBackupRestoreInput) (CloudSy
 		Skipped:          int(mapInt64(importResult, "skipped")),
 		Conflicts:        int(mapInt64(importResult, "conflicts")),
 		Partial:          mapBool(importResult, "partial"),
-		Message:          mapString(importResult, "message"),
+		Message:          message,
+	}, nil
+}
+
+func (a *App) CloudSyncUploadProfileBackup(input ProfileBackupExportRequest) (CloudSyncProfileBackupUploadResult, error) {
+	if a == nil || a.browserMgr == nil {
+		err := fmt.Errorf("浏览器实例服务尚未初始化")
+		if a != nil {
+			a.cloudSyncEmitProgress("error", 100, err.Error())
+		}
+		return CloudSyncProfileBackupUploadResult{}, err
+	}
+	manager := a.ensureCloudSyncManager()
+	ctx, cancel := a.operationContext(10 * time.Minute)
+	defer cancel()
+	a.cloudSyncEmitProgress("starting", 0, "准备上传实例云端备份...")
+
+	tempDir := a.resolveAppPath(filepath.Join("data", "cloud-sync", "temp"))
+	if err := os.MkdirAll(tempDir, 0700); err != nil {
+		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("创建临时目录失败: %v", err))
+		return CloudSyncProfileBackupUploadResult{}, err
+	}
+	zipPath := filepath.Join(tempDir, fmt.Sprintf("trace-cloud-instances-%s.zip", time.Now().Format("20060102-150405")))
+
+	a.maintenanceMu.Lock()
+	if err := a.refreshConfigCacheFromDiskIfPresent(); err != nil {
+		a.maintenanceMu.Unlock()
+		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("重载浏览器配置失败: %v", err))
+		return CloudSyncProfileBackupUploadResult{}, fmt.Errorf("重载浏览器配置失败: %w", err)
+	}
+	profiles := a.selectProfilesForBackup(input)
+	if len(profiles) == 0 {
+		a.maintenanceMu.Unlock()
+		err := fmt.Errorf("没有可上传的实例")
+		a.cloudSyncEmitProgress("error", 100, err.Error())
+		return CloudSyncProfileBackupUploadResult{}, err
+	}
+	a.cloudSyncEmitProgress("preparing", 6, "正在生成实例备份包...")
+	profileResult, err := a.writeProfileBackupZip(zipPath, profiles, input)
+	a.maintenanceMu.Unlock()
+	if err != nil {
+		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("生成实例备份包失败: %v", err))
+		return CloudSyncProfileBackupUploadResult{}, err
+	}
+	defer os.Remove(zipPath)
+
+	name := fmt.Sprintf("实例备份 %s", time.Now().Format("2006-01-02 15:04"))
+	fields := map[string]string{
+		"backupType":     "profile_bundle",
+		"packageFormat":  profileBackupFormat,
+		"packageVersion": strconv.Itoa(profileBackupVersion),
+		"name":           name,
+		"description":    fmt.Sprintf("包含 %d 个实例", profileResult.ProfileCount),
+		"appName":        a.appName(),
+		"appVersion":     a.appVersion(),
+		"sourceOs":       runtime.GOOS,
+		"encrypted":      "false",
+		"encryptionAlg":  "",
+	}
+	a.cloudSyncEmitProgress("uploading", 62, "实例备份包生成完成，准备上传到云端...")
+	item, err := manager.UploadBackupFile(ctx, zipPath, fields, a.cloudSyncTransferProgress("uploading", 64, 96, "正在上传实例备份到云端"))
+	if err != nil {
+		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("上传实例云端备份失败: %v", err))
+		return CloudSyncProfileBackupUploadResult{}, err
+	}
+	a.cloudSyncEmitProgress("done", 100, "实例云端备份上传完成")
+	return CloudSyncProfileBackupUploadResult{
+		Backup:        item,
+		LocalPath:     zipPath,
+		ProfileBackup: profileResult,
+		Message:       "实例云端备份上传完成",
+	}, nil
+}
+
+func (a *App) CloudSyncPrepareProfileBackupRestore(input CloudSyncProfileBackupPrepareRestoreInput) (ProfileBackupActionResult, error) {
+	manager := a.ensureCloudSyncManager()
+	ctx, cancel := a.operationContext(5 * time.Minute)
+	defer cancel()
+	a.cloudSyncEmitProgress("starting", 0, "准备下载实例云端备份...")
+
+	download, err := manager.DownloadBackup(ctx, cloudsync.BackupDownloadInput{BackupID: input.BackupID}, a.cloudSyncTransferProgress("downloading", 5, 88, "正在下载实例云端备份"))
+	if err != nil {
+		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("下载实例云端备份失败: %v", err))
+		return ProfileBackupActionResult{}, err
+	}
+	if download.Backup.BackupType != "" && download.Backup.BackupType != "profile_bundle" {
+		err := fmt.Errorf("该云端备份不是实例备份")
+		a.cloudSyncEmitProgress("error", 100, err.Error())
+		return ProfileBackupActionResult{}, err
+	}
+	a.cloudSyncEmitProgress("verifying", 92, "正在校验实例备份包...")
+	if err := verifyCloudSyncBackupChecksum(download.LocalPath, download.Backup.ChecksumSHA256); err != nil {
+		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("实例备份包校验失败: %v", err))
+		return ProfileBackupActionResult{}, err
+	}
+	summary, err := readProfileBackupSummary(download.LocalPath)
+	if err != nil {
+		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("实例备份包校验失败: %v", err))
+		return ProfileBackupActionResult{}, err
+	}
+	profiles, err := readProfileBackupProfileSummaries(download.LocalPath)
+	if err != nil {
+		a.cloudSyncEmitProgress("error", 100, fmt.Sprintf("实例备份包解析失败: %v", err))
+		return ProfileBackupActionResult{}, err
+	}
+	a.cloudSyncEmitProgress("done", 100, "实例云端备份已下载并校验通过")
+	return ProfileBackupActionResult{
+		Cancelled:          false,
+		Message:            "实例云端备份已下载并校验通过",
+		ZipPath:            download.LocalPath,
+		CreatedAt:          summary.CreatedAt,
+		ProfileCount:       summary.ProfileCount,
+		CookieProfileCount: summary.CookieProfileCount,
+		Summary:            summary,
+		Profiles:           profiles,
 	}, nil
 }
 
@@ -211,13 +364,13 @@ func (a *App) operationContext(timeout time.Duration) (context.Context, context.
 	return context.WithTimeout(base, timeout)
 }
 
-func (a *App) cloudSyncExportFullBackupToPath(zipPath string) (int, int, int, error) {
+func (a *App) cloudSyncExportFullBackupToPath(zipPath string, emitProgress func(phase string, progress int, message string, meta *backupProgressMeta)) (int, int, int, error) {
 	a.maintenanceMu.Lock()
 	defer a.maintenanceMu.Unlock()
-	return a.cloudSyncExportFullBackupToPathLocked(zipPath)
+	return a.cloudSyncExportFullBackupToPathLocked(zipPath, emitProgress)
 }
 
-func (a *App) cloudSyncExportFullBackupToPathLocked(zipPath string) (int, int, int, error) {
+func (a *App) cloudSyncExportFullBackupToPathLocked(zipPath string, emitProgress func(phase string, progress int, message string, meta *backupProgressMeta)) (int, int, int, error) {
 	if a == nil {
 		return 0, 0, 0, fmt.Errorf("应用未初始化")
 	}
@@ -226,7 +379,91 @@ func (a *App) cloudSyncExportFullBackupToPathLocked(zipPath string) (int, int, i
 		return 0, 0, 0, err
 	}
 	manifest := backup.BuildManifest(scope, a.appName(), a.appVersion(), time.Now())
-	return backupWritePackageZip(zipPath, scope, manifest, a.backupEmitExportProgressMeta)
+	return backupWritePackageZip(zipPath, scope, manifest, emitProgress)
+}
+
+func (a *App) cloudSyncEmitProgress(phase string, progress int, message string) {
+	a.cloudSyncEmitProgressMeta(phase, progress, message, nil)
+}
+
+func (a *App) cloudSyncEmitProgressMeta(phase string, progress int, message string, meta *backupProgressMeta) {
+	a.backupEmitProgress(cloudSyncBackupProgressEvent, phase, progress, message, meta)
+}
+
+func (a *App) cloudSyncMapProgress(phase string, start int, end int, prefix string) func(string, int, string, *backupProgressMeta) {
+	return func(innerPhase string, progress int, message string, meta *backupProgressMeta) {
+		mapped := cloudSyncMapPercent(progress, start, end)
+		if strings.TrimSpace(phase) == "" {
+			phase = innerPhase
+		}
+		if strings.TrimSpace(prefix) != "" && strings.TrimSpace(message) != "" {
+			message = fmt.Sprintf("%s：%s", strings.TrimSpace(prefix), strings.TrimSpace(message))
+		}
+		a.cloudSyncEmitProgressMeta(phase, mapped, message, meta)
+	}
+}
+
+func (a *App) cloudSyncMapSimpleProgress(phase string, start int, end int) func(string, int, string) {
+	return func(innerPhase string, progress int, message string) {
+		nextPhase := strings.TrimSpace(phase)
+		if nextPhase == "" {
+			nextPhase = innerPhase
+		}
+		a.cloudSyncEmitProgress(nextPhase, cloudSyncMapPercent(progress, start, end), message)
+	}
+}
+
+func (a *App) cloudSyncTransferProgress(phase string, start int, end int, message string) cloudsync.TransferProgressFunc {
+	return func(progress cloudsync.TransferProgress) {
+		mappedProgress := start
+		if progress.TotalBytes > 0 {
+			ratio := float64(progress.TransferredBytes) / float64(progress.TotalBytes)
+			if ratio < 0 {
+				ratio = 0
+			}
+			if ratio > 1 {
+				ratio = 1
+			}
+			mappedProgress = start + int(ratio*float64(end-start))
+		}
+		detail := strings.TrimSpace(message)
+		if progress.TotalBytes > 0 {
+			detail = fmt.Sprintf("%s（%s / %s）", detail, cloudSyncFormatBytes(progress.TransferredBytes), cloudSyncFormatBytes(progress.TotalBytes))
+		} else if progress.TransferredBytes > 0 {
+			detail = fmt.Sprintf("%s（已传输 %s）", detail, cloudSyncFormatBytes(progress.TransferredBytes))
+		}
+		a.cloudSyncEmitProgress(phase, mappedProgress, detail)
+	}
+}
+
+func cloudSyncMapPercent(progress int, start int, end int) int {
+	if start > end {
+		start, end = end, start
+	}
+	if progress < 0 {
+		progress = 0
+	}
+	if progress > 100 {
+		progress = 100
+	}
+	return start + int(float64(end-start)*float64(progress)/100)
+}
+
+func cloudSyncFormatBytes(bytes int64) string {
+	if bytes <= 0 {
+		return "0 B"
+	}
+	units := []string{"B", "KB", "MB", "GB", "TB"}
+	size := float64(bytes)
+	index := 0
+	for size >= 1024 && index < len(units)-1 {
+		size /= 1024
+		index++
+	}
+	if index == 0 {
+		return fmt.Sprintf("%d %s", bytes, units[index])
+	}
+	return fmt.Sprintf("%.1f %s", size, units[index])
 }
 
 func verifyCloudSyncBackupChecksum(path string, expected string) error {

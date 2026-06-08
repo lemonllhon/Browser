@@ -6,6 +6,8 @@ import {
   METHOD_CLOUD_SYNC_BACKUP_UPLOAD,
   METHOD_CLOUD_SYNC_LOGIN_BIND,
   METHOD_CLOUD_SYNC_LOGOUT,
+  METHOD_CLOUD_SYNC_PROFILE_BACKUP_PREPARE_RESTORE,
+  METHOD_CLOUD_SYNC_PROFILE_BACKUP_UPLOAD,
   METHOD_CLOUD_SYNC_REFRESH_STATUS,
   METHOD_CLOUD_SYNC_STATUS_GET,
 } from './envelope'
@@ -17,12 +19,15 @@ import {
   readFields,
 } from './protobuf'
 import { ProtoIpcClient } from './transport'
+import { decodeBackupProgress, type ProtoBackupProgress } from './app'
+import type { ProtoBrowserProfileBackupActionResult, ProtoBrowserProfileBackupExportInput } from './browserProfileBackup'
 
 const cloudSyncProtoClient = new ProtoIpcClient()
 
 export type ProtoCloudSyncUser = {
   id: string
   username: string
+  nickname: string
   role: string
 }
 
@@ -147,6 +152,19 @@ export type ProtoCloudSyncBackupDeleteInput = {
   backupId: string
 }
 
+export type ProtoCloudSyncBackupProgress = ProtoBackupProgress
+
+export type ProtoCloudSyncProfileBackupUploadResult = {
+  backup: ProtoCloudSyncBackupItem
+  localPath: string
+  profileBackup: ProtoBrowserProfileBackupActionResult
+  message: string
+}
+
+export type ProtoCloudSyncProfileBackupPrepareRestoreInput = {
+  backupId: string
+}
+
 export async function getCloudSyncStatus(): Promise<ProtoCloudSyncStatus> {
   const payload = await cloudSyncProtoClient.request(METHOD_CLOUD_SYNC_STATUS_GET, new Uint8Array())
   return decodeCloudSyncStatus(payload)
@@ -219,6 +237,28 @@ export async function deleteCloudSyncBackup(input: ProtoCloudSyncBackupDeleteInp
   )
 }
 
+export async function uploadCloudSyncProfileBackup(input: ProtoBrowserProfileBackupExportInput): Promise<ProtoCloudSyncProfileBackupUploadResult> {
+  const payload = await cloudSyncProtoClient.request(
+    METHOD_CLOUD_SYNC_PROFILE_BACKUP_UPLOAD,
+    encodeCloudSyncJSONMessage(JSON.stringify(input)),
+    600000,
+  )
+  return decodeCloudSyncJSONMessage<ProtoCloudSyncProfileBackupUploadResult>(payload)
+}
+
+export async function prepareCloudSyncProfileBackupRestore(input: ProtoCloudSyncProfileBackupPrepareRestoreInput): Promise<ProtoBrowserProfileBackupActionResult> {
+  const payload = await cloudSyncProtoClient.request(
+    METHOD_CLOUD_SYNC_PROFILE_BACKUP_PREPARE_RESTORE,
+    encodeCloudSyncJSONMessage(JSON.stringify(input)),
+    300000,
+  )
+  return decodeCloudSyncJSONMessage<ProtoBrowserProfileBackupActionResult>(payload)
+}
+
+export function onCloudSyncBackupProgress(callback: (progress: ProtoCloudSyncBackupProgress) => void): () => void {
+  return cloudSyncProtoClient.onEvent('cloud-sync:backup:progress', event => callback(decodeBackupProgress(event.payload)))
+}
+
 function encodeCloudSyncJSONMessage(json: string): Uint8Array {
   return concatBytes([encodeStringField(1, json)])
 }
@@ -270,6 +310,7 @@ function emptyCloudSyncStatus(): ProtoCloudSyncStatus {
     user: {
       id: '',
       username: '',
+      nickname: '',
       role: '',
     },
     device: {

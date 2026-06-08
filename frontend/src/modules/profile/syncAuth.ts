@@ -8,8 +8,11 @@ import {
   downloadCloudSyncBackup,
   restoreCloudSyncBackup,
   deleteCloudSyncBackup,
+  onCloudSyncBackupProgress,
   type ProtoCloudSyncBackupItem,
+  type ProtoCloudSyncBackupListInput,
   type ProtoCloudSyncBackupListResult,
+  type ProtoCloudSyncBackupProgress,
   type ProtoCloudSyncBackupRestoreResult,
   type ProtoCloudSyncBackupUploadResult,
   type ProtoCloudSyncBackupDownloadResult,
@@ -24,6 +27,7 @@ export type SyncBackupListResult = ProtoCloudSyncBackupListResult
 export type SyncBackupUploadResult = ProtoCloudSyncBackupUploadResult
 export type SyncBackupDownloadResult = ProtoCloudSyncBackupDownloadResult
 export type SyncBackupRestoreResult = ProtoCloudSyncBackupRestoreResult
+export type SyncBackupProgress = ProtoCloudSyncBackupProgress
 
 let cachedSession: SyncAuthSession | null = null
 
@@ -40,6 +44,15 @@ export function loadSyncAuthSession(): SyncAuthSession | null {
 
 export function isSyncSessionOnline(session: SyncAuthSession | null): boolean {
   return Boolean(session?.online && session?.authorized && session.authState !== 'invalid')
+}
+
+export function formatSyncUserDisplayName(session: SyncAuthSession | null, fallback = 'Admin'): string {
+  const username = session?.user?.username?.trim() || ''
+  const nickname = session?.user?.nickname?.trim() || ''
+  if (username && nickname && nickname !== username) {
+    return `${username}-${nickname}`
+  }
+  return username || nickname || fallback
 }
 
 export async function fetchSyncAuthSession(): Promise<SyncAuthSession | null> {
@@ -66,8 +79,8 @@ export async function logoutSyncServer(_session: SyncAuthSession | null) {
   notify(status.configured || status.authorized ? status : null)
 }
 
-export async function listSyncBackups(): Promise<SyncBackupListResult> {
-  return listCloudSyncBackups({ page: 1, pageSize: 20, status: 'ready' })
+export async function listSyncBackups(input: ProtoCloudSyncBackupListInput = {}): Promise<SyncBackupListResult> {
+  return listCloudSyncBackups({ page: 1, pageSize: 20, status: 'ready', ...input })
 }
 
 export async function uploadFullSyncBackup(): Promise<SyncBackupUploadResult> {
@@ -84,6 +97,10 @@ export async function restoreSyncBackup(backupId: string, resetFirst = false): P
 
 export async function deleteSyncBackup(backupId: string): Promise<void> {
   await deleteCloudSyncBackup({ backupId })
+}
+
+export function onSyncBackupProgress(callback: (progress: SyncBackupProgress) => void): () => void {
+  return onCloudSyncBackupProgress(callback)
 }
 
 function notify(session: SyncAuthSession | null) {

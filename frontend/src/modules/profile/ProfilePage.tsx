@@ -25,11 +25,12 @@ import {
 } from 'lucide-react'
 import { FormEvent, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Badge, Button, Card, Input, Modal, toast } from '../../shared/components'
+import { Badge, Button, Card, Input, Modal, Progress, toast } from '../../shared/components'
 import { createDefaultProfilePageData, loadProfilePageData } from './api'
 import {
   SYNC_AUTH_CHANGED_EVENT,
   fetchSyncAuthSession,
+  formatSyncUserDisplayName,
   heartbeatSyncServer,
   isSyncSessionOnline,
   listSyncBackups,
@@ -40,7 +41,9 @@ import {
   downloadSyncBackup,
   restoreSyncBackup,
   deleteSyncBackup,
+  onSyncBackupProgress,
   type SyncBackupItem,
+  type SyncBackupProgress,
   type SyncAuthSession,
 } from './syncAuth'
 import type { IconKey, ProfilePageData } from './types'
@@ -73,6 +76,7 @@ export function ProfilePage() {
   const [syncBackups, setSyncBackups] = useState<SyncBackupItem[]>([])
   const [syncBackupLoading, setSyncBackupLoading] = useState(false)
   const [syncBackupAction, setSyncBackupAction] = useState('')
+  const [syncBackupProgress, setSyncBackupProgress] = useState<SyncBackupProgress | null>(null)
   const [syncForm, setSyncForm] = useState({
     serverURL: syncSession?.serverURL || 'http://127.0.0.1:8000',
     username: syncSession?.user.username || 'admin',
@@ -149,6 +153,17 @@ export function ProfilePage() {
     void handleSyncBackupRefresh(false)
   }, [syncSession?.authorized, syncSession?.serverURL])
 
+  useEffect(() => {
+    return onSyncBackupProgress(progress => {
+      if (!progress || typeof progress !== 'object') return
+      if (progress.phase === 'cancelled') {
+        setSyncBackupProgress(null)
+        return
+      }
+      setSyncBackupProgress(normalizeSyncBackupProgress(progress))
+    })
+  }, [])
+
   const handleAuthorClick = () => {
     const newCount = clickCount + 1
     setClickCount(newCount)
@@ -204,7 +219,7 @@ export function ProfilePage() {
     if (!syncSession?.authorized) return
     setSyncBackupLoading(true)
     try {
-      const result = await listSyncBackups()
+      const result = await listSyncBackups({ backupType: 'full_config' })
       setSyncBackups(result.list || [])
       if (notify) toast.success('云端备份列表已刷新')
     } catch (error) {
@@ -217,6 +232,7 @@ export function ProfilePage() {
   const handleSyncBackupUpload = async () => {
     if (!syncSession?.authorized) return
     setSyncBackupAction('upload')
+    setSyncBackupProgress({ phase: 'starting', progress: 0, message: '准备上传全量云端备份...' })
     try {
       const result = await uploadFullSyncBackup()
       toast.success(result.message || '云端备份上传完成')
@@ -230,6 +246,7 @@ export function ProfilePage() {
 
   const handleSyncBackupDownload = async (backup: SyncBackupItem) => {
     setSyncBackupAction(`download:${backup.id}`)
+    setSyncBackupProgress({ phase: 'starting', progress: 0, message: '准备下载云端备份...' })
     try {
       const result = await downloadSyncBackup(backup.id)
       toast.success(`已下载到 ${result.localPath}`)
@@ -245,6 +262,7 @@ export function ProfilePage() {
       return
     }
     setSyncBackupAction(`restore:${backup.id}`)
+    setSyncBackupProgress({ phase: 'starting', progress: 0, message: '准备从云端恢复全量备份...' })
     try {
       const result = await restoreSyncBackup(backup.id, false)
       toast.success(result.message || '云端备份恢复完成')
@@ -274,6 +292,12 @@ export function ProfilePage() {
   const authorInfo = pageData.author
   const projectInfo = pageData.project
   const syncOnline = isSyncSessionOnline(syncSession)
+  const syncUserDisplayName = formatSyncUserDisplayName(syncSession, '未登录')
+  const syncBackupProgressStatus = syncBackupProgress?.phase === 'error'
+    ? 'error'
+    : syncBackupProgress?.phase === 'done'
+      ? 'success'
+      : 'normal'
   const metaItems = [
     {
       label: authorInfo.location,
@@ -377,8 +401,8 @@ export function ProfilePage() {
                   <Link2 className="h-3.5 w-3.5" />
                   授权账号
                 </div>
-                <p className="truncate font-medium" title={syncSession?.user.username || '未登录'}>
-                  {syncSession?.user.username || '未登录'}
+                <p className="truncate font-medium" title={syncUserDisplayName}>
+                  {syncUserDisplayName}
                 </p>
               </div>
               <div className="min-w-0 rounded-xl bg-[var(--color-bg-muted)] px-4 py-3">
@@ -497,6 +521,16 @@ export function ProfilePage() {
               </Button>
             </div>
           </div>
+
+          {syncBackupProgress && (
+            <div className="rounded-xl border border-[var(--color-border-default)] bg-[var(--color-bg-muted)] px-4 py-3">
+              <div className="mb-2 flex items-center justify-between gap-3 text-sm">
+                <span className="min-w-0 truncate text-[var(--color-text-secondary)]">{syncBackupProgress.message || '正在处理云端备份...'}</span>
+                <span className="shrink-0 text-xs text-[var(--color-text-muted)]">{syncBackupProgress.progress}%</span>
+              </div>
+              <Progress percent={syncBackupProgress.progress} size="sm" status={syncBackupProgressStatus} />
+            </div>
+          )}
 
           <div className="overflow-hidden rounded-xl border border-[var(--color-border-default)]">
             {syncBackups.length === 0 ? (
@@ -738,6 +772,18 @@ function stripProtocol(value: string): string {
 function backupTypeText(value: string): string {
   if (value === 'profile_bundle') return '实例备份'
   return '全量配置'
+}
+
+function normalizeSyncBackupProgress(progress: SyncBackupProgress): SyncBackupProgress {
+  const nextProgress = Number.isFinite(progress.progress)
+    ? Math.max(0, Math.min(100, Math.round(progress.progress)))
+    : 0
+  return {
+    ...progress,
+    phase: typeof progress.phase === 'string' && progress.phase.trim() ? progress.phase : 'running',
+    progress: nextProgress,
+    message: typeof progress.message === 'string' && progress.message.trim() ? progress.message.trim() : '正在处理云端备份...',
+  }
 }
 
 function formatBytes(bytes: number): string {

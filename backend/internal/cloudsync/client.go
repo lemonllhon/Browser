@@ -116,13 +116,13 @@ func (c *Client) ListBackups(ctx context.Context, session *Session, input Backup
 	return BackupListResult{List: out.List, Total: out.Total}, nil
 }
 
-func (c *Client) UploadBackup(ctx context.Context, session *Session, filePath string, fields map[string]string) (BackupItem, error) {
+func (c *Client) UploadBackup(ctx context.Context, session *Session, filePath string, fields map[string]string, onProgress TransferProgressFunc) (BackupItem, error) {
 	var out backupUploadResponse
-	err := c.postMultipart(ctx, session.ServerURL+"/v1/sync/backups", session.AccessToken, filePath, fields, &out)
+	err := c.postMultipart(ctx, session.ServerURL+"/v1/sync/backups", session.AccessToken, filePath, fields, &out, onProgress)
 	return out.Backup, err
 }
 
-func (c *Client) DownloadBackup(ctx context.Context, session *Session, backupID string, targetPath string) error {
+func (c *Client) DownloadBackup(ctx context.Context, session *Session, backupID string, targetPath string, expectedSize int64, onProgress TransferProgressFunc) error {
 	backupID = strings.TrimSpace(backupID)
 	if backupID == "" {
 		return fmt.Errorf("backup id missing")
@@ -142,6 +142,10 @@ func (c *Client) DownloadBackup(ctx context.Context, session *Session, backupID 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 || strings.Contains(contentType, "application/json") {
 		return decodeAPIResponse(resp, nil)
 	}
+	totalBytes := resp.ContentLength
+	if totalBytes <= 0 && expectedSize > 0 {
+		totalBytes = expectedSize
+	}
 	if err := os.MkdirAll(filepath.Dir(targetPath), 0700); err != nil {
 		return err
 	}
@@ -150,7 +154,10 @@ func (c *Client) DownloadBackup(ctx context.Context, session *Session, backupID 
 	if err != nil {
 		return err
 	}
-	_, copyErr := io.Copy(out, resp.Body)
+	tracker := newTransferProgressTracker(totalBytes, onProgress)
+	tracker.emit(true)
+	_, copyErr := io.Copy(out, &transferProgressReader{reader: resp.Body, tracker: tracker})
+	tracker.done()
 	closeErr := out.Close()
 	if copyErr != nil {
 		_ = os.Remove(tmpPath)
@@ -170,6 +177,66 @@ func (c *Client) DeleteBackup(ctx context.Context, session *Session, backupID st
 	}
 	endpoint := session.ServerURL + "/v1/sync/backups/" + url.PathEscape(backupID)
 	return c.requestJSON(ctx, http.MethodDelete, endpoint, session.AccessToken, nil, nil)
+}
+
+type transferProgressTracker struct {
+	total       int64
+	transferred int64
+	lastEmit    time.Time
+	onProgress  TransferProgressFunc
+}
+
+func newTransferProgressTracker(total int64, onProgress TransferProgressFunc) *transferProgressTracker {
+	return &transferProgressTracker{
+		total:      total,
+		onProgress: onProgress,
+	}
+}
+
+func (t *transferProgressTracker) add(n int) {
+	if t == nil || n <= 0 {
+		return
+	}
+	t.transferred += int64(n)
+	t.emit(false)
+}
+
+func (t *transferProgressTracker) done() {
+	if t == nil {
+		return
+	}
+	if t.total > 0 && t.transferred < t.total {
+		t.transferred = t.total
+	}
+	t.emit(true)
+}
+
+func (t *transferProgressTracker) emit(force bool) {
+	if t == nil || t.onProgress == nil {
+		return
+	}
+	now := time.Now()
+	if !force && !t.lastEmit.IsZero() && now.Sub(t.lastEmit) < 150*time.Millisecond {
+		return
+	}
+	t.lastEmit = now
+	t.onProgress(TransferProgress{
+		TransferredBytes: t.transferred,
+		TotalBytes:       t.total,
+	})
+}
+
+type transferProgressReader struct {
+	reader  io.Reader
+	tracker *transferProgressTracker
+}
+
+func (r *transferProgressReader) Read(p []byte) (int, error) {
+	n, err := r.reader.Read(p)
+	if n > 0 {
+		r.tracker.add(n)
+	}
+	return n, err
 }
 
 func (c *Client) post(ctx context.Context, endpoint string, accessToken string, body interface{}, out interface{}) error {
@@ -207,10 +274,14 @@ func (c *Client) requestJSON(ctx context.Context, method string, endpoint string
 	return decodeAPIResponse(resp, out)
 }
 
-func (c *Client) postMultipart(ctx context.Context, endpoint string, accessToken string, filePath string, fields map[string]string, out interface{}) error {
+func (c *Client) postMultipart(ctx context.Context, endpoint string, accessToken string, filePath string, fields map[string]string, out interface{}, onProgress TransferProgressFunc) error {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return err
+	}
+	fileSize := int64(0)
+	if info, statErr := file.Stat(); statErr == nil {
+		fileSize = info.Size()
 	}
 
 	reader, writerPipe := io.Pipe()
@@ -230,9 +301,12 @@ func (c *Client) postMultipart(ctx context.Context, endpoint string, accessToken
 			if err != nil {
 				return err
 			}
-			if _, err := io.Copy(part, file); err != nil {
+			tracker := newTransferProgressTracker(fileSize, onProgress)
+			tracker.emit(true)
+			if _, err := io.Copy(part, &transferProgressReader{reader: file, tracker: tracker}); err != nil {
 				return err
 			}
+			tracker.done()
 			return multipartWriter.Close()
 		}()
 		if writeErr != nil {
