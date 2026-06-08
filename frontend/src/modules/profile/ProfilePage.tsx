@@ -69,6 +69,8 @@ const CHANNEL_ICON_CLASS: Partial<Record<IconKey, string>> = {
   mail: 'text-[var(--color-accent)]',
 }
 
+const SYNC_ENCRYPTION_MIN_PASSWORD_LENGTH = 8
+
 export function ProfilePage() {
   const navigate = useNavigate()
   const [clickCount, setClickCount] = useState(0)
@@ -344,7 +346,20 @@ export function ProfilePage() {
   const handleSyncEncryptionSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const password = syncEncryptionForm.password.trim()
-    if (syncEncryptionMode === 'setup' && password !== syncEncryptionForm.confirm.trim()) {
+    const confirmPassword = syncEncryptionForm.confirm.trim()
+    if (!password) {
+      toast.error('请填写同步加密密码')
+      return
+    }
+    if (password.length < SYNC_ENCRYPTION_MIN_PASSWORD_LENGTH) {
+      toast.error(`同步加密密码至少需要 ${SYNC_ENCRYPTION_MIN_PASSWORD_LENGTH} 个字符`)
+      return
+    }
+    if (syncEncryptionMode === 'setup' && !confirmPassword) {
+      toast.error('请再次输入同步加密密码')
+      return
+    }
+    if (syncEncryptionMode === 'setup' && password !== confirmPassword) {
       toast.error('两次输入的同步加密密码不一致')
       return
     }
@@ -357,7 +372,7 @@ export function ProfilePage() {
       setSyncEncryptionOpen(false)
       toast.success(syncEncryptionMode === 'setup' ? '同步加密已启用' : '同步加密已解锁')
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '同步加密操作失败')
+      toast.error(formatSyncEncryptionError(error, '同步加密操作失败'))
     } finally {
       setSyncEncryptionLoading(false)
     }
@@ -914,7 +929,7 @@ export function ProfilePage() {
         title={syncEncryptionMode === 'setup' ? '设置同步加密密码' : '解锁同步加密'}
         width="520px"
       >
-        <form className="space-y-4" onSubmit={handleSyncEncryptionSubmit}>
+        <form className="space-y-4" onSubmit={handleSyncEncryptionSubmit} noValidate>
           <div className="space-y-1">
             <label className="text-sm font-medium text-[var(--color-text-secondary)]">同步加密密码</label>
             <Input
@@ -923,8 +938,12 @@ export function ProfilePage() {
               onChange={(event) => setSyncEncryptionForm(prev => ({ ...prev, password: event.target.value }))}
               placeholder="至少 8 个字符"
               autoComplete="new-password"
+              minLength={SYNC_ENCRYPTION_MIN_PASSWORD_LENGTH}
               required
             />
+            <p className="text-xs text-[var(--color-text-muted)]">
+              密码至少需要 {SYNC_ENCRYPTION_MIN_PASSWORD_LENGTH} 个字符，用于加密云端备份。
+            </p>
           </div>
           {syncEncryptionMode === 'setup' && (
             <div className="space-y-1">
@@ -984,6 +1003,20 @@ function normalizeSyncBackupProgress(progress: SyncBackupProgress): SyncBackupPr
 
 function isSyncEncryptionReady(session: SyncAuthSession | null): boolean {
   return Boolean(session?.encryption?.enabled && session.encryption.configured && session.encryption.unlocked)
+}
+
+function formatSyncEncryptionError(error: unknown, fallback: string): string {
+  const message = error instanceof Error ? error.message : ''
+  const details = typeof error === 'object' && error && 'details' in error
+    ? String((error as { details?: unknown }).details || '').trim()
+    : ''
+  if (message.includes('未知的 Protobuf RPC 方法') && details.includes('trace.cloudSync.Encryption')) {
+    return '当前运行的后端还没有加载同步加密接口，请重启 Trace-Browser 后再试'
+  }
+  if (details) {
+    return details
+  }
+  return message || fallback
 }
 
 function formatBytes(bytes: number): string {
