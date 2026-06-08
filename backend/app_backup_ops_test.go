@@ -3,6 +3,7 @@ package backend
 import (
 	"ant-chrome/backend/internal/config"
 	"ant-chrome/backend/internal/database"
+	"archive/zip"
 	"os"
 	"path/filepath"
 	"testing"
@@ -125,6 +126,58 @@ func TestBackupSyncDirConflictAndOverwrite(t *testing.T) {
 	}
 	if string(got2) != "new-content" {
 		t.Fatalf("覆盖模式应改写目标文件: %s", string(got2))
+	}
+}
+
+func TestBackupZipAddDirSkipsCloudSyncSession(t *testing.T) {
+	src := t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, "app.db"), []byte("database"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	sessionPath := filepath.Join(src, "cloud-sync", "session.json")
+	if err := os.MkdirAll(filepath.Dir(sessionPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sessionPath, []byte(`{"refreshToken":"secret"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	zipPath := filepath.Join(t.TempDir(), "backup.zip")
+	out, err := os.Create(zipPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := zip.NewWriter(out)
+	count, err := backupZipAddDir(writer, src, "payload/app/data/", zipPath)
+	closeErr := writer.Close()
+	fileCloseErr := out.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	if fileCloseErr != nil {
+		t.Fatal(fileCloseErr)
+	}
+	if count != 1 {
+		t.Fatalf("unexpected archived file count: %d", count)
+	}
+
+	reader, err := zip.OpenReader(zipPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	entries := map[string]bool{}
+	for _, file := range reader.File {
+		entries[file.Name] = true
+	}
+	if !entries["payload/app/data/app.db"] {
+		t.Fatalf("expected app data file in backup, got %+v", entries)
+	}
+	if entries["payload/app/data/cloud-sync/session.json"] {
+		t.Fatalf("cloud sync session should not be archived")
 	}
 }
 

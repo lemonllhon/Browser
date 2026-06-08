@@ -3,6 +3,13 @@ import { Bell, Search, User, Settings, Check, Trash2, Info, AlertCircle, CheckCi
 import { Link } from 'react-router-dom'
 import clsx from 'clsx'
 import { useNotificationStore, type Notification } from '../../store/notificationStore'
+import {
+  SYNC_AUTH_CHANGED_EVENT,
+  fetchSyncAuthSession,
+  isSyncSessionOnline,
+  loadSyncAuthSession,
+  type SyncAuthSession
+} from '../../modules/profile/syncAuth'
 
 function NotificationDropdown({
   notifications,
@@ -118,6 +125,8 @@ function NotificationDropdown({
 
 export function Topbar() {
   const [showNotifications, setShowNotifications] = useState(false)
+  const [syncOnline, setSyncOnline] = useState(() => isSyncSessionOnline(loadSyncAuthSession()))
+  const [syncConfigured, setSyncConfigured] = useState(() => !!loadSyncAuthSession())
   const { notifications, markAsRead, markAllAsRead, clearNotifications } = useNotificationStore()
   const dropdownRef = useRef<HTMLDivElement>(null)
 
@@ -132,6 +141,30 @@ export function Topbar() {
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  useEffect(() => {
+    const applySyncStatus = (session: SyncAuthSession | null) => {
+      setSyncConfigured(!!session)
+      setSyncOnline(isSyncSessionOnline(session))
+    }
+
+    const refreshSyncStatus = (event?: Event) => {
+      const session = event instanceof CustomEvent
+        ? event.detail as SyncAuthSession | null
+        : loadSyncAuthSession()
+      applySyncStatus(session)
+    }
+
+    void fetchSyncAuthSession().catch(() => applySyncStatus(null))
+    window.addEventListener(SYNC_AUTH_CHANGED_EVENT, refreshSyncStatus)
+    const timer = window.setInterval(() => {
+      void fetchSyncAuthSession().catch(() => applySyncStatus(loadSyncAuthSession()))
+    }, 15000)
+    return () => {
+      window.removeEventListener(SYNC_AUTH_CHANGED_EVENT, refreshSyncStatus)
+      window.clearInterval(timer)
+    }
   }, [])
 
   return (
@@ -204,6 +237,13 @@ export function Topbar() {
             <User className="w-3.5 h-3.5 text-[var(--color-text-inverse)]" />
           </div>
           <span className="text-sm font-medium text-[var(--color-text-secondary)]">Admin</span>
+          <span
+            className={clsx(
+              'h-2 w-2 rounded-full',
+              syncOnline ? 'bg-[var(--color-success)] ring-2 ring-[var(--color-success)]' : syncConfigured ? 'bg-[var(--color-warning)]' : 'bg-[var(--color-border-strong)]'
+            )}
+            title={syncOnline ? '同步服务在线' : syncConfigured ? '同步服务离线' : '未授权同步服务'}
+          />
         </Link>
       </div>
     </header>

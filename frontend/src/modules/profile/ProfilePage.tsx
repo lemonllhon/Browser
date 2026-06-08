@@ -9,11 +9,40 @@ import {
   Coffee,
   Terminal,
   ExternalLink,
+  Link2,
+  LogIn,
+  LogOut,
+  RefreshCw,
+  Server,
+  ShieldCheck,
+  Wifi,
+  WifiOff,
+  UploadCloud,
+  Download,
+  RotateCcw,
+  Trash2,
+  Archive,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { FormEvent, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Badge, Button, Card } from '../../shared/components'
+import { Badge, Button, Card, Input, Modal, toast } from '../../shared/components'
 import { createDefaultProfilePageData, loadProfilePageData } from './api'
+import {
+  SYNC_AUTH_CHANGED_EVENT,
+  fetchSyncAuthSession,
+  heartbeatSyncServer,
+  isSyncSessionOnline,
+  listSyncBackups,
+  loadSyncAuthSession,
+  loginAndBindSyncServer,
+  logoutSyncServer,
+  uploadFullSyncBackup,
+  downloadSyncBackup,
+  restoreSyncBackup,
+  deleteSyncBackup,
+  type SyncBackupItem,
+  type SyncAuthSession,
+} from './syncAuth'
 import type { IconKey, ProfilePageData } from './types'
 
 const ICON_MAP = {
@@ -37,6 +66,19 @@ export function ProfilePage() {
   const navigate = useNavigate()
   const [clickCount, setClickCount] = useState(0)
   const [pageData, setPageData] = useState<ProfilePageData>(() => createDefaultProfilePageData())
+  const [syncSession, setSyncSession] = useState<SyncAuthSession | null>(() => loadSyncAuthSession())
+  const [syncLoginOpen, setSyncLoginOpen] = useState(false)
+  const [syncLoading, setSyncLoading] = useState(false)
+  const [syncRefreshLoading, setSyncRefreshLoading] = useState(false)
+  const [syncBackups, setSyncBackups] = useState<SyncBackupItem[]>([])
+  const [syncBackupLoading, setSyncBackupLoading] = useState(false)
+  const [syncBackupAction, setSyncBackupAction] = useState('')
+  const [syncForm, setSyncForm] = useState({
+    serverURL: syncSession?.serverURL || 'http://127.0.0.1:8000',
+    username: syncSession?.user.username || 'admin',
+    password: '',
+    deviceName: syncSession?.device.deviceName || 'Trace Browser Windows',
+  })
 
   useEffect(() => {
     let active = true
@@ -46,13 +88,66 @@ export function ProfilePage() {
       if (!active) return
       setPageData(data)
     }
+    const syncCloudStatus = async () => {
+      try {
+        const status = await fetchSyncAuthSession()
+        if (!active) return
+        setSyncSession(status)
+      } catch {
+        if (!active) return
+        setSyncSession(null)
+      }
+    }
 
     void syncProfile()
+    void syncCloudStatus()
 
     return () => {
       active = false
     }
   }, [])
+
+  useEffect(() => {
+    const reload = (event: Event) => {
+      const detail = event instanceof CustomEvent ? event.detail as SyncAuthSession | null : loadSyncAuthSession()
+      setSyncSession(detail)
+    }
+    window.addEventListener(SYNC_AUTH_CHANGED_EVENT, reload)
+    return () => {
+      window.removeEventListener(SYNC_AUTH_CHANGED_EVENT, reload)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!syncSession?.authorized) return
+    let cancelled = false
+    const refresh = async () => {
+      try {
+        const next = await heartbeatSyncServer(syncSession)
+        if (!cancelled) {
+          setSyncSession(next)
+        }
+      } catch {
+        if (!cancelled) {
+          setSyncSession(prev => prev ? { ...prev, online: false } : prev)
+        }
+      }
+    }
+    void refresh()
+    const timer = window.setInterval(refresh, 30000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [syncSession?.serverURL, syncSession?.authorized])
+
+  useEffect(() => {
+    if (!syncSession?.authorized) {
+      setSyncBackups([])
+      return
+    }
+    void handleSyncBackupRefresh(false)
+  }, [syncSession?.authorized, syncSession?.serverURL])
 
   const handleAuthorClick = () => {
     const newCount = clickCount + 1
@@ -67,8 +162,118 @@ export function ProfilePage() {
     window.open(url, '_blank', 'noopener,noreferrer')
   }
 
+  const handleSyncLogin = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setSyncLoading(true)
+    try {
+      const session = await loginAndBindSyncServer(syncForm)
+      setSyncSession(session)
+      setSyncLoginOpen(false)
+      setSyncForm(prev => ({ ...prev, password: '' }))
+      toast.success('授权登录成功，当前设备已在线')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '授权登录失败')
+    } finally {
+      setSyncLoading(false)
+    }
+  }
+
+  const handleSyncRefresh = async () => {
+    if (!syncSession) return
+    setSyncRefreshLoading(true)
+    try {
+      const session = await heartbeatSyncServer(syncSession)
+      setSyncSession(session)
+      toast.success('在线状态已刷新')
+    } catch (error) {
+      setSyncSession(prev => prev ? { ...prev, online: false } : prev)
+      toast.error(error instanceof Error ? error.message : '刷新在线状态失败')
+    } finally {
+      setSyncRefreshLoading(false)
+    }
+  }
+
+  const handleSyncLogout = async () => {
+    await logoutSyncServer(syncSession)
+    setSyncSession(null)
+    setSyncBackups([])
+    toast.success('已退出授权登录')
+  }
+
+  const handleSyncBackupRefresh = async (notify = true) => {
+    if (!syncSession?.authorized) return
+    setSyncBackupLoading(true)
+    try {
+      const result = await listSyncBackups()
+      setSyncBackups(result.list || [])
+      if (notify) toast.success('云端备份列表已刷新')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '获取云端备份列表失败')
+    } finally {
+      setSyncBackupLoading(false)
+    }
+  }
+
+  const handleSyncBackupUpload = async () => {
+    if (!syncSession?.authorized) return
+    setSyncBackupAction('upload')
+    try {
+      const result = await uploadFullSyncBackup()
+      toast.success(result.message || '云端备份上传完成')
+      await handleSyncBackupRefresh(false)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '上传云端备份失败')
+    } finally {
+      setSyncBackupAction('')
+    }
+  }
+
+  const handleSyncBackupDownload = async (backup: SyncBackupItem) => {
+    setSyncBackupAction(`download:${backup.id}`)
+    try {
+      const result = await downloadSyncBackup(backup.id)
+      toast.success(`已下载到 ${result.localPath}`)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '下载云端备份失败')
+    } finally {
+      setSyncBackupAction('')
+    }
+  }
+
+  const handleSyncBackupRestore = async (backup: SyncBackupItem) => {
+    if (!window.confirm(`确定从云端备份「${backup.name || backup.id}」恢复吗？恢复前会自动创建本地恢复点。`)) {
+      return
+    }
+    setSyncBackupAction(`restore:${backup.id}`)
+    try {
+      const result = await restoreSyncBackup(backup.id, false)
+      toast.success(result.message || '云端备份恢复完成')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '恢复云端备份失败')
+    } finally {
+      setSyncBackupAction('')
+    }
+  }
+
+  const handleSyncBackupDelete = async (backup: SyncBackupItem) => {
+    if (!window.confirm(`确定删除云端备份「${backup.name || backup.id}」吗？`)) {
+      return
+    }
+    setSyncBackupAction(`delete:${backup.id}`)
+    try {
+      await deleteSyncBackup(backup.id)
+      toast.success('云端备份已删除')
+      await handleSyncBackupRefresh(false)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '删除云端备份失败')
+    } finally {
+      setSyncBackupAction('')
+    }
+  }
+
   const authorInfo = pageData.author
   const projectInfo = pageData.project
+  const syncOnline = isSyncSessionOnline(syncSession)
   const metaItems = [
     {
       label: authorInfo.location,
@@ -137,6 +342,224 @@ export function ProfilePage() {
                 GitHub
               </Button>
             ) : null}
+          </div>
+        </div>
+      </Card>
+
+      <Card padding="lg" className="rounded-[24px]">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0 space-y-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--color-bg-muted)]">
+                <ShieldCheck className="h-5 w-5 text-[var(--color-accent)]" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">云端同步授权</h2>
+                <p className="text-sm text-[var(--color-text-muted)]">账号密码登录同步服务，并登记当前桌面设备。</p>
+              </div>
+              <Badge variant={syncOnline ? 'success' : syncSession ? 'warning' : 'default'} dot>
+                {syncOnline ? '在线' : syncSession ? '离线' : '未连接'}
+              </Badge>
+            </div>
+
+            <div className="grid gap-3 text-sm text-[var(--color-text-secondary)] md:grid-cols-3">
+              <div className="min-w-0 rounded-xl bg-[var(--color-bg-muted)] px-4 py-3">
+                <div className="mb-1 flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
+                  <Server className="h-3.5 w-3.5" />
+                  同步服务
+                </div>
+                <p className="truncate font-medium" title={syncSession?.serverURL || '未配置'}>
+                  {syncSession?.serverURL || '未配置'}
+                </p>
+              </div>
+              <div className="min-w-0 rounded-xl bg-[var(--color-bg-muted)] px-4 py-3">
+                <div className="mb-1 flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
+                  <Link2 className="h-3.5 w-3.5" />
+                  授权账号
+                </div>
+                <p className="truncate font-medium" title={syncSession?.user.username || '未登录'}>
+                  {syncSession?.user.username || '未登录'}
+                </p>
+              </div>
+              <div className="min-w-0 rounded-xl bg-[var(--color-bg-muted)] px-4 py-3">
+                <div className="mb-1 flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
+                  {syncOnline ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
+                  当前设备
+                </div>
+                <p className="truncate font-medium" title={syncSession?.device.deviceFingerprint || '未绑定'}>
+                  {syncSession?.device.deviceName || '未绑定'}
+                </p>
+              </div>
+              <div className="min-w-0 rounded-xl bg-[var(--color-bg-muted)] px-4 py-3">
+                <div className="mb-1 flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
+                  <Link2 className="h-3.5 w-3.5" />
+                  设备 ID
+                </div>
+                <p className="truncate font-medium" title={syncSession?.device.id || '未绑定'}>
+                  {syncSession?.device.id || '未绑定'}
+                </p>
+              </div>
+              <div className="min-w-0 rounded-xl bg-[var(--color-bg-muted)] px-4 py-3">
+                <div className="mb-1 flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
+                  <Link2 className="h-3.5 w-3.5" />
+                  绑定 ID
+                </div>
+                <p className="truncate font-medium" title={syncSession?.device.bindingId || '未绑定'}>
+                  {syncSession?.device.bindingId || '未绑定'}
+                </p>
+              </div>
+              <div className="min-w-0 rounded-xl bg-[var(--color-bg-muted)] px-4 py-3">
+                <div className="mb-1 flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  最后心跳
+                </div>
+                <p className="truncate font-medium" title={syncSession?.lastHeartbeatAt || '暂无'}>
+                  {syncSession?.lastHeartbeatAt || '暂无'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2 lg:justify-end">
+            <Button
+              variant={syncSession ? 'secondary' : 'primary'}
+              onClick={() => {
+                setSyncForm(prev => ({
+                  ...prev,
+                  serverURL: syncSession?.serverURL || prev.serverURL,
+                  username: syncSession?.user.username || prev.username,
+                  deviceName: syncSession?.device.deviceName || prev.deviceName,
+                  password: '',
+                }))
+                setSyncLoginOpen(true)
+              }}
+            >
+              <LogIn className="h-4 w-4" />
+              {syncSession ? '重新授权' : '授权登录'}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={handleSyncRefresh}
+              loading={syncRefreshLoading}
+              disabled={!syncSession}
+            >
+              <RefreshCw className="h-4 w-4" />
+              刷新状态
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={handleSyncLogout}
+              disabled={!syncSession}
+            >
+              <LogOut className="h-4 w-4" />
+              退出授权
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      <Card padding="lg" className="rounded-[24px]">
+        <div className="space-y-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0 space-y-2">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--color-bg-muted)]">
+                  <Archive className="h-5 w-5 text-[var(--color-accent)]" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">云端备份</h2>
+                  <p className="text-sm text-[var(--color-text-muted)]">手动上传全量配置 ZIP，并从云端下载或恢复。</p>
+                </div>
+              </div>
+              <p className="rounded-xl bg-[var(--color-warning)]/10 px-4 py-2 text-xs leading-6 text-[var(--color-text-muted)]">
+                当前为可信内网测试版：备份包会以未加密 ZIP 上传到同步服务。正式版将切换为客户端侧加密。
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2 lg:justify-end">
+              <Button
+                variant="primary"
+                onClick={handleSyncBackupUpload}
+                loading={syncBackupAction === 'upload'}
+                disabled={!syncSession?.authorized || Boolean(syncBackupAction)}
+              >
+                <UploadCloud className="h-4 w-4" />
+                上传全量备份
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => handleSyncBackupRefresh(true)}
+                loading={syncBackupLoading}
+                disabled={!syncSession?.authorized || Boolean(syncBackupAction)}
+              >
+                <RefreshCw className="h-4 w-4" />
+                刷新列表
+              </Button>
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-xl border border-[var(--color-border-default)]">
+            {syncBackups.length === 0 ? (
+              <div className="px-4 py-8 text-center text-sm text-[var(--color-text-muted)]">
+                {syncSession?.authorized ? '暂无云端备份' : '授权登录后可查看云端备份'}
+              </div>
+            ) : (
+              <div className="divide-y divide-[var(--color-border-muted)]">
+                {syncBackups.map((backup) => (
+                  <div key={backup.id} className="flex flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="truncate font-medium text-[var(--color-text-primary)]" title={backup.name || backup.id}>
+                          {backup.name || backup.id}
+                        </span>
+                        <Badge variant={backup.encrypted ? 'success' : 'warning'}>
+                          {backup.encrypted ? '已加密' : '未加密'}
+                        </Badge>
+                        <Badge>{backupTypeText(backup.backupType)}</Badge>
+                      </div>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--color-text-muted)]">
+                        <span>{formatBytes(backup.sizeBytes)}</span>
+                        <span>{formatBackupTime(backup.createdAt)}</span>
+                        <span className="max-w-[260px] truncate" title={backup.id}>ID {backup.id}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2 lg:justify-end">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleSyncBackupDownload(backup)}
+                        loading={syncBackupAction === `download:${backup.id}`}
+                        disabled={Boolean(syncBackupAction)}
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        下载
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleSyncBackupRestore(backup)}
+                        loading={syncBackupAction === `restore:${backup.id}`}
+                        disabled={Boolean(syncBackupAction)}
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" />
+                        恢复
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleSyncBackupDelete(backup)}
+                        loading={syncBackupAction === `delete:${backup.id}`}
+                        disabled={Boolean(syncBackupAction)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        删除
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </Card>
@@ -237,6 +660,69 @@ export function ProfilePage() {
           </div>
         </div>
       </Card>
+
+      <Modal
+        open={syncLoginOpen}
+        onClose={() => !syncLoading && setSyncLoginOpen(false)}
+        title="授权登录同步服务"
+        width="520px"
+      >
+        <form className="space-y-4" onSubmit={handleSyncLogin}>
+          <div className="space-y-1">
+            <label className="text-sm font-medium text-[var(--color-text-secondary)]">服务地址</label>
+            <Input
+              value={syncForm.serverURL}
+              onChange={(event) => setSyncForm(prev => ({ ...prev, serverURL: event.target.value }))}
+              placeholder="http://127.0.0.1:8000"
+              autoComplete="url"
+              required
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm font-medium text-[var(--color-text-secondary)]">账号</label>
+            <Input
+              value={syncForm.username}
+              onChange={(event) => setSyncForm(prev => ({ ...prev, username: event.target.value }))}
+              placeholder="admin"
+              autoComplete="username"
+              required
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm font-medium text-[var(--color-text-secondary)]">密码</label>
+            <Input
+              type="password"
+              value={syncForm.password}
+              onChange={(event) => setSyncForm(prev => ({ ...prev, password: event.target.value }))}
+              placeholder="请输入同步服务账号密码"
+              autoComplete="current-password"
+              required
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm font-medium text-[var(--color-text-secondary)]">设备名称</label>
+            <Input
+              value={syncForm.deviceName}
+              onChange={(event) => setSyncForm(prev => ({ ...prev, deviceName: event.target.value }))}
+              placeholder="Trace Browser Windows"
+              autoComplete="off"
+              required
+            />
+          </div>
+          <div className="rounded-xl bg-[var(--color-bg-muted)] px-4 py-3 text-xs leading-6 text-[var(--color-text-muted)]">
+            登录成功后，本机将以固定设备指纹注册到同步服务。同步服务后台的「设备」页会显示这台设备的在线状态。
+          </div>
+          <div className="flex justify-end gap-3 pt-1">
+            <Button type="button" variant="secondary" onClick={() => setSyncLoginOpen(false)} disabled={syncLoading}>
+              取消
+            </Button>
+            <Button type="submit" loading={syncLoading}>
+              <ShieldCheck className="h-4 w-4" />
+              登录并绑定
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   )
 }
@@ -247,4 +733,28 @@ function getIcon(icon?: IconKey) {
 
 function stripProtocol(value: string): string {
   return value.replace(/^https?:\/\//, '').replace(/\/$/, '')
+}
+
+function backupTypeText(value: string): string {
+  if (value === 'profile_bundle') return '实例备份'
+  return '全量配置'
+}
+
+function formatBytes(bytes: number): string {
+  if (!bytes) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  let size = bytes
+  let index = 0
+  while (size >= 1024 && index < units.length - 1) {
+    size /= 1024
+    index += 1
+  }
+  return `${size.toFixed(1)} ${units[index]}`
+}
+
+function formatBackupTime(value: string): string {
+  if (!value) return '时间未知'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString()
 }

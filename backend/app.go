@@ -3,6 +3,7 @@ package backend
 import (
 	"ant-chrome/backend/internal/apppath"
 	"ant-chrome/backend/internal/browser"
+	"ant-chrome/backend/internal/cloudsync"
 	"ant-chrome/backend/internal/config"
 	"ant-chrome/backend/internal/database"
 	"ant-chrome/backend/internal/launchcode"
@@ -45,6 +46,7 @@ type App struct {
 	launchCodeSvc      *launchcode.LaunchCodeService
 	launchServer       *launchcode.LaunchServer
 	speedScheduler     *browser.ProxySpeedScheduler
+	cloudSync          *cloudsync.Manager
 	platformRuntime    platform.Runtime
 	protoEventMu       sync.RWMutex
 	protoEventSink     func(eventName string, payload []byte)
@@ -241,6 +243,7 @@ func (a *App) startup(ctx context.Context) {
 	if err := os.MkdirAll(a.resolveAppPath("data"), 0755); err != nil {
 		log.Error("创建 data 目录失败", logger.F("error", err))
 	}
+	a.cloudSync = cloudsync.NewManager(a.resolveAppPath(filepath.Join("data", "cloud-sync")), a.appVersion())
 
 	if cfg.Logging.Interceptor.Enabled {
 		interceptorConfig := logger.InterceptorConfig{
@@ -341,6 +344,7 @@ func (a *App) startup(ctx context.Context) {
 	a.speedScheduler.Start()
 
 	go a.runPostStartupLocalDiscovery()
+	a.cloudSync.Start(ctx)
 
 	a.markStartupReady()
 	log.Info("应用启动成功")
@@ -525,6 +529,9 @@ func (a *App) applyRuntimeConfig(cfg config.RuntimeConfig) {
 func (a *App) shutdown(ctx context.Context) {
 	log := logger.New("App")
 	a.hideWindowSyncToolbar()
+	if a.cloudSync != nil {
+		a.cloudSync.Stop()
+	}
 	if a.shouldStopRuntimeServicesOnShutdown() {
 		log.Info("应用正在关闭...")
 		a.stopRuntimeServices()

@@ -78,6 +78,7 @@ func registerProtoHandlers(app *App, dispatcher *protoipc.Dispatcher) {
 	registerProtoAppHandlers(app, dispatcher)
 	registerProtoProxyHandlers(app, dispatcher)
 	registerProtoCoreHandlers(app, dispatcher)
+	registerProtoCloudSyncHandlers(app, dispatcher)
 }
 
 func (a *App) handleProtoBrowserProfileList(ctx context.Context, request protoipc.Envelope) ([]byte, *protoipc.RPCError) {

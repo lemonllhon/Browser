@@ -676,6 +676,12 @@ func backupZipAddDir(w *zip.Writer, srcDir, archiveBase, outputZipPath string) (
 			return nil
 		}
 		rel = filepath.ToSlash(rel)
+		if backupShouldSkipZipRelPath(rel) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		targetName := base + "/" + rel
 		if d.IsDir() {
 			_, err := w.Create(strings.TrimSuffix(targetName, "/") + "/")
@@ -718,6 +724,14 @@ func backupZipAddFile(w *zip.Writer, srcFile, archivePath string) error {
 	defer in.Close()
 	_, err = io.Copy(writer, in)
 	return err
+}
+
+func backupShouldSkipZipRelPath(rel string) bool {
+	rel = strings.Trim(strings.TrimSpace(filepath.ToSlash(rel)), "/")
+	if rel == "" {
+		return false
+	}
+	return rel == "cloud-sync" || strings.HasPrefix(rel, "cloud-sync/")
 }
 
 func backupExtractAndValidate(zipPath string) (string, backup.Manifest, error) {

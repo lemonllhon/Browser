@@ -104,6 +104,9 @@ __pycache__/
 # Local runtime cache
 .tmp/runtime-cache/
 
+# Separate nested service repo; do not add it from this root repository.
+sync-server/
+
 # Test outputs / coverage
 coverage/
 *.out
