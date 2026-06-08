@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft,
   ArrowRight,
+  BookOpen,
   CheckCircle2,
   Cpu,
   Download,
@@ -93,19 +94,20 @@ type FloatingRect = {
 
 const FLOATING_WINDOW_WIDTH = 960
 const FLOATING_WINDOW_MARGIN = 16
-const FLOATING_HEADER_VISIBLE_HEIGHT = 72
+const FLOATING_MIN_VISIBLE_HEIGHT = 420
 
 function getFloatingWindowWidth() {
   if (typeof window === 'undefined') return FLOATING_WINDOW_WIDTH
   return Math.min(FLOATING_WINDOW_WIDTH, Math.max(320, window.innerWidth - FLOATING_WINDOW_MARGIN * 2))
 }
 
-function constrainFloatingPosition(position: FloatingPosition): FloatingPosition {
+function constrainFloatingPosition(position: FloatingPosition, visibleHeight = FLOATING_MIN_VISIBLE_HEIGHT): FloatingPosition {
   if (typeof window === 'undefined') return position
 
   const width = getFloatingWindowWidth()
   const maxLeft = Math.max(FLOATING_WINDOW_MARGIN, window.innerWidth - width - FLOATING_WINDOW_MARGIN)
-  const maxTop = Math.max(FLOATING_WINDOW_MARGIN, window.innerHeight - FLOATING_HEADER_VISIBLE_HEIGHT)
+  const minVisibleHeight = Math.min(Math.max(visibleHeight, 160), Math.max(160, window.innerHeight - FLOATING_WINDOW_MARGIN * 2))
+  const maxTop = Math.max(FLOATING_WINDOW_MARGIN, window.innerHeight - minVisibleHeight)
 
   return {
     left: Math.min(Math.max(position.left, FLOATING_WINDOW_MARGIN), maxLeft),
@@ -214,24 +216,25 @@ function placeFloatingAwayFromTarget(targetRect: OnboardingTargetRect, floatingR
 
   const width = getFloatingWindowWidth()
   const height = Math.min(floatingRect.height || 520, Math.max(360, window.innerHeight - FLOATING_WINDOW_MARGIN * 2))
+  const minVisibleHeight = Math.min(Math.max(height, FLOATING_MIN_VISIBLE_HEIGHT), Math.max(160, window.innerHeight - FLOATING_WINDOW_MARGIN * 2))
   const centeredLeft = Math.round((window.innerWidth - width) / 2)
   const belowTop = targetRect.top + targetRect.height + FLOATING_WINDOW_MARGIN
   const aboveTop = targetRect.top - height - FLOATING_WINDOW_MARGIN
 
-  if (belowTop + FLOATING_HEADER_VISIBLE_HEIGHT < window.innerHeight) {
-    return constrainFloatingPosition({ left: centeredLeft, top: belowTop })
+  if (belowTop + minVisibleHeight < window.innerHeight) {
+    return constrainFloatingPosition({ left: centeredLeft, top: belowTop }, height)
   }
   if (aboveTop > FLOATING_WINDOW_MARGIN) {
-    return constrainFloatingPosition({ left: centeredLeft, top: aboveTop })
+    return constrainFloatingPosition({ left: centeredLeft, top: aboveTop }, height)
   }
 
   const rightLeft = targetRect.left + targetRect.width + FLOATING_WINDOW_MARGIN
   if (rightLeft + width < window.innerWidth - FLOATING_WINDOW_MARGIN) {
-    return constrainFloatingPosition({ left: rightLeft, top: FLOATING_WINDOW_MARGIN })
+    return constrainFloatingPosition({ left: rightLeft, top: FLOATING_WINDOW_MARGIN }, height)
   }
   const leftLeft = targetRect.left - width - FLOATING_WINDOW_MARGIN
   if (leftLeft > FLOATING_WINDOW_MARGIN) {
-    return constrainFloatingPosition({ left: leftLeft, top: FLOATING_WINDOW_MARGIN })
+    return constrainFloatingPosition({ left: leftLeft, top: FLOATING_WINDOW_MARGIN }, height)
   }
 
   return null
@@ -251,6 +254,8 @@ function getStepTarget(step: OnboardingStep): OnboardingTargetConfig | null {
       return { text: '扩展插件管理', label: '左侧菜单：扩展插件管理', role: 'button' }
     case 'settings-entry':
       return { text: '系统设置', label: '左侧菜单：系统设置', role: 'button' }
+    case 'tutorial-entry':
+      return { text: '播放新手演示', label: '使用教程：播放新手演示', role: 'button' }
     case 'core-download':
       return { text: '下载内核', role: 'button' }
     case 'core-scan':
@@ -677,6 +682,16 @@ const FIRST_RUN_ONBOARDING_STEPS: OnboardingStep[] = [
     bullets: ['新手演示入口集中在使用教程页', '系统设置聚焦全局参数和配置备份', '配置变更会同步通知其他窗口'],
   },
   {
+    id: 'tutorial-entry',
+    sceneKey: 'settings',
+    icon: <BookOpen className="h-4 w-4" />,
+    section: '使用教程',
+    title: '使用教程保留新手演示入口',
+    description: '后续需要重新播放演示时，进入使用教程页，点击“播放新手演示”即可重新打开这套引导。',
+    routePath: '/system/tutorial',
+    bullets: ['教程页负责重新播放演示', '系统设置不再分散新手演示入口', '适合新成员或新窗口重新熟悉流程'],
+  },
+  {
     id: 'finish',
     sceneKey: 'finish',
     icon: <Rocket className="h-4 w-4" />,
@@ -704,6 +719,7 @@ function getRouteSyncedStepId(pathname: string, search: string) {
   if (pathname === '/browser/proxy-pool') return 'proxy-entry'
   if (pathname === '/browser/extensions') return 'extension-entry'
   if (pathname === '/settings') return 'settings-entry'
+  if (pathname === '/system/tutorial') return 'tutorial-entry'
   if (pathname === '/browser/list') return 'list-entry'
   if (pathname === '/browser/edit/new') return 'profile-basic'
   if (pathname.startsWith('/browser/edit/')) return 'profile-basic'
@@ -759,6 +775,10 @@ export function FirstRunOnboarding() {
       height: rect.height,
     }
     setFloatingRect(next)
+    setFloatingPosition(current => {
+      const constrained = constrainFloatingPosition(current, next.height)
+      return current.left === constrained.left && current.top === constrained.top ? current : constrained
+    })
     return next
   }, [])
 
@@ -886,6 +906,12 @@ export function FirstRunOnboarding() {
       setStepIndex(findStepIndex(current.actionNextId))
       setTargetRect(null)
     }
+  }, [navigateFromDemo])
+
+  const jumpToDemoStep = useCallback((stepId: string, routePath: string) => {
+    setStepIndex(findStepIndex(stepId))
+    setTargetRect(null)
+    navigateFromDemo(routePath)
   }, [navigateFromDemo])
 
   const nextStep = useCallback(() => {
@@ -1244,10 +1270,10 @@ export function FirstRunOnboarding() {
                 ) : null}
                 {step.id === 'finish' ? (
                   <div className="grid gap-2 sm:grid-cols-2">
-                    <Button variant="secondary" onClick={() => navigate('/browser/edit/new')}>
+                    <Button variant="secondary" onClick={() => jumpToDemoStep('profile-create-entry', '/browser/list')}>
                       开始创建实例
                     </Button>
-                    <Button variant="secondary" onClick={() => navigate('/system/tutorial')}>
+                    <Button variant="secondary" onClick={() => jumpToDemoStep('tutorial-entry', '/system/tutorial')}>
                       打开使用教程
                     </Button>
                   </div>

@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Trace Browser 是面向多账号隔离、代理绑定、指纹实例和本地环境管理的桌面浏览器工作台，支持 Windows 与 Linux。"
+    />
+    <title>Trace Browser - 多账号指纹浏览器工作台</title>
+    <link rel="icon" type="image/png" href="../frontend/src/resources/images/logo.png?v=trace-browser" />
+    <link rel="shortcut icon" type="image/png" href="../frontend/src/resources/images/logo.png?v=trace-browser" />
+    <link rel="apple-touch-icon" href="../frontend/src/resources/images/logo.png?v=trace-browser" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="site-header" data-header>
+      <a class="brand" href="#top" aria-label="Trace Browser 官网首页">
+        <img src="../frontend/src/resources/images/logo.png" alt="" />
+        <span>Trace Browser</span>
+      </a>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav" data-nav-toggle>
+        <span></span>
+        <span></span>
+        <span></span>
+        <span class="sr-only">展开导航</span>
+      </button>
+      <nav id="site-nav" class="site-nav" data-nav>
+        <a href="#workflow">上手路线</a>
+        <a href="#features">核心能力</a>
+        <a href="#gallery">界面预览</a>
+        <a href="#scenarios">适合场景</a>
+      </nav>
+      <a class="header-cta" href="https://github.com/lemon-casino/trace-browser-release/releases" target="_blank" rel="noreferrer">
+        下载最新版
+        <span aria-hidden="true">↗</span>
+      </a>
+    </header>
+
+    <main id="top">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-backdrop" aria-hidden="true">
+          <img src="../images/readme/002-实例列表.png" alt="" />
+        </div>
+        <div class="hero-content">
+          <p class="eyebrow">Trace Browser for multi-account work</p>
+          <h1 id="hero-title">Trace Browser</h1>
+          <p class="hero-lead">
+            为多账号运营、本地网络测试和团队环境管理打造的指纹浏览器工作台。内核、代理池、指纹实例、插件与窗口同步，都在一个干净的桌面应用里完成。
+          </p>
+          <div class="hero-actions" aria-label="下载和了解 Trace Browser">
+            <a class="button primary" href="https://github.com/lemon-casino/trace-browser-release/releases" target="_blank" rel="noreferrer">
+              <span aria-hidden="true">↓</span>
+              下载发布版
+            </a>
+            <a class="button secondary" href="#workflow">
+              查看上手流程
+              <span aria-hidden="true">→</span>
+            </a>
+          </div>
+          <dl class="hero-facts" aria-label="产品能力摘要">
+            <div>
+              <dt>本地优先</dt>
+              <dd>配置和运行数据保存在本地</dd>
+            </div>
+            <div>
+              <dt>多协议代理</dt>
+              <dd>Clash 订阅、YAML、Base64 和分享链接</dd>
+            </div>
+            <div>
+              <dt>高效同步</dt>
+              <dd>窗口同步已对高频事件降载</dd>
+            </div>
+          </dl>
+        </div>
+        <div class="hero-flow" aria-label="Trace Browser 上手路径">
+          <span>准备内核</span>
+          <span>导入代理</span>
+          <span>创建实例</span>
+          <span>启动同步</span>
+        </div>
+      </section>
+
+      <section id="workflow" class="section workflow-section" aria-labelledby="workflow-title">
+        <div class="workflow-shell">
+          <div class="section-heading workflow-heading reveal">
+            <span class="section-kicker">首次上手</span>
+            <h2 id="workflow-title">从第一次打开，到跑起第一组实例</h2>
+            <p>新手演示会以可拖动窗口和箭头指引关键入口。用户不用先读长文档，只要按这条链路完成准备、导入、创建和启动。</p>
+          </div>
+          <div class="workflow-track" aria-label="Trace Browser 首次使用流程">
+            <article class="workflow-step reveal">
+              <span class="step-number">01</span>
+              <div>
+                <span class="step-label">内核准备</span>
+                <h3>准备浏览器内核</h3>
+                <p>进入内核管理，下载、扫描或新增 fingerprint-chromium。</p>
+              </div>
+            </article>
+            <article class="workflow-step reveal">
+              <span class="step-number">02</span>
+              <div>
+                <span class="step-label">代理资源</span>
+                <h3>导入代理池</h3>
+                <p>导入 Clash 订阅、YAML、Base64 分享链接，并检查延迟和 IP 健康。</p>
+              </div>
+            </article>
+            <article class="workflow-step reveal">
+              <span class="step-number">03</span>
+              <div>
+                <span class="step-label">环境成型</span>
+                <h3>创建隔离实例</h3>
+                <p>配置基础信息、代理、指纹、启动参数、标签分组和扩展插件。</p>
+              </div>
+            </article>
+            <article class="workflow-step reveal">
+              <span class="step-number">04</span>
+              <div>
+                <span class="step-label">批量操作</span>
+                <h3>启动与同步操作</h3>
+                <p>从实例列表启动，也可以批量生成、备份恢复并开启窗口同步。</p>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="features" class="section feature-section" aria-labelledby="features-title">
+        <div class="section-heading feature-heading reveal">
+          <span class="section-kicker">核心能力</span>
+          <h2 id="features-title">把多账号环境，收进一个清晰的工作台</h2>
+          <p>不是堆功能按钮，而是让内核、代理、指纹、组织规则、插件和窗口同步在同一套操作面里互相配合。</p>
+        </div>
+        <div class="feature-console reveal" aria-label="Trace Browser 核心能力工作台示意">
+          <div class="console-topbar">
+            <div class="console-dots" aria-hidden="true">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+            <span>Trace Browser Workspace</span>
+            <strong>Local-first</strong>
+          </div>
+          <div class="console-layout">
+            <div class="console-panel resources-panel">
+              <span class="console-label">资源准备</span>
+              <div class="console-line">
+                <strong>内核管理</strong>
+                <span>下载 / 扫描 / 新增</span>
+              </div>
+              <div class="console-line">
+                <strong>代理池</strong>
+                <span>订阅刷新 / IP 健康</span>
+              </div>
+              <div class="console-line">
+                <strong>扩展插件</strong>
+                <span>导入 / 绑定 / 默认规则</span>
+              </div>
+            </div>
+            <div class="console-panel profiles-panel">
+              <span class="console-label">实例环境</span>
+              <div class="profile-row">
+                <span class="profile-state running"></span>
+                <strong>Shopify-US-01</strong>
+                <em>US 42ms</em>
+                <small>店铺组</small>
+              </div>
+              <div class="profile-row">
+                <span class="profile-state"></span>
+                <strong>TikTok-EU-02</strong>
+                <em>DE 68ms</em>
+                <small>素材组</small>
+              </div>
+              <div class="profile-row">
+                <span class="profile-state running"></span>
+                <strong>Amazon-Asia</strong>
+                <em>SG 35ms</em>
+                <small>运营组</small>
+              </div>
+            </div>
+            <div class="console-panel action-panel">
+              <span class="console-label">批量动作</span>
+              <div class="action-meter">
+                <span style="width: 82%"></span>
+              </div>
+              <ul>
+                <li>批量生成随机指纹实例</li>
+                <li>备份恢复配置和 Cookie</li>
+                <li>窗口同步事件节流与复用</li>
+              </ul>
+            </div>
+          </div>
+          <div class="feature-ribbon" aria-label="核心能力摘要">
+            <span>实例隔离</span>
+            <span>代理订阅</span>
+            <span>指纹参数</span>
+            <span>标签分组</span>
+            <span>插件备份</span>
+            <span>窗口同步</span>
+          </div>
+        </div>
+      </section>
+
+      <section id="gallery" class="section gallery-section" aria-labelledby="gallery-title">
+        <div class="section-heading reveal">
+          <span class="section-kicker">真实界面预览</span>
+          <h2 id="gallery-title">下载前就能看见核心工作区</h2>
+          <p>这些截图来自当前项目资源，展示控制台、实例列表、代理池、组织管理、扩展管理和系统设置。</p>
+        </div>
+        <div class="gallery-showcase reveal" data-gallery-carousel>
+          <div class="gallery-stage">
+            <button class="gallery-arrow gallery-arrow-prev" type="button" aria-label="上一张界面截图" data-gallery-prev>
+              <span aria-hidden="true">‹</span>
+            </button>
+            <figure class="gallery-slide">
+              <img src="../images/readme/001-首页.png" alt="Trace Browser 控制台界面截图" data-gallery-image />
+              <figcaption>
+                <span data-gallery-count>01 / 06</span>
+                <strong data-gallery-title>控制台总览</strong>
+                <p data-gallery-description>快速查看实例、代理、内核和运行状态，把日常维护入口集中在第一屏。</p>
+              </figcaption>
+            </figure>
+            <button class="gallery-arrow gallery-arrow-next" type="button" aria-label="下一张界面截图" data-gallery-next>
+              <span aria-hidden="true">›</span>
+            </button>
+          </div>
+          <div class="gallery-progress" aria-hidden="true">
+            <span data-gallery-progress></span>
+          </div>
+          <div class="gallery-thumbs" role="tablist" aria-label="界面截图切换">
+            <button
+              class="gallery-thumb is-active"
+              type="button"
+              role="tab"
+              aria-selected="true"
+              data-gallery-index="0"
+              data-src="../images/readme/001-首页.png"
+              data-title="控制台总览"
+              data-description="快速查看实例、代理、内核和运行状态，把日常维护入口集中在第一屏。"
+              data-alt="Trace Browser 控制台界面截图"
+            >
+              <img src="../images/readme/001-首页.png" alt="" loading="lazy" />
+              <span>控制台</span>
+            </button>
+            <button
+              class="gallery-thumb"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              data-gallery-index="1"
+              data-src="../images/readme/002-实例列表.png"
+              data-title="实例列表"
+              data-description="筛选、启动、批量生成、备份恢复和窗口同步都聚合在实例工作区里。"
+              data-alt="Trace Browser 实例列表界面截图"
+            >
+              <img src="../images/readme/002-实例列表.png" alt="" loading="lazy" />
+              <span>实例列表</span>
+            </button>
+            <button
+              class="gallery-thumb"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              data-gallery-index="2"
+              data-src="../images/readme/003-设置代理池.png"
+              data-title="代理池配置"
+              data-description="统一导入订阅、测试节点延迟、检查 IP 健康，并按来源维护代理资源。"
+              data-alt="Trace Browser 代理池配置界面截图"
+            >
+              <img src="../images/readme/003-设置代理池.png" alt="" loading="lazy" />
+              <span>代理池</span>
+            </button>
+            <button
+              class="gallery-thumb"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              data-gallery-index="3"
+              data-src="../images/readme/004-组织管理.png"
+              data-title="组织管理"
+              data-description="通过标签、分组和默认内容联动规则，让大量实例更容易归类和复用。"
+              data-alt="Trace Browser 组织管理界面截图"
+            >
+              <img src="../images/readme/004-组织管理.png" alt="" loading="lazy" />
+              <span>组织管理</span>
+            </button>
+            <button
+              class="gallery-thumb"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              data-gallery-index="4"
+              data-src="../images/readme/005-扩展管理.png"
+              data-title="扩展管理"
+              data-description="导入插件、查看插件状态，并把常用扩展绑定到指定实例或默认规则。"
+              data-alt="Trace Browser 扩展管理界面截图"
+            >
+              <img src="../images/readme/005-扩展管理.png" alt="" loading="lazy" />
+              <span>扩展管理</span>
+            </button>
+            <button
+              class="gallery-thumb"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              data-gallery-index="5"
+              data-src="../images/readme/006-系统设置.png"
+              data-title="系统设置"
+              data-description="管理全局偏好、配置备份与使用教程，让首次上手和后续维护更稳定。"
+              data-alt="Trace Browser 系统设置界面截图"
+            >
+              <img src="../images/readme/006-系统设置.png" alt="" loading="lazy" />
+              <span>系统设置</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section id="scenarios" class="section scenarios-section" aria-labelledby="scenarios-title">
+        <div class="section-heading reveal">
+          <span class="section-kicker">适合场景</span>
+          <h2 id="scenarios-title">把重复、分散、容易出错的账号环境管理收束起来</h2>
+        </div>
+        <div class="scenario-list">
+          <article class="scenario-item reveal">
+            <h3>跨境电商与社媒运营</h3>
+            <p>按店铺、地区、团队或账号状态管理实例，稳定绑定代理出口和插件组合。</p>
+          </article>
+          <article class="scenario-item reveal">
+            <h3>本地网络与风控测试</h3>
+            <p>快速切换代理、指纹和启动参数，用独立实例复现不同地区和账号状态。</p>
+          </article>
+          <article class="scenario-item reveal">
+            <h3>多窗口批量操作</h3>
+            <p>通过窗口同步减少重复点击，配合实例筛选、批量生成和备份恢复提升处理效率。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section roadmap-section" aria-labelledby="roadmap-title">
+        <div class="section-heading reveal">
+          <span class="section-kicker">持续进化</span>
+          <h2 id="roadmap-title">下一步会继续增强团队协作与云端同步</h2>
+          <p>后续可扩展 WebDAV、S3、SFTP、本地目录等常用协议，让配置备份、迁移和多设备恢复更加自然。</p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div>
+        <strong>Trace Browser</strong>
+        <span>多账号隔离、代理绑定和本地环境管理的桌面浏览器工具。</span>
+      </div>
+      <a href="https://github.com/lemon-casino/trace-browser-release/releases" target="_blank" rel="noreferrer">GitHub Releases</a>
+    </footer>
+
+    <script src="./script.js"></script>
+  </body>
+</html>
