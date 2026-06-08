@@ -42,9 +42,10 @@ type CloudSyncProfileBackupPrepareRestoreInput struct {
 }
 
 const (
-	cloudSyncBackupProgressEvent     = "cloud-sync:backup:progress"
-	cloudSyncBackupTypeFullConfig    = "full_config"
-	cloudSyncBackupTypeProfileBundle = "profile_bundle"
+	cloudSyncBackupProgressEvent       = "cloud-sync:backup:progress"
+	cloudSyncBackupTypeFullConfig      = "full_config"
+	cloudSyncBackupTypeProfileBundle   = "profile_bundle"
+	cloudSyncBackupTypeProfileTransfer = "profile_transfer"
 )
 
 func (a *App) CloudSyncGetStatus() (CloudSyncStatus, error) {

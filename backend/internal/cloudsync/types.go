@@ -196,6 +196,69 @@ type BackupDeleteInput struct {
 	BackupID string `json:"backupId"`
 }
 
+type BackupShareItem struct {
+	ID              string     `json:"id"`
+	BackupID        string     `json:"backupId"`
+	UserID          string     `json:"userId"`
+	WorkspaceID     string     `json:"workspaceId"`
+	DeviceID        string     `json:"deviceId"`
+	CodeHint        string     `json:"codeHint"`
+	Note            string     `json:"note"`
+	Status          string     `json:"status"`
+	EffectiveStatus string     `json:"effectiveStatus"`
+	ExpiresAt       string     `json:"expiresAt"`
+	UsedAt          string     `json:"usedAt"`
+	UsedBy          string     `json:"usedBy"`
+	UsedIP          string     `json:"usedIp"`
+	RevokedAt       string     `json:"revokedAt"`
+	RevokedBy       string     `json:"revokedBy"`
+	CreatedAt       string     `json:"createdAt"`
+	UpdatedAt       string     `json:"updatedAt"`
+	DeletedAt       string     `json:"deletedAt"`
+	Backup          BackupItem `json:"backup"`
+}
+
+type BackupShareCreateInput struct {
+	BackupID       string `json:"backupId"`
+	ExpiresInHours int    `json:"expiresInHours"`
+	Note           string `json:"note"`
+}
+
+type BackupShareCreateResult struct {
+	Share     BackupShareItem `json:"share"`
+	Backup    BackupItem      `json:"backup"`
+	Code      string          `json:"code"`
+	ShareURL  string          `json:"shareUrl"`
+	DirectURL string          `json:"directUrl"`
+	ExpiresAt string          `json:"expiresAt"`
+}
+
+type BackupShareResolveInput struct {
+	ServerURL string `json:"serverURL"`
+	Code      string `json:"code"`
+}
+
+type BackupShareResolveResult struct {
+	Share      BackupShareItem `json:"share"`
+	Backup     BackupItem      `json:"backup"`
+	ServerURL  string          `json:"serverURL"`
+	ServerTime string          `json:"serverTime"`
+	ReceivedAt string          `json:"receivedAt"`
+}
+
+type BackupShareDownloadInput struct {
+	ServerURL string `json:"serverURL"`
+	Code      string `json:"code"`
+}
+
+type BackupShareDownloadResult struct {
+	Share     BackupShareItem `json:"share"`
+	Backup    BackupItem      `json:"backup"`
+	ServerURL string          `json:"serverURL"`
+	LocalPath string          `json:"localPath"`
+	Message   string          `json:"message"`
+}
+
 type backupListResponse struct {
 	List  []BackupItem `json:"list"`
 	Total int64        `json:"total"`
@@ -203,4 +266,25 @@ type backupListResponse struct {
 
 type backupUploadResponse struct {
 	Backup BackupItem `json:"backup"`
+}
+
+type backupShareCreateRequest struct {
+	ExpiresInHours int    `json:"expiresInHours"`
+	Note           string `json:"note"`
+}
+
+type backupShareCreateResponse struct {
+	Share     BackupShareItem `json:"share"`
+	Backup    BackupItem      `json:"backup"`
+	Code      string          `json:"code"`
+	ShareURL  string          `json:"shareUrl"`
+	DirectURL string          `json:"directUrl"`
+	ExpiresAt string          `json:"expiresAt"`
+}
+
+type backupShareResolveResponse struct {
+	Share      BackupShareItem `json:"share"`
+	Backup     BackupItem      `json:"backup"`
+	ServerTime string          `json:"serverTime"`
+	ReceivedAt string          `json:"receivedAt"`
 }

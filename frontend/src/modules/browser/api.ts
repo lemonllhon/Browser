@@ -7,6 +7,7 @@ import {
   checkBrowserProxyIPHealth as checkBrowserProxyIPHealthProto,
   checkBrowserProxyPreviewBatchIPHealth as checkBrowserProxyPreviewBatchIPHealthProto,
   clearBrowserCookies as clearBrowserCookiesProto,
+  createCloudSyncProfileTransferShare as createCloudSyncProfileTransferShareProto,
   assignBrowserExtensionProfiles as assignBrowserExtensionProfilesProto,
   chooseBrowserProfileBackupImportPackage as chooseBrowserProfileBackupImportPackageProto,
   chooseBrowserExtensionArchive as chooseBrowserExtensionArchiveProto,
@@ -70,6 +71,7 @@ import {
   pauseWindowSync as pauseWindowSyncProto,
   pinCenterBrowserInstance as pinCenterBrowserInstanceProto,
   prepareCloudSyncProfileBackupRestore as prepareCloudSyncProfileBackupRestoreProto,
+  prepareCloudSyncProfileTransferShareRestore as prepareCloudSyncProfileTransferShareRestoreProto,
   regenerateBrowserProfileCode as regenerateBrowserProfileCodeProto,
   renameBrowserCorePath as renameBrowserCorePathProto,
   renameBrowserTag as renameBrowserTagProto,
@@ -79,6 +81,7 @@ import {
   resizeWindowSyncToolbar as resizeWindowSyncToolbarProto,
   restartBrowserInstance as restartBrowserInstanceProto,
   restoreBrowserSnapshot as restoreBrowserSnapshotProto,
+  resolveCloudSyncProfileTransferShare as resolveCloudSyncProfileTransferShareProto,
   saveBrowserBookmarks as saveBrowserBookmarksProto,
   saveBrowserCore as saveBrowserCoreProto,
   saveBrowserDefaultContentRules as saveBrowserDefaultContentRulesProto,
@@ -118,7 +121,7 @@ import {
   windowSyncCloseOtherTabs as windowSyncCloseOtherTabsProto,
   windowSyncOpenUrls as windowSyncOpenUrlsProto,
 } from '../../shared/backend/client'
-import type { ProtoBrowserProfileBackupActionResult, ProtoBrowserProfileBackupExportInput, ProtoBrowserProfileBackupImportInput, ProtoBackupProgress, ProtoCloudSyncBackupItem, ProtoCloudSyncBackupListResult, ProtoCloudSyncProfileBackupUploadResult } from '../../shared/backend/client'
+import type { ProtoBrowserProfileBackupActionResult, ProtoBrowserProfileBackupExportInput, ProtoBrowserProfileBackupImportInput, ProtoBackupProgress, ProtoCloudSyncBackupItem, ProtoCloudSyncBackupListResult, ProtoCloudSyncProfileBackupUploadResult, ProtoCloudSyncProfileTransferShareCreateInput, ProtoCloudSyncProfileTransferShareCreateResult, ProtoCloudSyncProfileTransferShareResolveResult } from '../../shared/backend/client'
 
 // ============================================================================
 // Profile API
@@ -159,6 +162,9 @@ export type BrowserProfileBackupProgress = ProtoBackupProgress
 export type CloudSyncBackupItem = ProtoCloudSyncBackupItem
 export type CloudSyncBackupListResult = ProtoCloudSyncBackupListResult
 export type CloudSyncProfileBackupUploadResult = ProtoCloudSyncProfileBackupUploadResult
+export type CloudSyncProfileTransferShareCreateInput = ProtoCloudSyncProfileTransferShareCreateInput
+export type CloudSyncProfileTransferShareCreateResult = ProtoCloudSyncProfileTransferShareCreateResult
+export type CloudSyncProfileTransferShareResolveResult = ProtoCloudSyncProfileTransferShareResolveResult
 
 export async function exportProfileBackup(input: BrowserProfileBackupExportInput): Promise<BrowserProfileBackupActionResult> {
   return await exportBrowserProfileBackupProto(input)
@@ -188,9 +194,29 @@ export async function prepareCloudProfileBackupRestore(backupId: string): Promis
   return await prepareCloudSyncProfileBackupRestoreProto({ backupId })
 }
 
+export async function createProfileTransferShare(input: CloudSyncProfileTransferShareCreateInput): Promise<CloudSyncProfileTransferShareCreateResult> {
+  return await createCloudSyncProfileTransferShareProto(input)
+}
+
+export async function resolveProfileTransferShare(shareText: string): Promise<CloudSyncProfileTransferShareResolveResult> {
+  return await resolveCloudSyncProfileTransferShareProto({ shareText })
+}
+
+export async function prepareProfileTransferShareRestore(shareText: string): Promise<BrowserProfileBackupActionResult> {
+  return await prepareCloudSyncProfileTransferShareRestoreProto({ shareText })
+}
+
 export function onCloudProfileBackupProgress(callback: (progress: BrowserProfileBackupProgress) => void): () => void {
   return onCloudSyncBackupProgressProto(progress => {
     if (isCloudProfileBackupProgress(progress)) {
+      callback(progress)
+    }
+  })
+}
+
+export function onCloudProfileTransferProgress(callback: (progress: BrowserProfileBackupProgress) => void): () => void {
+  return onCloudSyncBackupProgressProto(progress => {
+    if (isCloudProfileTransferProgress(progress)) {
       callback(progress)
     }
   })
@@ -203,6 +229,15 @@ function isCloudProfileBackupProgress(progress: BrowserProfileBackupProgress): b
   return message.includes('实例云端备份') ||
     message.includes('实例备份包') ||
     message.includes('上传实例备份')
+}
+
+function isCloudProfileTransferProgress(progress: BrowserProfileBackupProgress): boolean {
+  const componentId = String(progress.componentId || '').trim()
+  if (componentId) return componentId === 'profile_transfer'
+  const message = String(progress.message || '').trim()
+  return message.includes('流转分享') ||
+    message.includes('流转包') ||
+    message.includes('实例流转')
 }
 
 // ============================================================================

@@ -22,12 +22,14 @@ import { useBrowserCoreSettings } from '../hooks/useBrowserCoreSettings'
 import { useBrowserProfileBatchActions } from '../hooks/useBrowserProfileBatchActions'
 import { useBrowserProfileRuntimeActions } from '../hooks/useBrowserProfileRuntimeActions'
 import { InstanceBackupRestoreModal } from '../components/InstanceBackupRestoreModal'
+import { ProfileTransferShareModal } from '../components/ProfileTransferShareModal'
 import { BatchRandomFingerprintModal } from '../components/BatchRandomFingerprintModal'
 import {
   BROWSER_LIST_BACKUP_DEMO_EVENT,
   type BackupRestoreDemoTab,
   type BrowserListBackupDemoDetail,
 } from '../browserOnboardingEvents'
+import { fetchSyncAuthSession, isSyncSessionOnline, loadSyncAuthSession, SYNC_AUTH_CHANGED_EVENT, type SyncAuthSession } from '../../profile/syncAuth'
 import { formatInstanceMarkerLabel, formatTime, getCookieActionTitle, resolveProfileStatus } from '../utils/browserListFormat'
 import { filterAndSortBrowserProfiles, getBrowserProfileCoreLabel, resolveBrowserProfileCore } from '../utils/browserListFilters'
 import { getBrowserProfileProxyDisplayName } from '../utils/browserListProxyDisplay'
@@ -82,6 +84,8 @@ export function BrowserListPage() {
   const [startingIds, setStartingIds] = useState<Set<string>>(new Set())
   const [stoppingIds, setStoppingIds] = useState<Set<string>>(new Set())
   const [backupModalOpen, setBackupModalOpen] = useState(false)
+  const [profileTransferModalOpen, setProfileTransferModalOpen] = useState(false)
+  const [cloudSyncOnline, setCloudSyncOnline] = useState(() => isSyncSessionOnline(loadSyncAuthSession()))
   const [backupDemoTab, setBackupDemoTab] = useState<BackupRestoreDemoTab | null>(null)
   const [batchRandomModalOpen, setBatchRandomModalOpen] = useState(false)
 
@@ -161,6 +165,27 @@ export function BrowserListPage() {
     window.addEventListener(BROWSER_LIST_BACKUP_DEMO_EVENT, handleBackupDemo)
     return () => {
       window.removeEventListener(BROWSER_LIST_BACKUP_DEMO_EVENT, handleBackupDemo)
+    }
+  }, [])
+
+  useEffect(() => {
+    let mounted = true
+    const applySession = (session: SyncAuthSession | null) => {
+      if (mounted) {
+        setCloudSyncOnline(isSyncSessionOnline(session))
+      }
+    }
+    applySession(loadSyncAuthSession())
+    void fetchSyncAuthSession().then(applySession).catch(() => {
+      if (mounted) setCloudSyncOnline(false)
+    })
+    const handleSyncAuthChanged = (event: Event) => {
+      applySession((event as CustomEvent<SyncAuthSession | null>).detail || null)
+    }
+    window.addEventListener(SYNC_AUTH_CHANGED_EVENT, handleSyncAuthChanged)
+    return () => {
+      mounted = false
+      window.removeEventListener(SYNC_AUTH_CHANGED_EVENT, handleSyncAuthChanged)
     }
   }, [])
 
@@ -482,9 +507,11 @@ export function BrowserListPage() {
           setBackupDemoTab(null)
           setBackupModalOpen(true)
         }}
+        onOpenProfileTransfer={() => setProfileTransferModalOpen(true)}
         onOpenWindowSync={handleOpenWindowSyncModal}
         onOpenSettings={handleOpenSettings}
         onOpenExpand={() => setExpandModalOpen(true)}
+        cloudSyncOnline={cloudSyncOnline}
         onViewModeChange={setViewMode}
         onToggleColumn={toggleVisibleColumn}
         onFiltersChange={setFilters}
@@ -665,6 +692,17 @@ export function BrowserListPage() {
         totalCount={profiles.length}
         selectedProfileIds={selectedProfileIds}
         filteredProfileIds={filteredProfileIds}
+        onRestored={() => {
+          void loadProfiles({ silent: true, syncRuntimeState: true })
+          void loadGroups()
+        }}
+      />
+
+      <ProfileTransferShareModal
+        open={profileTransferModalOpen}
+        onClose={() => setProfileTransferModalOpen(false)}
+        profiles={profiles}
+        selectedProfileIds={selectedProfileIds}
         onRestored={() => {
           void loadProfiles({ silent: true, syncRuntimeState: true })
           void loadGroups()

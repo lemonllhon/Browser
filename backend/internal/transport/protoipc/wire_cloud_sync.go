@@ -18,6 +18,9 @@ const (
 	MethodCloudSyncBackupDelete                = "trace.cloudSync.BackupDelete"
 	MethodCloudSyncProfileBackupUpload         = "trace.cloudSync.ProfileBackupUpload"
 	MethodCloudSyncProfileBackupPrepareRestore = "trace.cloudSync.ProfileBackupPrepareRestore"
+	MethodCloudSyncProfileTransferShareCreate  = "trace.cloudSync.ProfileTransferShareCreate"
+	MethodCloudSyncProfileTransferShareResolve = "trace.cloudSync.ProfileTransferShareResolve"
+	MethodCloudSyncProfileTransferSharePrepare = "trace.cloudSync.ProfileTransferSharePrepareRestore"
 )
 
 type CloudSyncJSONMessage struct {

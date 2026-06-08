@@ -185,6 +185,103 @@ func (c *Client) DeleteBackup(ctx context.Context, session *Session, backupID st
 	return c.requestJSON(ctx, http.MethodDelete, endpoint, session.AccessToken, nil, nil)
 }
 
+func (c *Client) CreateBackupShare(ctx context.Context, session *Session, input BackupShareCreateInput) (BackupShareCreateResult, error) {
+	backupID := strings.TrimSpace(input.BackupID)
+	if backupID == "" {
+		return BackupShareCreateResult{}, fmt.Errorf("backup id missing")
+	}
+	var out backupShareCreateResponse
+	err := c.post(ctx, session.ServerURL+"/v1/sync/backups/"+url.PathEscape(backupID)+"/share", session.AccessToken, backupShareCreateRequest{
+		ExpiresInHours: input.ExpiresInHours,
+		Note:           input.Note,
+	}, &out)
+	if err != nil {
+		return BackupShareCreateResult{}, err
+	}
+	return BackupShareCreateResult{
+		Share:     out.Share,
+		Backup:    out.Backup,
+		Code:      out.Code,
+		ShareURL:  out.ShareURL,
+		DirectURL: out.DirectURL,
+		ExpiresAt: out.ExpiresAt,
+	}, nil
+}
+
+func (c *Client) ResolveBackupShare(ctx context.Context, serverURL string, code string) (BackupShareResolveResult, error) {
+	serverURL, err := NormalizeServerURL(serverURL)
+	if err != nil {
+		return BackupShareResolveResult{}, err
+	}
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return BackupShareResolveResult{}, fmt.Errorf("share code missing")
+	}
+	var out backupShareResolveResponse
+	endpoint := serverURL + "/v1/sync/shares/" + url.PathEscape(code)
+	if err := c.getJSON(ctx, endpoint, "", &out); err != nil {
+		return BackupShareResolveResult{}, err
+	}
+	return BackupShareResolveResult{
+		Share:      out.Share,
+		Backup:     out.Backup,
+		ServerURL:  serverURL,
+		ServerTime: out.ServerTime,
+		ReceivedAt: out.ReceivedAt,
+	}, nil
+}
+
+func (c *Client) DownloadBackupShare(ctx context.Context, serverURL string, code string, targetPath string, expectedSize int64, onProgress TransferProgressFunc) error {
+	serverURL, err := NormalizeServerURL(serverURL)
+	if err != nil {
+		return err
+	}
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return fmt.Errorf("share code missing")
+	}
+	endpoint := serverURL + "/v1/sync/shares/" + url.PathEscape(code) + "/download"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 || strings.Contains(contentType, "application/json") {
+		return decodeAPIResponse(resp, nil)
+	}
+	totalBytes := resp.ContentLength
+	if totalBytes <= 0 && expectedSize > 0 {
+		totalBytes = expectedSize
+	}
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0700); err != nil {
+		return err
+	}
+	tmpPath := targetPath + ".tmp"
+	out, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	if err != nil {
+		return err
+	}
+	tracker := newTransferProgressTracker(totalBytes, onProgress)
+	tracker.emit(true)
+	_, copyErr := io.Copy(out, &transferProgressReader{reader: resp.Body, tracker: tracker})
+	tracker.done()
+	closeErr := out.Close()
+	if copyErr != nil {
+		_ = os.Remove(tmpPath)
+		return copyErr
+	}
+	if closeErr != nil {
+		_ = os.Remove(tmpPath)
+		return closeErr
+	}
+	return os.Rename(tmpPath, targetPath)
+}
+
 type transferProgressTracker struct {
 	total       int64
 	transferred int64

@@ -239,6 +239,62 @@ func (m *Manager) DeleteBackup(ctx context.Context, input BackupDeleteInput) err
 	})
 }
 
+func (m *Manager) CreateBackupShare(ctx context.Context, input BackupShareCreateInput) (BackupShareCreateResult, error) {
+	session, err := m.loadAuthorizedSession()
+	if err != nil {
+		return BackupShareCreateResult{}, err
+	}
+	input.BackupID = strings.TrimSpace(input.BackupID)
+	if input.BackupID == "" {
+		return BackupShareCreateResult{}, errors.New("backup id missing")
+	}
+	var result BackupShareCreateResult
+	err = m.withTokenRefresh(ctx, session, func() error {
+		next, err := m.client.CreateBackupShare(ctx, session, input)
+		if err != nil {
+			return err
+		}
+		result = next
+		return nil
+	})
+	return result, err
+}
+
+func (m *Manager) ResolveBackupShare(ctx context.Context, input BackupShareResolveInput) (BackupShareResolveResult, error) {
+	serverURL, err := NormalizeServerURL(input.ServerURL)
+	if err != nil {
+		return BackupShareResolveResult{}, err
+	}
+	return m.client.ResolveBackupShare(ctx, serverURL, strings.TrimSpace(input.Code))
+}
+
+func (m *Manager) DownloadBackupShare(ctx context.Context, input BackupShareDownloadInput, onProgress TransferProgressFunc) (BackupShareDownloadResult, error) {
+	serverURL, err := NormalizeServerURL(input.ServerURL)
+	if err != nil {
+		return BackupShareDownloadResult{}, err
+	}
+	code := strings.TrimSpace(input.Code)
+	if code == "" {
+		return BackupShareDownloadResult{}, errors.New("share code missing")
+	}
+	resolved, err := m.client.ResolveBackupShare(ctx, serverURL, code)
+	if err != nil {
+		return BackupShareDownloadResult{}, err
+	}
+	targetName := strings.NewReplacer("/", "_", "\\", "_", ":", "_").Replace(code)
+	targetPath := filepath.Join(m.store.dir, "downloads", "shares", targetName+".zip")
+	if err := m.client.DownloadBackupShare(ctx, serverURL, code, targetPath, resolved.Backup.SizeBytes, onProgress); err != nil {
+		return BackupShareDownloadResult{}, err
+	}
+	return BackupShareDownloadResult{
+		Share:     resolved.Share,
+		Backup:    resolved.Backup,
+		ServerURL: serverURL,
+		LocalPath: targetPath,
+		Message:   "分享包下载完成",
+	}, nil
+}
+
 func (m *Manager) startHeartbeatLoop(ctx context.Context) {
 	m.mu.Lock()
 	if m.heartbeatCancel != nil {

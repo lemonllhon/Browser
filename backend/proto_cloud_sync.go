@@ -26,6 +26,9 @@ func registerProtoCloudSyncHandlers(app *App, dispatcher *protoipc.Dispatcher) {
 	dispatcher.Register(protoipc.MethodCloudSyncBackupDelete, app.handleProtoCloudSyncBackupDelete)
 	dispatcher.Register(protoipc.MethodCloudSyncProfileBackupUpload, app.handleProtoCloudSyncProfileBackupUpload)
 	dispatcher.Register(protoipc.MethodCloudSyncProfileBackupPrepareRestore, app.handleProtoCloudSyncProfileBackupPrepareRestore)
+	dispatcher.Register(protoipc.MethodCloudSyncProfileTransferShareCreate, app.handleProtoCloudSyncProfileTransferShareCreate)
+	dispatcher.Register(protoipc.MethodCloudSyncProfileTransferShareResolve, app.handleProtoCloudSyncProfileTransferShareResolve)
+	dispatcher.Register(protoipc.MethodCloudSyncProfileTransferSharePrepare, app.handleProtoCloudSyncProfileTransferSharePrepare)
 }
 
 func (a *App) handleProtoCloudSyncStatusGet(ctx context.Context, request protoipc.Envelope) ([]byte, *protoipc.RPCError) {
@@ -187,6 +190,42 @@ func (a *App) handleProtoCloudSyncProfileBackupPrepareRestore(ctx context.Contex
 	result, err := a.CloudSyncPrepareProfileBackupRestore(input)
 	if err != nil {
 		return nil, protoBrowserOperationError("准备实例云端恢复失败", err)
+	}
+	return encodeCloudSyncJSONResult(result)
+}
+
+func (a *App) handleProtoCloudSyncProfileTransferShareCreate(ctx context.Context, request protoipc.Envelope) ([]byte, *protoipc.RPCError) {
+	var input ProfileTransferShareCreateInput
+	if rpcErr := decodeCloudSyncInput(request.Payload, &input, "CloudSyncProfileTransferShareCreateRequest"); rpcErr != nil {
+		return nil, rpcErr
+	}
+	result, err := a.CloudSyncCreateProfileTransferShare(input)
+	if err != nil {
+		return nil, protoBrowserOperationError("创建实例流转分享失败", err)
+	}
+	return encodeCloudSyncJSONResult(result)
+}
+
+func (a *App) handleProtoCloudSyncProfileTransferShareResolve(ctx context.Context, request protoipc.Envelope) ([]byte, *protoipc.RPCError) {
+	var input ProfileTransferShareResolveInput
+	if rpcErr := decodeCloudSyncInput(request.Payload, &input, "CloudSyncProfileTransferShareResolveRequest"); rpcErr != nil {
+		return nil, rpcErr
+	}
+	result, err := a.CloudSyncResolveProfileTransferShare(input)
+	if err != nil {
+		return nil, protoBrowserOperationError("解析实例流转分享失败", err)
+	}
+	return encodeCloudSyncJSONResult(result)
+}
+
+func (a *App) handleProtoCloudSyncProfileTransferSharePrepare(ctx context.Context, request protoipc.Envelope) ([]byte, *protoipc.RPCError) {
+	var input ProfileTransferSharePrepareRestoreInput
+	if rpcErr := decodeCloudSyncInput(request.Payload, &input, "CloudSyncProfileTransferSharePrepareRestoreRequest"); rpcErr != nil {
+		return nil, rpcErr
+	}
+	result, err := a.CloudSyncPrepareProfileTransferShareRestore(input)
+	if err != nil {
+		return nil, protoBrowserOperationError("接收实例流转分享失败", err)
 	}
 	return encodeCloudSyncJSONResult(result)
 }

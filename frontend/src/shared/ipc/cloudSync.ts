@@ -12,6 +12,9 @@ import {
   METHOD_CLOUD_SYNC_OAUTH_START,
   METHOD_CLOUD_SYNC_PROFILE_BACKUP_PREPARE_RESTORE,
   METHOD_CLOUD_SYNC_PROFILE_BACKUP_UPLOAD,
+  METHOD_CLOUD_SYNC_PROFILE_TRANSFER_SHARE_CREATE,
+  METHOD_CLOUD_SYNC_PROFILE_TRANSFER_SHARE_PREPARE,
+  METHOD_CLOUD_SYNC_PROFILE_TRANSFER_SHARE_RESOLVE,
   METHOD_CLOUD_SYNC_REFRESH_STATUS,
   METHOD_CLOUD_SYNC_STATUS_GET,
 } from './envelope'
@@ -188,6 +191,67 @@ export type ProtoCloudSyncProfileBackupPrepareRestoreInput = {
   backupId: string
 }
 
+export type ProtoCloudSyncBackupShareItem = {
+  id: string
+  backupId: string
+  userId: string
+  workspaceId: string
+  deviceId: string
+  codeHint: string
+  note: string
+  status: string
+  effectiveStatus: string
+  expiresAt: string
+  usedAt: string
+  usedBy: string
+  usedIp: string
+  revokedAt: string
+  revokedBy: string
+  createdAt: string
+  updatedAt: string
+  deletedAt: string
+  backup: ProtoCloudSyncBackupItem
+}
+
+export type ProtoCloudSyncProfileTransferShareCreateInput = {
+  profileIds: string[]
+  includeCookies: boolean
+  includePlainCookiesWhenRunning: boolean
+  expiresInHours?: number
+  note?: string
+}
+
+export type ProtoCloudSyncProfileTransferShareCreateResult = {
+  share: ProtoCloudSyncBackupShareItem
+  backup: ProtoCloudSyncBackupItem
+  code: string
+  shareUrl: string
+  directUrl: string
+  expiresAt: string
+  localPath: string
+  profileBackup: ProtoBrowserProfileBackupActionResult
+  message: string
+}
+
+export type ProtoCloudSyncProfileTransferShareResolveInput = {
+  shareText: string
+  serverURL?: string
+}
+
+export type ProtoCloudSyncProfileTransferShareResolveResult = {
+  share: ProtoCloudSyncBackupShareItem
+  backup: ProtoCloudSyncBackupItem
+  serverURL: string
+  code: string
+  serverTime: string
+  message: string
+}
+
+export type ProtoCloudSyncProfileTransferSharePrepareInput = {
+  shareText: string
+  serverURL?: string
+}
+
 export async function getCloudSyncStatus(): Promise<ProtoCloudSyncStatus> {
   const payload = await cloudSyncProtoClient.request(METHOD_CLOUD_SYNC_STATUS_GET, new Uint8Array())
   return decodeCloudSyncStatus(payload)
@@ -308,6 +372,33 @@ export async function uploadCloudSyncProfileBackup(input: ProtoBrowserProfileBac
 export async function prepareCloudSyncProfileBackupRestore(input: ProtoCloudSyncProfileBackupPrepareRestoreInput): Promise<ProtoBrowserProfileBackupActionResult> {
   const payload = await cloudSyncProtoClient.request(
     METHOD_CLOUD_SYNC_PROFILE_BACKUP_PREPARE_RESTORE,
+    encodeCloudSyncJSONMessage(JSON.stringify(input)),
+    300000,
+  )
+  return decodeCloudSyncJSONMessage<ProtoBrowserProfileBackupActionResult>(payload)
+}
+
+export async function createCloudSyncProfileTransferShare(input: ProtoCloudSyncProfileTransferShareCreateInput): Promise<ProtoCloudSyncProfileTransferShareCreateResult> {
+  const payload = await cloudSyncProtoClient.request(
+    METHOD_CLOUD_SYNC_PROFILE_TRANSFER_SHARE_CREATE,
+    encodeCloudSyncJSONMessage(JSON.stringify(input)),
+    600000,
+  )
+  return decodeCloudSyncJSONMessage<ProtoCloudSyncProfileTransferShareCreateResult>(payload)
+}
+
+export async function resolveCloudSyncProfileTransferShare(input: ProtoCloudSyncProfileTransferShareResolveInput): Promise<ProtoCloudSyncProfileTransferShareResolveResult> {
+  const payload = await cloudSyncProtoClient.request(
+    METHOD_CLOUD_SYNC_PROFILE_TRANSFER_SHARE_RESOLVE,
+    encodeCloudSyncJSONMessage(JSON.stringify(input)),
+    45000,
+  )
+  return decodeCloudSyncJSONMessage<ProtoCloudSyncProfileTransferShareResolveResult>(payload)
+}
+
+export async function prepareCloudSyncProfileTransferShareRestore(input: ProtoCloudSyncProfileTransferSharePrepareInput): Promise<ProtoBrowserProfileBackupActionResult> {
+  const payload = await cloudSyncProtoClient.request(
+    METHOD_CLOUD_SYNC_PROFILE_TRANSFER_SHARE_PREPARE,
     encodeCloudSyncJSONMessage(JSON.stringify(input)),
     300000,
   )

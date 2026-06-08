@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Activity, ChevronRight, ChevronUp, Download, FileText, LayoutGrid, List, MonitorUp, Play, Plus, RefreshCw, Sliders, Square, Wand2 } from 'lucide-react'
+import { Activity, ChevronRight, ChevronUp, Download, FileText, LayoutGrid, List, MonitorUp, Play, Plus, RefreshCw, Share2, Sliders, Square, Wand2 } from 'lucide-react'
 import { Button, StatCard } from '../../../../shared/components'
 import type { BrowserCore, BrowserGroupWithCount, BrowserProxy } from '../../types'
 import { EMPTY_FILTERS, InstanceFilterBar } from '../InstanceFilterBar'
@@ -22,9 +22,11 @@ interface BrowserListHeaderPanelProps {
   onRefresh: () => void
   onOpenBatchRandom: () => void
   onOpenBackup: () => void
+  onOpenProfileTransfer: () => void
   onOpenWindowSync: () => void
   onOpenSettings: () => void
   onOpenExpand: () => void
+  cloudSyncOnline?: boolean
   onViewModeChange: (viewMode: 'card' | 'table') => void
   onToggleColumn: (key: string) => void
   onFiltersChange: (filters: InstanceFilters) => void
@@ -46,9 +48,11 @@ export function BrowserListHeaderPanel({
   onRefresh,
   onOpenBatchRandom,
   onOpenBackup,
+  onOpenProfileTransfer,
   onOpenWindowSync,
   onOpenSettings,
   onOpenExpand,
+  cloudSyncOnline = false,
   onViewModeChange,
   onToggleColumn,
   onFiltersChange,
@@ -70,6 +74,9 @@ export function BrowserListHeaderPanel({
           <Button variant="secondary" size="sm" className="shrink-0 whitespace-nowrap" onClick={onOpenBackup}><Download className="w-4 h-4" />实例备份与恢复</Button>
           <Button variant="secondary" size="sm" className="shrink-0 whitespace-nowrap" onClick={onOpenWindowSync}><MonitorUp className="w-4 h-4" />窗口同步</Button>
           <Button variant="secondary" size="sm" className="shrink-0 whitespace-nowrap" onClick={onOpenSettings}><Sliders className="w-4 h-4" />基础配置</Button>
+          {cloudSyncOnline && (
+            <Button variant="secondary" size="sm" className="shrink-0 whitespace-nowrap" onClick={onOpenProfileTransfer}><Share2 className="w-4 h-4" />接收流转分享</Button>
+          )}
           <Button variant="secondary" size="sm" onClick={onOpenExpand} className="shrink-0 whitespace-nowrap text-[var(--color-primary)] border-[var(--color-primary)] hover:bg-[var(--color-primary)]/10">
             <Plus className="w-4 h-4" />扩容情况
           </Button>
