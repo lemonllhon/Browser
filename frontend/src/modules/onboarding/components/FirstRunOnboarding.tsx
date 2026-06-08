@@ -126,6 +126,20 @@ function normalizeElementText(value: string | null | undefined) {
   return String(value || '').replace(/\s+/g, ' ').trim()
 }
 
+function normalizeTargetSearch(search: string | null | undefined) {
+  if (!search || search === '?') return ''
+  return search.startsWith('?') ? search : `?${search}`
+}
+
+function getRouteKey(pathname: string, search: string | null | undefined = '') {
+  return `${pathname}${normalizeTargetSearch(search)}`
+}
+
+function getRouteKeyFromPath(path: string) {
+  const [pathname, search = ''] = path.split('?')
+  return getRouteKey(pathname || '/', search)
+}
+
 function isElementVisible(element: Element) {
   const rect = element.getBoundingClientRect()
   const style = window.getComputedStyle(element)
@@ -137,7 +151,11 @@ function isInsideOnboardingWindow(element: Element) {
 }
 
 function elementScore(element: Element, target: OnboardingTargetConfig) {
-  const text = normalizeElementText(element.textContent)
+  const text = normalizeElementText([
+    element.textContent,
+    element.getAttribute('title'),
+    element.getAttribute('aria-label'),
+  ].filter(Boolean).join(' '))
   const targetText = normalizeElementText(target.text)
   if (!text || !targetText) return -1
 
@@ -689,6 +707,23 @@ function findStepIndex(stepId?: string) {
   return index >= 0 ? index : 0
 }
 
+function getRouteSyncedStepId(pathname: string, search: string) {
+  if (pathname === '/browser/cores') return 'core-entry'
+  if (pathname === '/browser/proxy-pool') return 'proxy-entry'
+  if (pathname === '/browser/extensions') return 'extension-entry'
+  if (pathname === '/settings') return 'settings-entry'
+  if (pathname === '/browser/list') return 'list-entry'
+  if (pathname === '/browser/edit/new') return 'profile-basic'
+  if (pathname.startsWith('/browser/edit/')) return 'profile-basic'
+  if (pathname === '/browser/organization') {
+    const tab = new URLSearchParams(search).get('tab')
+    if (tab === 'groups') return 'organization-groups'
+    if (tab === 'defaults') return 'organization-default'
+    return 'organization-entry'
+  }
+  return ''
+}
+
 export function FirstRunOnboarding() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -700,9 +735,18 @@ export function FirstRunOnboarding() {
   const [floatingRect, setFloatingRect] = useState<FloatingRect | null>(null)
   const dragStateRef = useRef<DragState | null>(null)
   const dialogRef = useRef<HTMLElement | null>(null)
+  const routeKey = getRouteKey(location.pathname, location.search)
+  const lastRouteKeyRef = useRef(routeKey)
+  const demoNavigationTargetRef = useRef<string | null>(null)
   const step = FIRST_RUN_ONBOARDING_STEPS[stepIndex]
   const isFirstStep = stepIndex === 0
   const isLastStep = stepIndex === FIRST_RUN_ONBOARDING_STEPS.length - 1
+
+  const navigateFromDemo = useCallback((path: string) => {
+    const nextRouteKey = getRouteKeyFromPath(path)
+    demoNavigationTargetRef.current = nextRouteKey === routeKey ? null : nextRouteKey
+    navigate(path)
+  }, [navigate, routeKey])
 
   const measureFloatingRect = useCallback(() => {
     const rect = dialogRef.current?.getBoundingClientRect()
@@ -774,9 +818,9 @@ export function FirstRunOnboarding() {
     setFloatingPosition(getInitialFloatingPosition())
     setOpen(true)
     if (target.routePath) {
-      navigate(target.routePath)
+      navigateFromDemo(target.routePath)
     }
-  }, [navigate])
+  }, [navigateFromDemo])
 
   useEffect(() => {
     if (isSpecialWindow() || !shouldShowFirstRunOnboarding()) return
@@ -804,9 +848,9 @@ export function FirstRunOnboarding() {
 
   const navigateForStep = useCallback((target: OnboardingStep) => {
     if (target.routePath) {
-      navigate(target.routePath)
+      navigateFromDemo(target.routePath)
     }
-  }, [navigate])
+  }, [navigateFromDemo])
 
   const setStepAndNavigate = useCallback((nextIndex: number) => {
     const boundedIndex = Math.max(0, Math.min(FIRST_RUN_ONBOARDING_STEPS.length - 1, nextIndex))
@@ -838,13 +882,13 @@ export function FirstRunOnboarding() {
 
   const handleStepAction = useCallback((current: OnboardingStep) => {
     if (current.actionPath) {
-      navigate(current.actionPath)
+      navigateFromDemo(current.actionPath)
     }
     if (current.actionNextId) {
       setStepIndex(findStepIndex(current.actionNextId))
       setTargetRect(null)
     }
-  }, [navigate])
+  }, [navigateFromDemo])
 
   const nextStep = useCallback(() => {
     setStepAndNavigate(stepIndex + 1)
@@ -881,6 +925,36 @@ export function FirstRunOnboarding() {
       window.cancelAnimationFrame(frame)
     }
   }, [floatingPosition.left, floatingPosition.top, measureFloatingRect, open, stepIndex])
+
+  useEffect(() => {
+    const previousRouteKey = lastRouteKeyRef.current
+    lastRouteKeyRef.current = routeKey
+
+    if (!open) {
+      demoNavigationTargetRef.current = null
+      return
+    }
+
+    if (previousRouteKey === routeKey) return
+
+    setTargetRect(null)
+
+    if (demoNavigationTargetRef.current) {
+      if (demoNavigationTargetRef.current === routeKey) {
+        demoNavigationTargetRef.current = null
+        return
+      }
+      demoNavigationTargetRef.current = null
+    }
+
+    const syncedStepId = getRouteSyncedStepId(location.pathname, location.search)
+    if (!syncedStepId) return
+
+    const syncedIndex = findStepIndex(syncedStepId)
+    if (syncedIndex !== stepIndex) {
+      setStepIndex(syncedIndex)
+    }
+  }, [location.pathname, location.search, open, routeKey, stepIndex])
 
   useEffect(() => {
     if (!open) {
