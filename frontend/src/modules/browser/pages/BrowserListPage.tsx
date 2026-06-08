@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Edit2, Star, Trash2 } from 'lucide-react'
 import { Badge, Button, Card, Table } from '../../../shared/components'
@@ -23,6 +23,11 @@ import { useBrowserProfileBatchActions } from '../hooks/useBrowserProfileBatchAc
 import { useBrowserProfileRuntimeActions } from '../hooks/useBrowserProfileRuntimeActions'
 import { InstanceBackupRestoreModal } from '../components/InstanceBackupRestoreModal'
 import { BatchRandomFingerprintModal } from '../components/BatchRandomFingerprintModal'
+import {
+  BROWSER_LIST_BACKUP_DEMO_EVENT,
+  type BackupRestoreDemoTab,
+  type BrowserListBackupDemoDetail,
+} from '../browserOnboardingEvents'
 import { formatInstanceMarkerLabel, formatTime, getCookieActionTitle, resolveProfileStatus } from '../utils/browserListFormat'
 import { filterAndSortBrowserProfiles, getBrowserProfileCoreLabel, resolveBrowserProfileCore } from '../utils/browserListFilters'
 import { getBrowserProfileProxyDisplayName } from '../utils/browserListProxyDisplay'
@@ -77,6 +82,7 @@ export function BrowserListPage() {
   const [startingIds, setStartingIds] = useState<Set<string>>(new Set())
   const [stoppingIds, setStoppingIds] = useState<Set<string>>(new Set())
   const [backupModalOpen, setBackupModalOpen] = useState(false)
+  const [backupDemoTab, setBackupDemoTab] = useState<BackupRestoreDemoTab | null>(null)
   const [batchRandomModalOpen, setBatchRandomModalOpen] = useState(false)
 
   // 关键字弹窗
@@ -139,6 +145,24 @@ export function BrowserListPage() {
     setWindowSyncSettings,
     setWindowSyncLayout,
   })
+
+  useEffect(() => {
+    const handleBackupDemo = (event: Event) => {
+      const detail = (event as CustomEvent<BrowserListBackupDemoDetail>).detail
+      if (!detail?.open) {
+        setBackupDemoTab(null)
+        setBackupModalOpen(false)
+        return
+      }
+      setBackupDemoTab(detail.tab || 'export')
+      setBackupModalOpen(true)
+    }
+
+    window.addEventListener(BROWSER_LIST_BACKUP_DEMO_EVENT, handleBackupDemo)
+    return () => {
+      window.removeEventListener(BROWSER_LIST_BACKUP_DEMO_EVENT, handleBackupDemo)
+    }
+  }, [])
 
   const runningCount = useMemo(() => profiles.filter(p => p.running).length, [profiles])
   const allTags = useMemo(() => {
@@ -454,7 +478,10 @@ export function BrowserListPage() {
         onToggleHeaderCollapsed={toggleHeaderCollapsed}
         onRefresh={() => { void loadProfiles() }}
         onOpenBatchRandom={() => setBatchRandomModalOpen(true)}
-        onOpenBackup={() => setBackupModalOpen(true)}
+        onOpenBackup={() => {
+          setBackupDemoTab(null)
+          setBackupModalOpen(true)
+        }}
         onOpenWindowSync={handleOpenWindowSyncModal}
         onOpenSettings={handleOpenSettings}
         onOpenExpand={() => setExpandModalOpen(true)}
@@ -629,7 +656,11 @@ export function BrowserListPage() {
 
       <InstanceBackupRestoreModal
         open={backupModalOpen}
-        onClose={() => setBackupModalOpen(false)}
+        demoTab={backupDemoTab}
+        onClose={() => {
+          setBackupModalOpen(false)
+          setBackupDemoTab(null)
+        }}
         profiles={profiles}
         totalCount={profiles.length}
         selectedProfileIds={selectedProfileIds}

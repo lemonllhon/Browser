@@ -33,6 +33,7 @@ import {
   markFirstRunOnboardingCompleted,
   shouldShowFirstRunOnboarding,
 } from '../onboardingStorage'
+import { requestBrowserListBackupDemo, type BackupRestoreDemoTab } from '../../browser/browserOnboardingEvents'
 import { OnboardingAnimation, type OnboardingSceneKey } from './OnboardingAnimation'
 
 type OnboardingStep = {
@@ -277,9 +278,11 @@ function getStepTarget(step: OnboardingStep): OnboardingTargetConfig | null {
     case 'profile-batch':
       return { text: '批量生成', role: 'button' }
     case 'profile-backup':
+      return { text: '实例备份与恢复', role: 'heading' }
     case 'backup-export':
+      return { text: '导出', label: '导出备份', role: 'button' }
     case 'backup-restore':
-      return { text: '实例备份与恢复', role: 'button' }
+      return { text: '导入恢复', label: '导入恢复备份', role: 'button' }
     case 'organization-tags':
       return { text: '标签', role: 'button' }
     case 'organization-groups':
@@ -342,7 +345,7 @@ function OnboardingTargetOverlay({
 
   return (
     <>
-      <svg className="fixed inset-0 z-[49] pointer-events-none" width="100%" height="100%" aria-hidden="true">
+      <svg className="fixed inset-0 z-[55] pointer-events-none" width="100%" height="100%" aria-hidden="true">
         <defs>
           <marker id="onboarding-arrow-head" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
             <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--color-accent)" />
@@ -359,7 +362,7 @@ function OnboardingTargetOverlay({
         />
       </svg>
       <div
-        className="fixed z-[49] pointer-events-none rounded-lg border-2 border-[var(--color-accent)] onboarding-target-highlight"
+        className="fixed z-[55] pointer-events-none rounded-lg border-2 border-[var(--color-accent)] onboarding-target-highlight"
         style={{
           left: targetRect.left - 6,
           top: targetRect.top - 6,
@@ -368,7 +371,7 @@ function OnboardingTargetOverlay({
         }}
       />
       <div
-        className="fixed z-[49] pointer-events-none rounded-lg bg-[var(--color-accent)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-inverse)] shadow-lg"
+        className="fixed z-[55] pointer-events-none rounded-lg bg-[var(--color-accent)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-inverse)] shadow-lg"
         style={{ left: labelLeft, top: labelTop }}
       >
         指向：{targetRect.label}
@@ -724,6 +727,12 @@ function getRouteSyncedStepId(pathname: string, search: string) {
   return ''
 }
 
+function getBackupDemoTab(stepId: string): BackupRestoreDemoTab | null {
+  if (stepId === 'profile-backup' || stepId === 'backup-export') return 'export'
+  if (stepId === 'backup-restore') return 'restore'
+  return null
+}
+
 export function FirstRunOnboarding() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -897,6 +906,28 @@ export function FirstRunOnboarding() {
   const previousStep = useCallback(() => {
     setStepAndNavigate(stepIndex - 1)
   }, [setStepAndNavigate, stepIndex])
+
+  useEffect(() => {
+    if (!open) {
+      requestBrowserListBackupDemo({ open: false })
+      return
+    }
+
+    const backupTab = getBackupDemoTab(step.id)
+    if (!backupTab) {
+      requestBrowserListBackupDemo({ open: false })
+      return
+    }
+    if (location.pathname !== '/browser/list') return
+
+    const timers = [80, 320, 700].map(delay => window.setTimeout(() => {
+      requestBrowserListBackupDemo({ open: true, tab: backupTab })
+    }, delay))
+
+    return () => {
+      timers.forEach(timer => window.clearTimeout(timer))
+    }
+  }, [location.pathname, open, step.id])
 
   useEffect(() => {
     if (!open) return
@@ -1153,7 +1184,7 @@ export function FirstRunOnboarding() {
     <>
       <OnboardingTargetOverlay floatingRect={floatingRect} targetRect={targetRect} />
       <div
-        className="fixed z-50 pointer-events-none"
+        className="fixed z-[60] pointer-events-none"
         style={{
           left: floatingPosition.left,
           top: floatingPosition.top,

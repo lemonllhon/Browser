@@ -11,6 +11,7 @@ import {
 } from '../api'
 import type { BrowserProfile } from '../types'
 import { resolveActionErrorMessage } from '../utils/actionErrors'
+import type { BackupRestoreDemoTab } from '../browserOnboardingEvents'
 
 type ExportScope = 'all' | 'selected' | 'filtered' | 'custom'
 
@@ -22,6 +23,7 @@ interface Props {
   selectedProfileIds: string[]
   filteredProfileIds: string[]
   onRestored: () => void
+  demoTab?: BackupRestoreDemoTab | null
 }
 
 type ProgressLog = {
@@ -41,6 +43,7 @@ export function InstanceBackupRestoreModal({
   selectedProfileIds,
   filteredProfileIds,
   onRestored,
+  demoTab,
 }: Props) {
   const [tab, setTab] = useState<'export' | 'restore'>('export')
   const [scope, setScope] = useState<ExportScope>('all')
@@ -63,7 +66,7 @@ export function InstanceBackupRestoreModal({
   useEffect(() => {
     if (!open) return
     setScope(selectedCount > 0 ? 'selected' : 'all')
-    setTab('export')
+    setTab(demoTab || 'export')
     setProgress(null)
     setLogs([])
     setPreview(null)
@@ -72,7 +75,12 @@ export function InstanceBackupRestoreModal({
     setRestoreProfileIds(new Set())
     setExportCompleted(false)
     setRestoreCompleted(false)
-  }, [open, selectedCount, selectedProfileIds])
+  }, [demoTab, open, selectedCount, selectedProfileIds])
+
+  useEffect(() => {
+    if (!open || !demoTab) return
+    setTab(demoTab)
+  }, [demoTab, open])
 
   useEffect(() => {
     if (!open) return
@@ -242,18 +250,22 @@ export function InstanceBackupRestoreModal({
       }
     >
       <div className="space-y-4">
-        <div className="inline-flex rounded-md border border-[var(--color-border-default)] bg-[var(--color-bg-secondary)] p-0.5">
+        <div className="inline-flex rounded-lg border border-[var(--color-border-default)] bg-[var(--color-bg-secondary)] p-1 shadow-inner">
           <button
-            className={`h-8 px-4 rounded text-sm transition-colors ${tab === 'export' ? 'bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] shadow-sm' : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'}`}
+            type="button"
+            aria-pressed={tab === 'export'}
+            className={`h-8 px-4 rounded-md text-sm font-medium transition-all duration-200 ${tab === 'export' ? 'bg-[var(--color-accent)] text-[var(--color-text-inverse)] shadow-md ring-1 ring-[var(--color-accent)]/40' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text-primary)]'}`}
             onClick={() => setTab('export')}
           >
             导出
           </button>
           <button
-            className={`h-8 px-4 rounded text-sm transition-colors ${tab === 'restore' ? 'bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] shadow-sm' : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'}`}
+            type="button"
+            aria-pressed={tab === 'restore'}
+            className={`h-8 px-4 rounded-md text-sm font-medium transition-all duration-200 ${tab === 'restore' ? 'bg-[var(--color-accent)] text-[var(--color-text-inverse)] shadow-md ring-1 ring-[var(--color-accent)]/40' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text-primary)]'}`}
             onClick={() => setTab('restore')}
           >
-            恢复
+            导入恢复
           </button>
         </div>
 
