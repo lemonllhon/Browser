@@ -5,6 +5,7 @@ import "google.golang.org/protobuf/encoding/protowire"
 const (
 	MethodCloudSyncStatusGet                   = "trace.cloudSync.StatusGet"
 	MethodCloudSyncLoginBind                   = "trace.cloudSync.LoginBind"
+	MethodCloudSyncOAuthStart                  = "trace.cloudSync.OAuthStart"
 	MethodCloudSyncRefreshStatus               = "trace.cloudSync.RefreshStatus"
 	MethodCloudSyncLogout                      = "trace.cloudSync.Logout"
 	MethodCloudSyncBackupList                  = "trace.cloudSync.BackupList"

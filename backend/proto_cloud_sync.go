@@ -13,6 +13,7 @@ func registerProtoCloudSyncHandlers(app *App, dispatcher *protoipc.Dispatcher) {
 	}
 	dispatcher.Register(protoipc.MethodCloudSyncStatusGet, app.handleProtoCloudSyncStatusGet)
 	dispatcher.Register(protoipc.MethodCloudSyncLoginBind, app.handleProtoCloudSyncLoginBind)
+	dispatcher.Register(protoipc.MethodCloudSyncOAuthStart, app.handleProtoCloudSyncOAuthStart)
 	dispatcher.Register(protoipc.MethodCloudSyncRefreshStatus, app.handleProtoCloudSyncRefreshStatus)
 	dispatcher.Register(protoipc.MethodCloudSyncLogout, app.handleProtoCloudSyncLogout)
 	dispatcher.Register(protoipc.MethodCloudSyncBackupList, app.handleProtoCloudSyncBackupList)
@@ -40,6 +41,18 @@ func (a *App) handleProtoCloudSyncLoginBind(ctx context.Context, request protoip
 	status, err := a.CloudSyncLoginBind(input)
 	if err != nil {
 		return nil, protoBrowserOperationError("授权登录同步服务失败", err)
+	}
+	return encodeCloudSyncStatus(status)
+}
+
+func (a *App) handleProtoCloudSyncOAuthStart(ctx context.Context, request protoipc.Envelope) ([]byte, *protoipc.RPCError) {
+	var input CloudSyncOAuthStartInput
+	if rpcErr := decodeCloudSyncInput(request.Payload, &input, "CloudSyncOAuthStartRequest"); rpcErr != nil {
+		return nil, rpcErr
+	}
+	status, err := a.CloudSyncStartOAuth(input)
+	if err != nil {
+		return nil, protoBrowserOperationError("OAuth 授权同步服务失败", err)
 	}
 	return encodeCloudSyncStatus(status)
 }

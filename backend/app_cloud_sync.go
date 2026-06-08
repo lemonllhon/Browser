@@ -15,6 +15,7 @@ import (
 
 type CloudSyncStatus = cloudsync.Status
 type CloudSyncLoginBindInput = cloudsync.LoginBindInput
+type CloudSyncOAuthStartInput = cloudsync.OAuthStartInput
 type CloudSyncBackupListInput = cloudsync.BackupListInput
 type CloudSyncBackupListResult = cloudsync.BackupListResult
 type CloudSyncBackupUploadInput = cloudsync.BackupUploadInput
@@ -48,6 +49,26 @@ func (a *App) CloudSyncLoginBind(input CloudSyncLoginBindInput) (CloudSyncStatus
 	ctx, cancel := a.operationContext(30 * time.Second)
 	defer cancel()
 	status, err := manager.LoginBind(ctx, input)
+	if err == nil {
+		startCtx := context.Background()
+		if a != nil && a.ctx != nil {
+			startCtx = a.ctx
+		}
+		manager.Start(startCtx)
+	}
+	return status, err
+}
+
+func (a *App) CloudSyncStartOAuth(input CloudSyncOAuthStartInput) (CloudSyncStatus, error) {
+	manager := a.ensureCloudSyncManager()
+	ctx, cancel := a.operationContext(5 * time.Minute)
+	defer cancel()
+	status, err := manager.StartOAuth(ctx, input, func(targetURL string) error {
+		if a != nil {
+			a.appRuntime().OpenExternalURL(ctx, targetURL)
+		}
+		return nil
+	})
 	if err == nil {
 		startCtx := context.Background()
 		if a != nil && a.ctx != nil {

@@ -78,6 +78,12 @@ func (c *Client) LoginBind(ctx context.Context, serverURL string, req loginBindR
 	return out, err
 }
 
+func (c *Client) ExchangeOAuthCode(ctx context.Context, serverURL string, req oauthTokenRequest) (loginBindResponse, error) {
+	var out loginBindResponse
+	err := c.post(ctx, serverURL+"/oauth/token", "", req, &out)
+	return out, err
+}
+
 func (c *Client) Heartbeat(ctx context.Context, session *Session, req heartbeatRequest) (heartbeatResponse, error) {
 	var out heartbeatResponse
 	err := c.post(ctx, session.ServerURL+"/v1/sync/devices/heartbeat", session.AccessToken, req, &out)

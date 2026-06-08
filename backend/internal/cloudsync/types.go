@@ -56,6 +56,11 @@ type LoginBindInput struct {
 	DeviceName string `json:"deviceName"`
 }
 
+type OAuthStartInput struct {
+	ServerURL  string `json:"serverURL"`
+	DeviceName string `json:"deviceName"`
+}
+
 type loginBindRequest struct {
 	Username          string `json:"username"`
 	Password          string `json:"password"`
@@ -74,6 +79,19 @@ type loginBindResponse struct {
 	BindingID        string `json:"bindingId"`
 	User             User   `json:"user"`
 	Device           Device `json:"device"`
+}
+
+type oauthTokenRequest struct {
+	GrantType         string `json:"grant_type"`
+	Code              string `json:"code"`
+	RedirectURI       string `json:"redirect_uri"`
+	ClientID          string `json:"client_id"`
+	CodeVerifier      string `json:"code_verifier"`
+	DeviceName        string `json:"deviceName"`
+	DeviceFingerprint string `json:"deviceFingerprint"`
+	OS                string `json:"os"`
+	AppVersion        string `json:"appVersion"`
+	ClientVersion     string `json:"clientVersion"`
 }
 
 type heartbeatRequest struct {

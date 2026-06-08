@@ -4,6 +4,7 @@ import {
   loginBindCloudSync,
   logoutCloudSync,
   refreshCloudSyncStatus,
+  startCloudSyncOAuth,
   uploadCloudSyncFullBackup,
   downloadCloudSyncBackup,
   restoreCloudSyncBackup,
@@ -16,6 +17,7 @@ import {
   type ProtoCloudSyncBackupRestoreResult,
   type ProtoCloudSyncBackupUploadResult,
   type ProtoCloudSyncBackupDownloadResult,
+  type ProtoCloudSyncOAuthStartInput,
   type ProtoCloudSyncStatus,
 } from '../../shared/backend/client'
 
@@ -64,6 +66,12 @@ export async function fetchSyncAuthSession(): Promise<SyncAuthSession | null> {
 
 export async function loginAndBindSyncServer(input: LoginInput): Promise<SyncAuthSession> {
   const status = await loginBindCloudSync(input)
+  notify(status)
+  return status
+}
+
+export async function startOAuthSyncServer(input: ProtoCloudSyncOAuthStartInput): Promise<SyncAuthSession> {
+  const status = await startCloudSyncOAuth(input)
   notify(status)
   return status
 }

@@ -6,6 +6,7 @@ import {
   METHOD_CLOUD_SYNC_BACKUP_UPLOAD,
   METHOD_CLOUD_SYNC_LOGIN_BIND,
   METHOD_CLOUD_SYNC_LOGOUT,
+  METHOD_CLOUD_SYNC_OAUTH_START,
   METHOD_CLOUD_SYNC_PROFILE_BACKUP_PREPARE_RESTORE,
   METHOD_CLOUD_SYNC_PROFILE_BACKUP_UPLOAD,
   METHOD_CLOUD_SYNC_REFRESH_STATUS,
@@ -70,6 +71,11 @@ export type ProtoCloudSyncLoginBindInput = {
   serverURL: string
   username: string
   password: string
+  deviceName: string
+}
+
+export type ProtoCloudSyncOAuthStartInput = {
+  serverURL: string
   deviceName: string
 }
 
@@ -175,6 +181,15 @@ export async function loginBindCloudSync(input: ProtoCloudSyncLoginBindInput): P
     METHOD_CLOUD_SYNC_LOGIN_BIND,
     encodeCloudSyncJSONMessage(JSON.stringify(input)),
     30000,
+  )
+  return decodeCloudSyncStatus(payload)
+}
+
+export async function startCloudSyncOAuth(input: ProtoCloudSyncOAuthStartInput): Promise<ProtoCloudSyncStatus> {
+  const payload = await cloudSyncProtoClient.request(
+    METHOD_CLOUD_SYNC_OAUTH_START,
+    encodeCloudSyncJSONMessage(JSON.stringify(input)),
+    300000,
   )
   return decodeCloudSyncStatus(payload)
 }

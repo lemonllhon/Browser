@@ -37,6 +37,7 @@ import {
   loadSyncAuthSession,
   loginAndBindSyncServer,
   logoutSyncServer,
+  startOAuthSyncServer,
   uploadFullSyncBackup,
   downloadSyncBackup,
   restoreSyncBackup,
@@ -70,6 +71,8 @@ export function ProfilePage() {
   const [clickCount, setClickCount] = useState(0)
   const [pageData, setPageData] = useState<ProfilePageData>(() => createDefaultProfilePageData())
   const [syncSession, setSyncSession] = useState<SyncAuthSession | null>(() => loadSyncAuthSession())
+  const [syncOAuthOpen, setSyncOAuthOpen] = useState(false)
+  const [syncOAuthLoading, setSyncOAuthLoading] = useState(false)
   const [syncLoginOpen, setSyncLoginOpen] = useState(false)
   const [syncLoading, setSyncLoading] = useState(false)
   const [syncRefreshLoading, setSyncRefreshLoading] = useState(false)
@@ -190,6 +193,24 @@ export function ProfilePage() {
       toast.error(error instanceof Error ? error.message : '授权登录失败')
     } finally {
       setSyncLoading(false)
+    }
+  }
+
+  const handleSyncOAuth = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setSyncOAuthLoading(true)
+    try {
+      const session = await startOAuthSyncServer({
+        serverURL: syncForm.serverURL,
+        deviceName: syncForm.deviceName,
+      })
+      setSyncSession(session)
+      setSyncOAuthOpen(false)
+      toast.success('OAuth 授权成功，当前设备已在线')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'OAuth 授权失败')
+    } finally {
+      setSyncOAuthLoading(false)
     }
   }
 
@@ -451,6 +472,20 @@ export function ProfilePage() {
                 setSyncForm(prev => ({
                   ...prev,
                   serverURL: syncSession?.serverURL || prev.serverURL,
+                  deviceName: syncSession?.device.deviceName || prev.deviceName,
+                }))
+                setSyncOAuthOpen(true)
+              }}
+            >
+              <LogIn className="h-4 w-4" />
+              {syncSession ? '重新授权' : '浏览器授权'}
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setSyncForm(prev => ({
+                  ...prev,
+                  serverURL: syncSession?.serverURL || prev.serverURL,
                   username: syncSession?.user.username || prev.username,
                   deviceName: syncSession?.device.deviceName || prev.deviceName,
                   password: '',
@@ -458,8 +493,8 @@ export function ProfilePage() {
                 setSyncLoginOpen(true)
               }}
             >
-              <LogIn className="h-4 w-4" />
-              {syncSession ? '重新授权' : '授权登录'}
+              <ShieldCheck className="h-4 w-4" />
+              调试登录
             </Button>
             <Button
               variant="secondary"
@@ -696,9 +731,51 @@ export function ProfilePage() {
       </Card>
 
       <Modal
+        open={syncOAuthOpen}
+        onClose={() => !syncOAuthLoading && setSyncOAuthOpen(false)}
+        title="OAuth 授权同步服务"
+        width="520px"
+      >
+        <form className="space-y-4" onSubmit={handleSyncOAuth}>
+          <div className="space-y-1">
+            <label className="text-sm font-medium text-[var(--color-text-secondary)]">服务地址</label>
+            <Input
+              value={syncForm.serverURL}
+              onChange={(event) => setSyncForm(prev => ({ ...prev, serverURL: event.target.value }))}
+              placeholder="http://127.0.0.1:8000"
+              autoComplete="url"
+              required
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm font-medium text-[var(--color-text-secondary)]">设备名称</label>
+            <Input
+              value={syncForm.deviceName}
+              onChange={(event) => setSyncForm(prev => ({ ...prev, deviceName: event.target.value }))}
+              placeholder="Trace Browser Windows"
+              autoComplete="off"
+              required
+            />
+          </div>
+          <div className="rounded-xl bg-[var(--color-bg-muted)] px-4 py-3 text-xs leading-6 text-[var(--color-text-muted)]">
+            将打开 sync-server 授权页，授权完成后自动绑定当前设备。
+          </div>
+          <div className="flex justify-end gap-3 pt-1">
+            <Button type="button" variant="secondary" onClick={() => setSyncOAuthOpen(false)} disabled={syncOAuthLoading}>
+              取消
+            </Button>
+            <Button type="submit" loading={syncOAuthLoading}>
+              <ExternalLink className="h-4 w-4" />
+              打开授权页
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
         open={syncLoginOpen}
         onClose={() => !syncLoading && setSyncLoginOpen(false)}
-        title="授权登录同步服务"
+        title="账号密码调试登录同步服务"
         width="520px"
       >
         <form className="space-y-4" onSubmit={handleSyncLogin}>
