@@ -80,6 +80,15 @@ type App struct {
 	windowSyncToolbarAdapter WindowSyncToolbarAdapter
 	windowSyncPromptMu       sync.RWMutex
 	windowSyncPromptAdapter  WindowSyncPromptAdapter
+	windowSyncUpdateMu       sync.Mutex
+	windowSyncStateEmitTimer *time.Timer
+	windowSyncToolbarTimer   *time.Timer
+	windowSyncPendingState   *WindowSyncState
+	windowSyncPendingToolbar *WindowSyncState
+	windowSyncThrottleMu     sync.Mutex
+	windowSyncThrottleTimers map[string]*windowSyncPendingEvent
+	windowSyncLastMouseMoves map[string]windowSyncEvent
+	windowSyncDispatchFails  map[int]time.Time
 	windowSyncEventsTotal    atomic.Int64
 	windowSyncDispatchTotal  atomic.Int64
 	profilesDataVersion      atomic.Int64

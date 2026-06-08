@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+const windowSyncStateUpdateDebounce = 100 * time.Millisecond
+
 func (a *App) handleWindowSyncProfileStopped(profileId string, reason string) {
 	if a == nil {
 		return
@@ -262,6 +264,55 @@ func (a *App) emitWindowSyncStateChanged(state *WindowSyncState) {
 	if a == nil {
 		return
 	}
+	snapshot := cloneWindowSyncState(state)
+	if snapshot == nil || !snapshot.Active {
+		a.cancelDebouncedWindowSyncStateEmit()
+		a.emitWindowSyncStateChangedNow(snapshot)
+		return
+	}
+	a.windowSyncUpdateMu.Lock()
+	a.windowSyncPendingState = snapshot
+	if a.windowSyncStateEmitTimer != nil {
+		a.windowSyncStateEmitTimer.Stop()
+	}
+	a.windowSyncStateEmitTimer = time.AfterFunc(windowSyncStateUpdateDebounce, func() {
+		a.flushDebouncedWindowSyncStateChanged()
+	})
+	a.windowSyncUpdateMu.Unlock()
+}
+
+func (a *App) flushDebouncedWindowSyncStateChanged() {
+	if a == nil {
+		return
+	}
+	a.windowSyncUpdateMu.Lock()
+	state := cloneWindowSyncState(a.windowSyncPendingState)
+	a.windowSyncPendingState = nil
+	a.windowSyncStateEmitTimer = nil
+	a.windowSyncUpdateMu.Unlock()
+	if state == nil {
+		return
+	}
+	a.emitWindowSyncStateChangedNow(state)
+}
+
+func (a *App) cancelDebouncedWindowSyncStateEmit() {
+	if a == nil {
+		return
+	}
+	a.windowSyncUpdateMu.Lock()
+	if a.windowSyncStateEmitTimer != nil {
+		a.windowSyncStateEmitTimer.Stop()
+		a.windowSyncStateEmitTimer = nil
+	}
+	a.windowSyncPendingState = nil
+	a.windowSyncUpdateMu.Unlock()
+}
+
+func (a *App) emitWindowSyncStateChangedNow(state *WindowSyncState) {
+	if a == nil {
+		return
+	}
 	a.emitProtoEvent(protoipc.EventWindowSyncStateChanged, encodeProtoWindowSyncStateResponse(state))
 	a.emitEvent("window-sync:state-changed", state)
 }
@@ -279,6 +330,29 @@ func (a *App) updateWindowSyncToolbar(state *WindowSyncState) {
 	if a == nil || state == nil || !state.Active {
 		return
 	}
+	a.windowSyncUpdateMu.Lock()
+	a.windowSyncPendingToolbar = cloneWindowSyncState(state)
+	if a.windowSyncToolbarTimer != nil {
+		a.windowSyncToolbarTimer.Stop()
+	}
+	a.windowSyncToolbarTimer = time.AfterFunc(windowSyncStateUpdateDebounce, func() {
+		a.flushDebouncedWindowSyncToolbar()
+	})
+	a.windowSyncUpdateMu.Unlock()
+}
+
+func (a *App) flushDebouncedWindowSyncToolbar() {
+	if a == nil {
+		return
+	}
+	a.windowSyncUpdateMu.Lock()
+	state := cloneWindowSyncState(a.windowSyncPendingToolbar)
+	a.windowSyncPendingToolbar = nil
+	a.windowSyncToolbarTimer = nil
+	a.windowSyncUpdateMu.Unlock()
+	if state == nil || !state.Active {
+		return
+	}
 	if toolbar := a.currentWindowSyncToolbarAdapter(); toolbar != nil {
 		_ = toolbar.Update(state)
 	}
@@ -288,9 +362,23 @@ func (a *App) hideWindowSyncToolbar() {
 	if a == nil {
 		return
 	}
+	a.cancelDebouncedWindowSyncToolbar()
 	if toolbar := a.currentWindowSyncToolbarAdapter(); toolbar != nil {
 		_ = toolbar.Hide()
 	}
+}
+
+func (a *App) cancelDebouncedWindowSyncToolbar() {
+	if a == nil {
+		return
+	}
+	a.windowSyncUpdateMu.Lock()
+	if a.windowSyncToolbarTimer != nil {
+		a.windowSyncToolbarTimer.Stop()
+		a.windowSyncToolbarTimer = nil
+	}
+	a.windowSyncPendingToolbar = nil
+	a.windowSyncUpdateMu.Unlock()
 }
 
 func (a *App) SetWindowSyncToolbarAdapter(adapter WindowSyncToolbarAdapter) {

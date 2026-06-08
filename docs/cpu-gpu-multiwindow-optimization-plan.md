@@ -7,6 +7,7 @@
 - 2026-06-08：已完成阶段 0 基线能力。新增 `trace.app.PerformanceSnapshotGet`，可采集主进程内存、goroutine、实例运行数、浏览器进程引用、代理桥引用、窗口同步窗口数和窗口同步事件/派发计数；前端新增 `window.__TRACE_PERF__` 最近指标与计数缓冲，用于观察列表刷新耗时和事件触发次数。
 - 2026-06-08：已完成阶段 2 后台刷新降载首轮。实例列表运行态同步从 3 秒固定轮询改为事件 debounce、可见窗口低频兜底轮询、后台窗口延后刷新，并按 profiles/groups/proxies/cores 分通道合并请求。
 - 2026-06-08：已完成阶段 3 多窗口共享数据一致性首轮。新增 `trace.app.DataVersionsGet` 和共享数据版本事件 payload，覆盖实例、组织、默认内容、内核、代理池、扩展插件、浏览器设置、日志；前端新增 `browserSharedDataStore`，通过 Protobuf 事件、BroadcastChannel 和可见恢复版本对比统一刷新，已接入实例列表/详情/编辑/复制、快速启动、代理选择、组织管理、默认内容、代理池、内核管理、扩展插件、日志查看、控制台统计与系统设置本地存储同步。
+- 2026-06-08：已完成阶段 4 窗口同步降载。后端新增 mousemove 去重/24ms 合并、wheel 16ms delta 合并、被控窗口派发失败 900ms 短冷却、CDP `/json` target 750ms 短 TTL 缓存与失效重试，并将单次 CDP WebSocket 命令改为按 target URL 复用连接；同时把窗口同步状态事件和工具栏更新做 100ms debounce，主控标记从 1 秒固定重打改为仅在 session/color/target 变化时重打，降低同步高频事件下的连接 churn、重复 target 查询和 UI 状态抖动。
 
 ## 当前项目相关现状
 

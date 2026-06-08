@@ -7,10 +7,23 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
-
-	"github.com/gorilla/websocket"
 )
+
+const windowSyncTargetCacheTTL = 750 * time.Millisecond
+
+type windowSyncTargetCacheEntry struct {
+	targets   []windowSyncTarget
+	expiresAt time.Time
+}
+
+var windowSyncTargetsCache = struct {
+	mu      sync.Mutex
+	entries map[int]windowSyncTargetCacheEntry
+}{
+	entries: make(map[int]windowSyncTargetCacheEntry),
+}
 
 func (a *App) WindowSyncBatchInputSame(input WindowSyncBatchInputSameInput) (*WindowSyncBatchInputResult, error) {
 	state, err := a.requireWindowSyncState()
@@ -204,6 +217,18 @@ func dispatchWindowSyncEvent(debugPort int, event windowSyncEvent) error {
 	if err != nil {
 		return err
 	}
+	if err := dispatchWindowSyncEventWithTargets(debugPort, targets, event); err != nil {
+		invalidatePageWebSocketTargets(debugPort)
+		freshTargets, refreshErr := pageWebSocketTargets(debugPort)
+		if refreshErr != nil {
+			return err
+		}
+		return dispatchWindowSyncEventWithTargets(debugPort, freshTargets, event)
+	}
+	return nil
+}
+
+func dispatchWindowSyncEventWithTargets(debugPort int, targets []windowSyncTarget, event windowSyncEvent) error {
 	if event.Type == "tabActivated" {
 		target, err := ensureWindowSyncTargetForEvent(debugPort, targets, event)
 		if err != nil {
@@ -388,29 +413,6 @@ func batchInputWindowSyncExpression(text string) string {
 })()`, string(payload))
 }
 
-func cdpCallWebSocket(wsURL string, method string, params map[string]any) (map[string]any, error) {
-	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("WebSocket 连接失败: %w", err)
-	}
-	defer conn.Close()
-	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
-
-	msg := cdpMessage{Id: 1, Method: method, Params: params}
-	if err := conn.WriteJSON(msg); err != nil {
-		return nil, fmt.Errorf("CDP 命令发送失败: %w", err)
-	}
-
-	var cdpResp cdpResponse
-	if err := conn.ReadJSON(&cdpResp); err != nil {
-		return nil, fmt.Errorf("CDP 响应读取失败: %w", err)
-	}
-	if cdpResp.Error != nil {
-		return nil, fmt.Errorf("CDP 错误: %s", cdpResp.Error.Message)
-	}
-	return cdpResp.Result, nil
-}
-
 func activateWindowSyncTarget(debugPort int, target windowSyncTarget) error {
 	targetID := strings.TrimSpace(target.Id)
 	if targetID == "" {
@@ -562,6 +564,7 @@ func closeWindowSyncTarget(debugPort int, targetID string) error {
 		return fmt.Errorf("缺少标签页 target id")
 	}
 	_, err := cdpBrowserCallResult(debugPort, "Target.closeTarget", map[string]any{"targetId": targetID})
+	invalidatePageWebSocketTargets(debugPort)
 	return err
 }
 
@@ -588,6 +591,25 @@ func (a *App) applyWindowSyncMasterMarker(state *WindowSyncState) {
 			"returnByValue": false,
 		})
 	}
+}
+
+func windowSyncMasterMarkerKey(state *WindowSyncState, targets []windowSyncTarget) string {
+	if state == nil {
+		return ""
+	}
+	parts := make([]string, 0, len(targets)+2)
+	parts = append(parts, strings.TrimSpace(state.SessionId), normalizeWindowSyncMasterColor(state.MasterColor))
+	for _, target := range targets {
+		id := strings.TrimSpace(target.Id)
+		if id == "" {
+			id = normalizeWindowSyncTargetURL(target.Url)
+		}
+		if id == "" {
+			continue
+		}
+		parts = append(parts, id)
+	}
+	return strings.Join(parts, "|")
 }
 
 func windowSyncMasterMarkerScript(color string) string {
@@ -700,6 +722,7 @@ func createWindowSyncTarget(debugPort int, rawURL string) (windowSyncTarget, err
 	if err != nil {
 		return windowSyncTarget{}, err
 	}
+	invalidatePageWebSocketTargets(debugPort)
 	createdID, _ := created["targetId"].(string)
 	targets, err := pageWebSocketTargets(debugPort)
 	if err != nil {
@@ -799,6 +822,33 @@ func isWindowSyncBlankURL(rawURL string) bool {
 }
 
 func pageWebSocketTargets(debugPort int) ([]windowSyncTarget, error) {
+	if debugPort <= 0 {
+		return nil, fmt.Errorf("CDP debug port 无效")
+	}
+	now := time.Now()
+	windowSyncTargetsCache.mu.Lock()
+	cached := windowSyncTargetsCache.entries[debugPort]
+	if len(cached.targets) > 0 && now.Before(cached.expiresAt) {
+		out := cloneWindowSyncTargets(cached.targets)
+		windowSyncTargetsCache.mu.Unlock()
+		return out, nil
+	}
+	windowSyncTargetsCache.mu.Unlock()
+
+	out, err := fetchPageWebSocketTargets(debugPort)
+	if err != nil {
+		return nil, err
+	}
+	windowSyncTargetsCache.mu.Lock()
+	windowSyncTargetsCache.entries[debugPort] = windowSyncTargetCacheEntry{
+		targets:   cloneWindowSyncTargets(out),
+		expiresAt: now.Add(windowSyncTargetCacheTTL),
+	}
+	windowSyncTargetsCache.mu.Unlock()
+	return cloneWindowSyncTargets(out), nil
+}
+
+func fetchPageWebSocketTargets(debugPort int) ([]windowSyncTarget, error) {
 	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/json", debugPort))
 	if err != nil {
 		return nil, fmt.Errorf("CDP /json 请求失败: %w", err)
@@ -844,6 +894,24 @@ func pageWebSocketTargets(debugPort int) ([]windowSyncTarget, error) {
 		return nil, fmt.Errorf("未找到可用的 WebSocket 调试地址")
 	}
 	return out, nil
+}
+
+func invalidatePageWebSocketTargets(debugPort int) {
+	if debugPort <= 0 {
+		return
+	}
+	windowSyncTargetsCache.mu.Lock()
+	delete(windowSyncTargetsCache.entries, debugPort)
+	windowSyncTargetsCache.mu.Unlock()
+}
+
+func cloneWindowSyncTargets(targets []windowSyncTarget) []windowSyncTarget {
+	if len(targets) == 0 {
+		return nil
+	}
+	out := make([]windowSyncTarget, len(targets))
+	copy(out, targets)
+	return out
 }
 
 func windowSyncInjectionScript(target windowSyncTarget) string {

@@ -61,6 +61,7 @@ func (a *App) WindowSyncStart(input WindowSyncStartInput) (*WindowSyncState, err
 	a.stopWindowSyncListenerLocked()
 	a.windowSyncState = cloneWindowSyncState(state)
 	a.windowSyncMu.Unlock()
+	a.resetWindowSyncThrottle()
 
 	if err := a.applyWindowSyncLayoutToState(state.Layout, state); err != nil {
 		a.windowSyncMu.Lock()
@@ -193,10 +194,12 @@ func (a *App) stopWindowSyncListenerLocked() {
 		close(a.windowSyncCancel)
 		a.windowSyncCancel = nil
 	}
+	a.resetWindowSyncThrottle()
 }
 
 func (a *App) runWindowSyncListener(seq int, cancel <-chan struct{}) {
 	lastActiveTab := ""
+	lastMasterMarkerKey := ""
 	for {
 		select {
 		case <-cancel:
@@ -214,7 +217,7 @@ func (a *App) runWindowSyncListener(seq int, cancel <-chan struct{}) {
 			return
 		}
 
-		if err := a.listenWindowSyncMaster(seq, cancel, state, master.DebugPort, &lastActiveTab); err != nil {
+		if err := a.listenWindowSyncMaster(seq, cancel, state, master.DebugPort, &lastActiveTab, &lastMasterMarkerKey); err != nil {
 			select {
 			case <-cancel:
 				return
@@ -224,13 +227,20 @@ func (a *App) runWindowSyncListener(seq int, cancel <-chan struct{}) {
 	}
 }
 
-func (a *App) listenWindowSyncMaster(seq int, cancel <-chan struct{}, state *WindowSyncState, debugPort int, lastActiveTab *string) error {
+func (a *App) listenWindowSyncMaster(seq int, cancel <-chan struct{}, state *WindowSyncState, debugPort int, lastActiveTab *string, lastMasterMarkerKey *string) error {
 	targets, err := pageWebSocketTargets(debugPort)
 	if err != nil {
 		return err
 	}
 	for index := range targets {
 		targets[index].Index = index
+	}
+	markerKey := windowSyncMasterMarkerKey(state, targets)
+	if lastMasterMarkerKey == nil || *lastMasterMarkerKey != markerKey {
+		a.applyWindowSyncMasterMarker(state)
+		if lastMasterMarkerKey != nil {
+			*lastMasterMarkerKey = markerKey
+		}
 	}
 	localCancel := make(chan struct{})
 	defer close(localCancel)
@@ -269,9 +279,6 @@ func (a *App) listenWindowSyncMaster(seq int, cancel <-chan struct{}, state *Win
 			return err
 		case <-ticker.C:
 			refreshAfter++
-			if refreshAfter%2 == 0 {
-				a.applyWindowSyncMasterMarker(state)
-			}
 			a.syncWindowSyncTabs(seq, debugPort, lastActiveTab)
 			if refreshAfter >= 4 {
 				return nil
@@ -375,6 +382,36 @@ func (a *App) handleWindowSyncPayload(seq int, payload string) {
 		return
 	}
 
+	a.dispatchOrThrottleWindowSyncEvent(seq, event)
+}
+
+func (a *App) dispatchWindowSyncEventWithCurrentState(seq int, event windowSyncEvent) {
+	state := a.windowSyncGetState(false)
+	if state == nil || !state.Active || state.Paused {
+		return
+	}
+	a.windowSyncMu.Lock()
+	currentSeq := a.windowSyncSeq
+	a.windowSyncMu.Unlock()
+	if currentSeq != seq {
+		return
+	}
+
+	isKeyboard := event.Type == "keyDown" || event.Type == "keyUp" || event.Type == "input"
+	isMouse := event.Type == "wheel" || event.Type == "mouseDown" || event.Type == "mouseMove" || event.Type == "mouseUp" || event.Type == "tabActivated"
+	if isKeyboard && !state.SyncKeyboard {
+		return
+	}
+	if isMouse && !state.SyncMouse {
+		return
+	}
+	a.dispatchWindowSyncEventToState(state, event)
+}
+
+func (a *App) dispatchWindowSyncEventToState(state *WindowSyncState, event windowSyncEvent) {
+	if state == nil || !state.Active {
+		return
+	}
 	dispatched := int64(0)
 	for _, item := range state.Windows {
 		if item.ProfileId == state.MasterProfileId {
@@ -384,15 +421,21 @@ func (a *App) handleWindowSyncPayload(seq int, payload string) {
 			a.handleWindowSyncControlledUnavailable(item, "controlled-unavailable")
 			continue
 		}
+		if a.windowSyncDispatchInCooldown(item.DebugPort) {
+			continue
+		}
 		if err := dispatchWindowSyncEvent(item.DebugPort, event); err != nil {
-			logger.New("WindowSync").Warn("同步事件派发失败",
-				logger.F("profile_id", item.ProfileId),
-				logger.F("event_type", event.Type),
-				logger.F("error", err.Error()),
-			)
+			if a.markWindowSyncDispatchFailure(item.DebugPort) {
+				logger.New("WindowSync").Warn("同步事件派发失败",
+					logger.F("profile_id", item.ProfileId),
+					logger.F("event_type", event.Type),
+					logger.F("error", err.Error()),
+				)
+			}
 			a.handleWindowSyncControlledUnavailable(item, "dispatch-unavailable")
 			continue
 		}
+		a.clearWindowSyncDispatchFailure(item.DebugPort)
 		dispatched++
 	}
 	if dispatched > 0 {
