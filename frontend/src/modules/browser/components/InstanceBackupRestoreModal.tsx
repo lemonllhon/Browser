@@ -40,6 +40,14 @@ type ProgressLog = {
 
 const cookieNotice = '仅备份非无痕窗口中的持久 Cookie。无痕窗口关闭后不会保留 Cookie，实例关闭时也无法读取无痕内容。'
 
+function resolveDemoTab(tab?: BackupRestoreDemoTab | null): 'export' | 'restore' {
+  return tab === 'restore' || tab === 'restore-cloud' ? 'restore' : 'export'
+}
+
+function resolveDemoRestoreSource(tab?: BackupRestoreDemoTab | null): 'local' | 'cloud' {
+  return tab === 'restore-cloud' ? 'cloud' : 'local'
+}
+
 export function InstanceBackupRestoreModal({
   open,
   onClose,
@@ -75,9 +83,9 @@ export function InstanceBackupRestoreModal({
   useEffect(() => {
     if (!open) return
     setScope(selectedCount > 0 ? 'selected' : 'all')
-    setTab(demoTab || 'export')
+    setTab(resolveDemoTab(demoTab))
     setExportTarget('local')
-    setRestoreSource('local')
+    setRestoreSource(resolveDemoRestoreSource(demoTab))
     setProgress(null)
     setLogs([])
     setPreview(null)
@@ -90,7 +98,8 @@ export function InstanceBackupRestoreModal({
 
   useEffect(() => {
     if (!open || !demoTab) return
-    setTab(demoTab)
+    setTab(resolveDemoTab(demoTab))
+    setRestoreSource(resolveDemoRestoreSource(demoTab))
   }, [demoTab, open])
 
   useEffect(() => {

@@ -43,6 +43,7 @@ export type OnboardingSceneKey =
   | 'extension'
   | 'settings'
   | 'sync'
+  | 'cloud-sync'
   | 'finish'
 
 interface OnboardingAnimationProps {
@@ -270,7 +271,7 @@ function ListToolsScene({ activeStepId }: { activeStepId?: string }) {
     if (title === '收起面板') return activeStepId === 'list-panel'
     if (title === '新建配置') return activeStepId === 'profile-create-entry'
     if (title === '批量生成') return activeStepId === 'profile-batch'
-    if (title === '备份与恢复') return activeStepId === 'profile-backup' || activeStepId === 'backup-export' || activeStepId === 'backup-restore'
+    if (title === '备份与恢复') return activeStepId === 'profile-backup' || activeStepId === 'backup-export' || activeStepId === 'backup-restore' || activeStepId === 'backup-restore-source'
     return false
   }
   return (
@@ -368,7 +369,8 @@ function ProfileEditScene({ activeStepId }: { activeStepId?: string }) {
 
 function BackupScene({ activeStepId }: { activeStepId?: string }) {
   const exportActive = activeStepId === 'profile-backup' || activeStepId === 'backup-export'
-  const restoreActive = activeStepId === 'backup-restore'
+  const restoreActive = activeStepId === 'backup-restore' || activeStepId === 'backup-restore-source'
+  const sourceActive = activeStepId === 'backup-restore-source'
   return (
     <div className="onboarding-stage-scene p-7">
       <div className="grid grid-cols-2 gap-4">
@@ -389,6 +391,17 @@ function BackupScene({ activeStepId }: { activeStepId?: string }) {
           <Upload className="mb-3 h-8 w-8 text-[var(--color-accent)]" />
           <div className="text-sm font-semibold text-[var(--color-text-primary)]">恢复实例备份</div>
           <p className="mt-2 text-xs leading-5">选择备份包后预览实例，再按需恢复 Cookie 和配置。</p>
+        </div>
+      </div>
+      <div className={`mt-4 rounded-xl border p-3 ${
+        sourceActive
+          ? 'border-[var(--color-accent)] bg-[var(--color-accent-muted)] text-[var(--color-accent)]'
+          : 'border-[var(--color-border-default)] bg-[var(--color-bg-surface)] text-[var(--color-text-secondary)]'
+      }`}>
+        <div className="mb-2 text-xs font-semibold">恢复来源</div>
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="rounded-lg border border-[var(--color-border-default)] bg-[var(--color-bg-base)] px-3 py-2">本地文件</div>
+          <div className="rounded-lg border border-[var(--color-accent)] bg-[var(--color-bg-base)] px-3 py-2 text-[var(--color-accent)]">云端备份</div>
         </div>
       </div>
       <div className="mt-4 rounded-xl bg-[var(--color-bg-surface)] p-4">
@@ -488,6 +501,28 @@ function SyncScene() {
   )
 }
 
+function CloudSyncAuthScene() {
+  return (
+    <div className="onboarding-stage-scene p-7">
+      <div className="rounded-xl border border-[var(--color-accent)] bg-[var(--color-accent-muted)] p-5 shadow-sm">
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm font-semibold text-[var(--color-accent)]">
+            <Cloud className="h-5 w-5" />
+            云端同步授权
+          </div>
+          <span className="rounded-md bg-[var(--color-bg-base)] px-2 py-1 text-xs text-[var(--color-accent)]">OAuth / 调试登录</span>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <ToolTile icon={<ShieldCheck className="h-5 w-5" />} title="重新授权" detail="通过同步服务重新绑定当前设备。" active />
+          <ToolTile icon={<RefreshCw className="h-5 w-5" />} title="刷新状态" detail="确认授权、在线状态和最后心跳。" active delay="onboarding-delay-1" />
+          <ToolTile icon={<Upload className="h-5 w-5" />} title="云端备份" detail="全量和实例备份上传到云端。" active delay="onboarding-delay-2" />
+          <ToolTile icon={<Download className="h-5 w-5" />} title="云端恢复" detail="下载、解密并恢复云端备份。" active delay="onboarding-delay-3" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function FinishScene() {
   return (
     <div className="onboarding-stage-scene flex flex-col items-center justify-center gap-6">
@@ -523,6 +558,7 @@ export function OnboardingAnimation({ sceneKey, activeStepId }: OnboardingAnimat
       {sceneKey === 'extension' ? <ExtensionScene activeStepId={activeStepId} /> : null}
       {sceneKey === 'settings' ? <SettingsScene activeStepId={activeStepId} /> : null}
       {sceneKey === 'sync' ? <SyncScene /> : null}
+      {sceneKey === 'cloud-sync' ? <CloudSyncAuthScene /> : null}
       {sceneKey === 'finish' ? <FinishScene /> : null}
     </div>
   )

@@ -288,6 +288,8 @@ function getStepTarget(step: OnboardingStep): OnboardingTargetConfig | null {
       return { text: '导出', label: '导出备份', role: 'button' }
     case 'backup-restore':
       return { text: '导入恢复', label: '导入恢复备份', role: 'button' }
+    case 'backup-restore-source':
+      return { text: '云端备份', label: '恢复来源：云端备份', role: 'button' }
     case 'organization-tags':
       return { text: '标签', role: 'button' }
     case 'organization-groups':
@@ -300,6 +302,8 @@ function getStepTarget(step: OnboardingStep): OnboardingTargetConfig | null {
       return { text: '扩展列表', role: 'heading' }
     case 'sync':
       return { text: '窗口同步', role: 'button' }
+    case 'cloud-sync-auth':
+      return { text: '云端同步授权', role: 'heading' }
     default:
       return null
   }
@@ -588,6 +592,16 @@ const FIRST_RUN_ONBOARDING_STEPS: OnboardingStep[] = [
     bullets: ['先校验备份包', '支持选择部分实例恢复', '恢复后刷新实例列表'],
   },
   {
+    id: 'backup-restore-source',
+    sceneKey: 'backup',
+    icon: <FileArchive className="h-4 w-4" />,
+    section: '实例备份与恢复',
+    title: '恢复来源支持本地文件和云端备份',
+    description: '恢复页可以在本地文件和云端备份之间切换；选择云端备份时会先下载、校验并解密，再进入实例恢复预览。',
+    routePath: '/browser/list',
+    bullets: ['本地文件适合离线迁移', '云端备份适合跨设备恢复', '加密云端包会先解锁同步加密'],
+  },
+  {
     id: 'organization-entry',
     sceneKey: 'organization',
     icon: <Tags className="h-4 w-4" />,
@@ -676,9 +690,7 @@ const FIRST_RUN_ONBOARDING_STEPS: OnboardingStep[] = [
     section: '系统设置',
     title: '系统设置负责全局配置和系统级备份',
     description: '系统设置保留主题、语言、更新检查、配置导出和配置加载等系统级能力；新手演示入口只保留在使用教程页。',
-    actionLabel: '进入系统设置并完成',
-    actionPath: '/settings',
-    actionNextId: 'finish',
+    routePath: '/settings',
     bullets: ['新手演示入口集中在使用教程页', '系统设置聚焦全局参数和配置备份', '配置变更会同步通知其他窗口'],
   },
   {
@@ -692,12 +704,22 @@ const FIRST_RUN_ONBOARDING_STEPS: OnboardingStep[] = [
     bullets: ['教程页负责重新播放演示', '系统设置不再分散新手演示入口', '适合新成员或新窗口重新熟悉流程'],
   },
   {
+    id: 'cloud-sync-auth',
+    sceneKey: 'cloud-sync',
+    icon: <ShieldCheck className="h-4 w-4" />,
+    section: '云端同步',
+    title: '云端同步授权',
+    description: '云端同步授权在个人资料页完成，授权后可以使用全量云端备份、实例云端备份、云端恢复和客户端加密。',
+    routePath: '/profile',
+    bullets: ['重新授权和调试登录用于绑定同步服务', '刷新状态和退出登录独立成一排', '授权后可设置同步加密密码'],
+  },
+  {
     id: 'finish',
     sceneKey: 'finish',
     icon: <Rocket className="h-4 w-4" />,
     section: '完成',
     title: '演示完成，可以开始配置第一个实例',
-    description: '完整路径已经覆盖内核、代理池、实例、组织、插件、系统设置和窗口同步。完成后不会再自动弹出。',
+    description: '完整路径已经覆盖内核、代理池、实例、组织、插件、系统设置、窗口同步和云端同步授权。完成后不会再自动弹出。',
     bullets: ['先准备内核', '再维护代理池', '最后创建并启动实例'],
   },
 ]
@@ -720,6 +742,7 @@ function getRouteSyncedStepId(pathname: string, search: string) {
   if (pathname === '/browser/extensions') return 'extension-entry'
   if (pathname === '/settings') return 'settings-entry'
   if (pathname === '/system/tutorial') return 'tutorial-entry'
+  if (pathname === '/profile') return 'cloud-sync-auth'
   if (pathname === '/browser/list') return 'list-entry'
   if (pathname === '/browser/edit/new') return 'profile-basic'
   if (pathname.startsWith('/browser/edit/')) return 'profile-basic'
@@ -735,6 +758,7 @@ function getRouteSyncedStepId(pathname: string, search: string) {
 function getBackupDemoTab(stepId: string): BackupRestoreDemoTab | null {
   if (stepId === 'profile-backup' || stepId === 'backup-export') return 'export'
   if (stepId === 'backup-restore') return 'restore'
+  if (stepId === 'backup-restore-source') return 'restore-cloud'
   return null
 }
 
@@ -897,6 +921,13 @@ export function FirstRunOnboarding() {
     setTargetRect(null)
     setOpen(false)
   }, [])
+
+  const finishOnboardingAndOpenBrowserList = useCallback(() => {
+    markFirstRunOnboardingCompleted()
+    setTargetRect(null)
+    setOpen(false)
+    navigate('/browser/list')
+  }, [navigate])
 
   const handleStepAction = useCallback((current: OnboardingStep) => {
     if (current.actionPath) {
@@ -1270,7 +1301,7 @@ export function FirstRunOnboarding() {
                 ) : null}
                 {step.id === 'finish' ? (
                   <div className="grid gap-2 sm:grid-cols-2">
-                    <Button variant="secondary" onClick={() => jumpToDemoStep('profile-create-entry', '/browser/list')}>
+                    <Button variant="secondary" onClick={finishOnboardingAndOpenBrowserList}>
                       开始创建实例
                     </Button>
                     <Button variant="secondary" onClick={() => jumpToDemoStep('tutorial-entry', '/system/tutorial')}>

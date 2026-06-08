@@ -1,4 +1,4 @@
-export type BackupRestoreDemoTab = 'export' | 'restore'
+export type BackupRestoreDemoTab = 'export' | 'restore' | 'restore-cloud'
 
 export type BrowserListBackupDemoDetail = {
   open: boolean
