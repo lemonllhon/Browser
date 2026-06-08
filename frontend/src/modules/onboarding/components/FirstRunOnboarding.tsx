@@ -295,8 +295,6 @@ function getStepTarget(step: OnboardingStep): OnboardingTargetConfig | null {
       return { text: '扩展列表', role: 'heading' }
     case 'sync':
       return { text: '窗口同步', role: 'button' }
-    case 'settings-demo':
-      return { text: '播放新手演示', role: 'button' }
     default:
       return null
   }
@@ -671,21 +669,12 @@ const FIRST_RUN_ONBOARDING_STEPS: OnboardingStep[] = [
     sceneKey: 'settings',
     icon: <Settings className="h-4 w-4" />,
     section: '系统设置',
-    title: '系统设置中也能进入演示模式',
-    description: '系统设置页会新增“播放新手演示”入口，点击后可随时重新进入完整演示模式。',
-    actionLabel: '进入系统设置并继续',
+    title: '系统设置负责全局配置和系统级备份',
+    description: '系统设置保留主题、语言、更新检查、配置导出和配置加载等系统级能力；新手演示入口只保留在使用教程页。',
+    actionLabel: '进入系统设置并完成',
     actionPath: '/settings',
-    actionNextId: 'settings-demo',
-  },
-  {
-    id: 'settings-demo',
-    sceneKey: 'settings',
-    icon: <Play className="h-4 w-4" />,
-    section: '系统设置',
-    title: '播放新手演示',
-    description: '在系统设置点击播放新手演示，会从第一步重新进入当前这套跨页面演示流程。',
-    routePath: '/settings',
-    bullets: ['手动回放不会强制清空完成状态', '演示模式跨页面保持打开', '只有关闭、跳过或完成才退出'],
+    actionNextId: 'finish',
+    bullets: ['新手演示入口集中在使用教程页', '系统设置聚焦全局参数和配置备份', '配置变更会同步通知其他窗口'],
   },
   {
     id: 'finish',

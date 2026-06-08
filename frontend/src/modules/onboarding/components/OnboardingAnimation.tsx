@@ -453,8 +453,8 @@ function SettingsScene({ activeStepId }: { activeStepId?: string }) {
           <span className="rounded-md bg-[var(--color-accent-muted)] px-2 py-1 text-xs text-[var(--color-accent)]">演示模式</span>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <ToolTile icon={<Play className="h-5 w-5" />} title="播放新手演示" detail="随时重新进入完整演示流程。" active={activeStepId === 'settings-demo'} />
-          <ToolTile icon={<Download className="h-5 w-5" />} title="配置备份" detail="系统级配置导出、加载和初始化。" delay="onboarding-delay-1" />
+          <ToolTile icon={<Settings className="h-5 w-5" />} title="全局配置" detail="主题、语言、更新检查和基础参数。" active={activeStepId === 'settings-entry'} />
+          <ToolTile icon={<Download className="h-5 w-5" />} title="配置备份" detail="系统级配置导出、加载和初始化。" active={activeStepId === 'settings-entry'} delay="onboarding-delay-1" />
         </div>
       </div>
     </div>
