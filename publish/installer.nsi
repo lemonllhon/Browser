@@ -12,6 +12,8 @@ Unicode True
 
 !define PRODUCT_NAME    "Trace Browser"
 !define PRODUCT_EXE     "trace-browser.exe"
+!define PROTOCOL_SCHEME "trace-browser"
+!define PROTOCOL_DESC   "Trace Browser Profile Transfer Link"
 !define UNINSTALL_KEY   "Software\Microsoft\Windows\CurrentVersion\Uninstall\TraceBrowser"
 !define INSTALL_DIR     "$PROGRAMFILES64\Trace Browser"
 !ifndef CLEANUPHELPER
@@ -113,6 +115,11 @@ Section "Trace Browser (required)" SecMain
   WriteRegStr HKLM "${UNINSTALL_KEY}" "DisplayIcon"     "$INSTDIR\${PRODUCT_EXE}"
   WriteRegStr HKLM "${UNINSTALL_KEY}" "NoModify"        "1"
   WriteRegStr HKLM "${UNINSTALL_KEY}" "NoRepair"        "1"
+  WriteRegStr HKLM "Software\Classes\${PROTOCOL_SCHEME}" "" "URL:${PROTOCOL_DESC}"
+  WriteRegStr HKLM "Software\Classes\${PROTOCOL_SCHEME}" "URL Protocol" ""
+  WriteRegStr HKLM "Software\Classes\${PROTOCOL_SCHEME}" "FriendlyTypeName" "${PROTOCOL_DESC}"
+  WriteRegStr HKLM "Software\Classes\${PROTOCOL_SCHEME}\DefaultIcon" "" "$INSTDIR\${PRODUCT_EXE},0"
+  WriteRegStr HKLM "Software\Classes\${PROTOCOL_SCHEME}\shell\open\command" "" '"$INSTDIR\${PRODUCT_EXE}" "%1"'
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   CreateDirectory "$SMPROGRAMS\${PRODUCT_NAME}"
   CreateShortcut "$SMPROGRAMS\${PRODUCT_NAME}\${PRODUCT_NAME}.lnk" "$INSTDIR\${PRODUCT_EXE}"
@@ -149,6 +156,8 @@ Section "Uninstall"
   Delete /REBOOTOK "$SMPROGRAMS\${PRODUCT_NAME}\Uninstall.lnk"
   RMDir /REBOOTOK "$SMPROGRAMS\${PRODUCT_NAME}"
   Delete /REBOOTOK "$DESKTOP\${PRODUCT_NAME}.lnk"
+  DeleteRegKey HKCU "Software\Classes\${PROTOCOL_SCHEME}"
+  DeleteRegKey HKLM "Software\Classes\${PROTOCOL_SCHEME}"
   DeleteRegKey HKLM "${UNINSTALL_KEY}"
   MessageBox MB_ICONQUESTION|MB_YESNO|MB_DEFBUTTON2 "是否彻底清理所有用户数据？$\r$\n$\r$\n选择“是”将删除 data 目录（含数据库/实例数据）以及安装目录残留文件。$\r$\n此操作不可恢复。" IDYES un_remove_all_data IDNO un_keep_user_data
 

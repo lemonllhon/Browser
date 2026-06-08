@@ -322,7 +322,7 @@ cat > "$DESKTOP_ROOT/$APP_DESKTOP_ID" <<EOF
 Version=1.0
 Name=${APP_NAME}
 Comment=${APP_SUMMARY}
-Exec=/opt/trace-browser/${APP_BINARY_NAME}
+Exec=/opt/trace-browser/${APP_BINARY_NAME} %u
 TryExec=/opt/trace-browser/${APP_BINARY_NAME}
 Icon=${APP_ICON_NAME}
 StartupWMClass=trace-browser
@@ -330,6 +330,7 @@ Terminal=false
 Type=Application
 StartupNotify=true
 Categories=Network;Utility;
+MimeType=x-scheme-handler/trace-browser;
 Keywords=browser;profile;proxy;launcher;
 EOF
 

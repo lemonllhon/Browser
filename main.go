@@ -549,6 +549,9 @@ func main() {
 	if startupDebugEnabled && goruntime.GOOS == "linux" && strings.TrimSpace(os.Getenv("DISPLAY")) == "" && strings.TrimSpace(os.Getenv("WAYLAND_DISPLAY")) == "" {
 		log.Printf("检测到 Linux 图形环境变量为空：DISPLAY / WAYLAND_DISPLAY 都未设置，GUI 窗口大概率无法创建")
 	}
+	if err := ensureURLProtocolRegistration("trace-browser", "Trace Browser Profile Transfer Link", startupDebugEnabled); err != nil {
+		log.Printf("注册 trace-browser URL 协议失败: %v", err)
+	}
 
 	cfg, err := backend.LoadConfig(backend.ResolveRuntimePath(appRoot, "config.yaml"))
 	if err != nil {
