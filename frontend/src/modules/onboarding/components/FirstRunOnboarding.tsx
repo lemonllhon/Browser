@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -12,6 +12,7 @@ import {
   Layers3,
   ListChecks,
   Monitor,
+  Move,
   MousePointer2,
   Play,
   Plus,
@@ -24,8 +25,9 @@ import {
   Tags,
   Upload,
   Wand2,
+  X,
 } from 'lucide-react'
-import { Button, Modal } from '../../../shared/components'
+import { Button } from '../../../shared/components'
 import {
   FIRST_RUN_ONBOARDING_OPEN_EVENT,
   markFirstRunOnboardingCompleted,
@@ -50,6 +52,51 @@ type OnboardingStep = {
 type OnboardingOpenDetail = {
   manual?: boolean
   startStepId?: string
+}
+
+type FloatingPosition = {
+  left: number
+  top: number
+}
+
+type DragState = {
+  pointerId: number
+  startX: number
+  startY: number
+  startLeft: number
+  startTop: number
+}
+
+const FLOATING_WINDOW_WIDTH = 960
+const FLOATING_WINDOW_MARGIN = 16
+const FLOATING_HEADER_VISIBLE_HEIGHT = 72
+
+function getFloatingWindowWidth() {
+  if (typeof window === 'undefined') return FLOATING_WINDOW_WIDTH
+  return Math.min(FLOATING_WINDOW_WIDTH, Math.max(320, window.innerWidth - FLOATING_WINDOW_MARGIN * 2))
+}
+
+function constrainFloatingPosition(position: FloatingPosition): FloatingPosition {
+  if (typeof window === 'undefined') return position
+
+  const width = getFloatingWindowWidth()
+  const maxLeft = Math.max(FLOATING_WINDOW_MARGIN, window.innerWidth - width - FLOATING_WINDOW_MARGIN)
+  const maxTop = Math.max(FLOATING_WINDOW_MARGIN, window.innerHeight - FLOATING_HEADER_VISIBLE_HEIGHT)
+
+  return {
+    left: Math.min(Math.max(position.left, FLOATING_WINDOW_MARGIN), maxLeft),
+    top: Math.min(Math.max(position.top, FLOATING_WINDOW_MARGIN), maxTop),
+  }
+}
+
+function getInitialFloatingPosition(): FloatingPosition {
+  if (typeof window === 'undefined') return { left: FLOATING_WINDOW_MARGIN, top: FLOATING_WINDOW_MARGIN }
+
+  const width = getFloatingWindowWidth()
+  return constrainFloatingPosition({
+    left: Math.round((window.innerWidth - width) / 2),
+    top: 72,
+  })
 }
 
 const FIRST_RUN_ONBOARDING_STEPS: OnboardingStep[] = [
@@ -387,6 +434,8 @@ export function FirstRunOnboarding() {
   const [open, setOpen] = useState(false)
   const [manualReplay, setManualReplay] = useState(false)
   const [stepIndex, setStepIndex] = useState(0)
+  const [floatingPosition, setFloatingPosition] = useState<FloatingPosition>(() => getInitialFloatingPosition())
+  const dragStateRef = useRef<DragState | null>(null)
   const step = FIRST_RUN_ONBOARDING_STEPS[stepIndex]
   const isFirstStep = stepIndex === 0
   const isLastStep = stepIndex === FIRST_RUN_ONBOARDING_STEPS.length - 1
@@ -396,6 +445,7 @@ export function FirstRunOnboarding() {
     const target = FIRST_RUN_ONBOARDING_STEPS[index]
     setManualReplay(manual)
     setStepIndex(index)
+    setFloatingPosition(getInitialFloatingPosition())
     setOpen(true)
     if (target.routePath) {
       navigate(target.routePath)
@@ -476,6 +526,85 @@ export function FirstRunOnboarding() {
   useEffect(() => {
     if (!open) return
 
+    const onResize = () => {
+      setFloatingPosition(current => constrainFloatingPosition(current))
+    }
+
+    window.addEventListener('resize', onResize)
+    return () => {
+      window.removeEventListener('resize', onResize)
+    }
+  }, [open])
+
+  const handleDragStart = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return
+
+    dragStateRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startLeft: floatingPosition.left,
+      startTop: floatingPosition.top,
+    }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    event.preventDefault()
+  }, [floatingPosition.left, floatingPosition.top])
+
+  const handleMouseDragStart = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return
+
+    dragStateRef.current = {
+      pointerId: -1,
+      startX: event.clientX,
+      startY: event.clientY,
+      startLeft: floatingPosition.left,
+      startTop: floatingPosition.top,
+    }
+    event.preventDefault()
+  }, [floatingPosition.left, floatingPosition.top])
+
+  const handleDragMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const dragState = dragStateRef.current
+    if (!dragState || dragState.pointerId !== event.pointerId) return
+
+    setFloatingPosition(constrainFloatingPosition({
+      left: dragState.startLeft + event.clientX - dragState.startX,
+      top: dragState.startTop + event.clientY - dragState.startY,
+    }))
+  }, [])
+
+  const handleDragEnd = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const dragState = dragStateRef.current
+    if (!dragState || dragState.pointerId !== event.pointerId) return
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+    dragStateRef.current = null
+  }, [])
+
+  useEffect(() => {
+    if (!open) {
+      dragStateRef.current = null
+      return
+    }
+
+    const onMouseMove = (event: MouseEvent) => {
+      const dragState = dragStateRef.current
+      if (!dragState || dragState.pointerId !== -1) return
+
+      setFloatingPosition(constrainFloatingPosition({
+        left: dragState.startLeft + event.clientX - dragState.startX,
+        top: dragState.startTop + event.clientY - dragState.startY,
+      }))
+    }
+
+    const onMouseUp = () => {
+      const dragState = dragStateRef.current
+      if (!dragState || dragState.pointerId !== -1) return
+      dragStateRef.current = null
+    }
+
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault()
@@ -502,8 +631,12 @@ export function FirstRunOnboarding() {
       }
     }
 
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
     window.addEventListener('keydown', onKeyDown)
     return () => {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
       window.removeEventListener('keydown', onKeyDown)
     }
   }, [closeOnboarding, finishOnboarding, isLastStep, nextStep, open, previousStep])
@@ -549,50 +682,97 @@ export function FirstRunOnboarding() {
     )
   }, [finishOnboarding, isFirstStep, isLastStep, nextStep, previousStep, progressPercent, skipOnboarding, step.section, stepIndex])
 
-  return (
-    <Modal open={open} onClose={closeOnboarding} title="演示模式" width="960px" footer={footer}>
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.12fr)_minmax(320px,0.88fr)]">
-        <OnboardingAnimation sceneKey={step.sceneKey} />
-        <div className="flex min-w-0 flex-col justify-between gap-5 rounded-xl border border-[var(--color-border-default)] bg-[var(--color-bg-base)] p-4">
-          <div>
-            <div className="mb-4 inline-flex items-center gap-2 rounded-lg bg-[var(--color-accent-muted)] px-3 py-1.5 text-xs font-medium text-[var(--color-accent)]">
-              {step.icon}
-              {step.section}
-            </div>
-            <h2 className="text-xl font-semibold leading-snug text-[var(--color-text-primary)]">{step.title}</h2>
-            <p className="mt-3 text-sm leading-relaxed text-[var(--color-text-secondary)]">{step.description}</p>
-            {step.bullets && step.bullets.length > 0 ? (
-              <div className="mt-4 space-y-2">
-                {step.bullets.map(item => (
-                  <div key={item} className="flex items-start gap-2 text-sm text-[var(--color-text-secondary)]">
-                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-accent)]" />
-                    <span>{item}</span>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </div>
+  if (!open) return null
 
-          <div className="space-y-3">
-            {step.actionPath && step.actionLabel ? (
-              <Button className="w-full" size="lg" onClick={() => handleStepAction(step)}>
-                <Play className="h-4 w-4" />
-                {step.actionLabel}
-              </Button>
-            ) : null}
-            {step.id === 'finish' ? (
-              <div className="grid gap-2 sm:grid-cols-2">
-                <Button variant="secondary" onClick={() => navigate('/browser/edit/new')}>
-                  开始创建实例
-                </Button>
-                <Button variant="secondary" onClick={() => navigate('/system/tutorial')}>
-                  打开使用教程
-                </Button>
+  return (
+    <div
+      className="fixed z-50 pointer-events-none"
+      style={{
+        left: floatingPosition.left,
+        top: floatingPosition.top,
+        width: 'min(960px, calc(100vw - 32px))',
+        maxHeight: 'calc(100vh - 32px)',
+      }}
+    >
+      <section
+        role="dialog"
+        aria-modal="false"
+        aria-label="演示模式"
+        className="pointer-events-auto flex max-h-[calc(100vh-32px)] w-full flex-col overflow-hidden rounded-xl border border-[var(--color-border-default)] bg-[var(--color-bg-elevated)] shadow-2xl animate-scale-in"
+      >
+        <div className="flex items-center justify-between border-b border-[var(--color-border)]">
+          <div
+            className="flex min-w-0 flex-1 cursor-move items-center gap-3 px-6 py-4"
+            onPointerDown={handleDragStart}
+            onPointerMove={handleDragMove}
+            onPointerUp={handleDragEnd}
+            onPointerCancel={handleDragEnd}
+            onMouseDown={handleMouseDragStart}
+          >
+            <Move className="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
+            <h3 className="truncate text-lg font-semibold text-[var(--color-text-primary)]">演示模式</h3>
+          </div>
+          <button
+            type="button"
+            className="mr-4 rounded-lg p-2 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text-primary)]"
+            onPointerDown={event => event.stopPropagation()}
+            onMouseDown={event => event.stopPropagation()}
+            onClick={closeOnboarding}
+            aria-label="关闭演示模式"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1.12fr)_minmax(320px,0.88fr)]">
+            <OnboardingAnimation sceneKey={step.sceneKey} />
+            <div className="flex min-w-0 flex-col justify-between gap-5 rounded-xl border border-[var(--color-border-default)] bg-[var(--color-bg-base)] p-4">
+              <div>
+                <div className="mb-4 inline-flex items-center gap-2 rounded-lg bg-[var(--color-accent-muted)] px-3 py-1.5 text-xs font-medium text-[var(--color-accent)]">
+                  {step.icon}
+                  {step.section}
+                </div>
+                <h2 className="text-xl font-semibold leading-snug text-[var(--color-text-primary)]">{step.title}</h2>
+                <p className="mt-3 text-sm leading-relaxed text-[var(--color-text-secondary)]">{step.description}</p>
+                {step.bullets && step.bullets.length > 0 ? (
+                  <div className="mt-4 space-y-2">
+                    {step.bullets.map(item => (
+                      <div key={item} className="flex items-start gap-2 text-sm text-[var(--color-text-secondary)]">
+                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-accent)]" />
+                        <span>{item}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
-            ) : null}
+
+              <div className="space-y-3">
+                {step.actionPath && step.actionLabel ? (
+                  <Button className="w-full" size="lg" onClick={() => handleStepAction(step)}>
+                    <Play className="h-4 w-4" />
+                    {step.actionLabel}
+                  </Button>
+                ) : null}
+                {step.id === 'finish' ? (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <Button variant="secondary" onClick={() => navigate('/browser/edit/new')}>
+                      开始创建实例
+                    </Button>
+                    <Button variant="secondary" onClick={() => navigate('/system/tutorial')}>
+                      打开使用教程
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-    </Modal>
+
+        <div className="border-t border-[var(--color-border)] px-6 py-4">
+          {footer}
+        </div>
+      </section>
+    </div>
   )
 }
