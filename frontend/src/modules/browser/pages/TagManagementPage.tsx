@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Plus, Tag, Trash2, X } from 'lucide-react'
 import { Badge, Button, Card, toast } from '../../../shared/components'
 import type { BrowserProfile } from '../types'
-import { batchRemoveProfileTags, batchSetProfileTags, fetchBrowserProfiles, renameBrowserTag } from '../api'
+import { batchRemoveProfileTags, batchSetProfileTags, renameBrowserTag } from '../api'
 import { resolveActionErrorMessage } from '../utils/actionErrors'
-import { onRuntimeEvent } from '../../../shared/backend/runtime'
 import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
+import { getBrowserSharedDataSnapshot, refreshBrowserSharedData, useBrowserSharedData } from '../stores/browserSharedDataStore'
 
 // ─── 左侧标签面板 ────────────────────────────────────────────────────────────
 
@@ -211,6 +211,7 @@ export function TagManagementPage({ embedded = false }: { embedded?: boolean }) 
   const [saving, setSaving] = useState(false)
   // 用户新建但尚未分配给任何实例的标签（纯前端暂存）
   const [pendingTags, setPendingTags] = useState<string[]>([])
+  const sharedData = useBrowserSharedData(['profiles', 'tags'])
 
   // 合并：实例已有标签 + 用户新建的待分配标签
   const allTagsWithPending = useMemo(() => {
@@ -226,40 +227,44 @@ export function TagManagementPage({ embedded = false }: { embedded?: boolean }) 
     }
   }
 
+  const applyProfiles = useCallback((data: BrowserProfile[]) => {
+    setProfiles(data)
+    const usedTags = new Set<string>()
+    data.forEach(p => p.tags?.forEach(t => usedTags.add(t)))
+    setPendingTags(prev => prev.filter(t => !usedTags.has(t)))
+    setSelectedTag(current => current && !usedTags.has(current) ? null : current)
+    setSelectedIds(current => {
+      if (!current.size) return current
+      const existingIds = new Set(data.map(profile => profile.profileId))
+      const next = new Set(Array.from(current).filter(profileId => existingIds.has(profileId)))
+      return next.size === current.size ? current : next
+    })
+  }, [])
+
   const load = useCallback(async (options?: { silent?: boolean }) => {
     if (!options?.silent) {
       setLoading(true)
     }
     try {
-      const data = await fetchBrowserProfiles()
-      setProfiles(data)
-      // 清理已被实例使用的 pendingTags
-      const usedTags = new Set<string>()
-      data.forEach(p => p.tags?.forEach(t => usedTags.add(t)))
-      setPendingTags(prev => prev.filter(t => !usedTags.has(t)))
-      setSelectedTag(current => current && !usedTags.has(current) ? null : current)
-      setSelectedIds(current => {
-        if (!current.size) return current
-        const existingIds = new Set(data.map(profile => profile.profileId))
-        const next = new Set(Array.from(current).filter(profileId => existingIds.has(profileId)))
-        return next.size === current.size ? current : next
-      })
+      await refreshBrowserSharedData(['profiles', 'tags'], { silent: options?.silent })
+      applyProfiles(getBrowserSharedDataSnapshot().profiles)
     } finally {
       if (!options?.silent) {
         setLoading(false)
       }
     }
-  }, [])
+  }, [applyProfiles])
 
   useEffect(() => {
     void load()
-    const offProfilesUpdated = onRuntimeEvent('browser:profiles:updated', () => {
-      void load({ silent: true })
-    })
-    return () => {
-      offProfilesUpdated?.()
-    }
   }, [load])
+
+  useEffect(() => {
+    if (sharedData.loaded.profiles) {
+      applyProfiles(sharedData.profiles)
+      setLoading(false)
+    }
+  }, [applyProfiles, sharedData.loaded.profiles, sharedData.profiles])
 
   useVisibleRefresh(() => load({ silent: true }))
 

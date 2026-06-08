@@ -52,6 +52,20 @@ message AppPerformanceSnapshot {
   int64 window_sync_dispatch_total = 22;
 }
 
+message AppDataVersions {
+  int64 timestamp_ms = 1;
+  int64 profiles_version = 2;
+  int64 groups_version = 3;
+  int64 proxies_version = 4;
+  int64 cores_version = 5;
+  int64 extensions_version = 6;
+  int64 defaults_version = 7;
+  int64 settings_version = 8;
+  int64 cookies_version = 9;
+  int64 snapshots_version = 10;
+  int64 logs_version = 11;
+}
+
 message AppLicenseStatus {
   int32 max_limit = 1;
   int32 used_count = 2;
@@ -108,6 +122,20 @@ message AppRuntimeEventPayload {
   bool running = 9;
   bool debug_ready = 10;
   string runtime_warning = 11;
+  string domain = 12;
+  string reason = 13;
+  int64 version = 14;
+  int64 profiles_version = 15;
+  int64 groups_version = 16;
+  int64 proxies_version = 17;
+  int64 cores_version = 18;
+  int64 extensions_version = 19;
+  int64 defaults_version = 20;
+  int64 settings_version = 21;
+  int64 cookies_version = 22;
+  int64 snapshots_version = 23;
+  repeated string changed_ids = 24;
+  int64 logs_version = 25;
 }
 
 message AppWindowSize {

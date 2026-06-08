@@ -3,11 +3,12 @@ import { Download, Edit2, FolderOpen, RefreshCw, Settings, XCircle } from 'lucid
 import { Badge, Button, Card, ConfirmModal, FormItem, Input, Modal, Table, Textarea, toast } from '../../../shared/components'
 import type { TableColumn } from '../../../shared/components/Table'
 import type { BrowserCore, BrowserCoreInput, BrowserCoreValidateResult, BrowserSettings, BrowserCoreExtended, BrowserProxy } from '../types'
-import { fetchBrowserCores, saveBrowserCore, deleteBrowserCore, setDefaultBrowserCore, validateBrowserCorePath, openCorePath, fetchBrowserSettings, saveBrowserSettings, fetchCoreExtendedInfo, scanBrowserCores, BrowserCoreDownload, fetchBrowserProxies, onBrowserCoreDownloadProgress, cancelBrowserCoreDownload, renameBrowserCorePath } from '../api'
+import { saveBrowserCore, deleteBrowserCore, setDefaultBrowserCore, validateBrowserCorePath, openCorePath, saveBrowserSettings, fetchCoreExtendedInfo, scanBrowserCores, BrowserCoreDownload, onBrowserCoreDownloadProgress, cancelBrowserCoreDownload, renameBrowserCorePath } from '../api'
 import { onRuntimeEvent, openExternalURL } from '../../../shared/backend/runtime'
 import { resolveActionErrorMessage } from '../utils/actionErrors'
 import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
 import { useSingleFlightCallback } from '../hooks/useSingleFlightCallback'
+import { getBrowserSharedDataSnapshot, refreshBrowserSharedData, useBrowserSharedData } from '../stores/browserSharedDataStore'
 
 interface CoreDisplayInfo {
   coreId: string
@@ -155,6 +156,7 @@ export function CoreManagementPage() {
   const lastDownloadPhaseRef = useRef('')
   const refreshCoreData = useSingleFlightCallback(() => loadData())
   const refreshDownloadProxies = useSingleFlightCallback(() => loadDownloadProxies())
+  const sharedData = useBrowserSharedData(['cores', 'settings', 'proxies'])
 
   useEffect(() => {
     void refreshCoreData()
@@ -238,11 +240,11 @@ export function CoreManagementPage() {
     setLoading(true)
     try {
       // 并行加载设置、内核列表和扩展信息
-      const [settingsData, coreList, extendedInfo] = await Promise.all([
-        fetchBrowserSettings(),
-        fetchBrowserCores(),
-        fetchCoreExtendedInfo(),
-      ])
+      await refreshBrowserSharedData(['settings', 'cores'], { silent: true })
+      const [extendedInfo] = await Promise.all([fetchCoreExtendedInfo()])
+      const snapshot = getBrowserSharedDataSnapshot()
+      const settingsData = snapshot.browserSettings
+      const coreList = snapshot.cores
 
       applySettingsSnapshot(settingsData, true)
       setCores(coreList)
@@ -275,7 +277,8 @@ export function CoreManagementPage() {
   }
 
   const loadDownloadProxies = async () => {
-    const proxyList = await fetchBrowserProxies()
+    await refreshBrowserSharedData(['proxies'], { silent: true })
+    const proxyList = getBrowserSharedDataSnapshot().proxies
     setProxies(proxyList)
     setDownloadForm(prev => {
       if (prev.proxyMode !== 'custom') return prev
@@ -289,8 +292,21 @@ export function CoreManagementPage() {
 
   useVisibleRefresh(() => {
     if (!settingsModalOpen) return
-    return fetchBrowserSettings().then(data => applySettingsSnapshot(data, true))
+    return refreshBrowserSharedData(['settings'], { silent: true })
+      .then(() => applySettingsSnapshot(getBrowserSharedDataSnapshot().browserSettings, true))
   }, 2000, settingsModalOpen && !savingSettings)
+
+  useEffect(() => {
+    if (sharedData.loaded.settings && !savingSettings) {
+      applySettingsSnapshot(sharedData.browserSettings, true)
+    }
+  }, [applySettingsSnapshot, savingSettings, sharedData.browserSettings, sharedData.loaded.settings])
+
+  useEffect(() => {
+    if (sharedData.loaded.proxies) {
+      setProxies(sharedData.proxies)
+    }
+  }, [sharedData.loaded.proxies, sharedData.proxies])
 
   // 防抖验证路径
   const validatePath = useCallback(async (path: string) => {
@@ -653,7 +669,8 @@ export function CoreManagementPage() {
   // 打开设置编辑弹窗
   const handleEditSettings = async () => {
     dirtySettingsFieldsRef.current.clear()
-    const latestSettings = await fetchBrowserSettings()
+    await refreshBrowserSharedData(['settings'], { silent: true })
+    const latestSettings = getBrowserSharedDataSnapshot().browserSettings
     setSettings(latestSettings)
     setSettingsForm(settingsToForm(latestSettings))
     setSettingsModalOpen(true)
@@ -677,8 +694,10 @@ export function CoreManagementPage() {
         startStableWindowMs: Math.max(0, Number(settingsForm.startStableWindowMs) || 1200),
       }
       await saveBrowserSettings(newSettings)
+      await refreshBrowserSharedData(['settings'], { silent: true })
+      const savedSettings = getBrowserSharedDataSnapshot().browserSettings
       dirtySettingsFieldsRef.current.clear()
-      setSettings(newSettings)
+      setSettings(savedSettings)
       setSettingsModalOpen(false)
       toast.success('设置已保存')
     } catch (error: unknown) {

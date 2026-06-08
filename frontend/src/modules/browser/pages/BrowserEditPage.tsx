@@ -2,9 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { FolderOpen, Layers } from 'lucide-react'
 import { Button, Card, ConfirmModal, FormItem, Input, Modal, Select, Textarea, toast } from '../../../shared/components'
-import type { BrowserCore, BrowserProfile, BrowserProfileInput, BrowserProxy, BrowserGroup } from '../types'
-import { onRuntimeEvent } from '../../../shared/backend/runtime'
-import { createBrowserProfile, fetchAllTags, fetchBrowserCores, fetchBrowserProfiles, fetchBrowserProxies, fetchBrowserSettings, fetchGroups, openProfileUserDataDir, openUserDataDir, updateBrowserProfile } from '../api'
+import type { BrowserCore, BrowserProfile, BrowserProfileInput, BrowserProxy, BrowserGroup, BrowserSettings } from '../types'
+import { createBrowserProfile, openProfileUserDataDir, openUserDataDir, updateBrowserProfile } from '../api'
 import { resolveActionErrorMessage } from '../utils/actionErrors'
 import { FingerprintPanel } from '../components/FingerprintPanel'
 import { TagInput } from '../components/TagInput'
@@ -14,6 +13,7 @@ import { REGION_OPTIONS, findRegionPreset, findRegionPresetByLocale, pickRegionT
 import { deserialize as deserializeFingerprint, serialize as serializeFingerprint } from '../utils/fingerprintSerializer'
 import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
 import { useSingleFlightCallback } from '../hooks/useSingleFlightCallback'
+import { getBrowserSharedDataSnapshot, refreshBrowserSharedData, useBrowserSharedData, type BrowserSharedDataState } from '../stores/browserSharedDataStore'
 
 const fallbackLowLaunchArgs = ['--disable-sync', '--no-first-run']
 const incognitoArg = '--incognito'
@@ -119,6 +119,7 @@ export function BrowserEditPage() {
   const [saveError, setSaveError] = useState('')
   const dirtyFieldsRef = useRef<Set<keyof BrowserProfileInput>>(new Set())
   const incognitoEnabled = hasLaunchArg(launchArgsText, incognitoArg)
+  const sharedData = useBrowserSharedData(['profiles', 'cores', 'proxies', 'groups', 'tags', 'settings'])
 
   const markDirty = useCallback((...fields: Array<keyof BrowserProfileInput>) => {
     fields.forEach(field => dirtyFieldsRef.current.add(field))
@@ -137,7 +138,7 @@ export function BrowserEditPage() {
     }
   }, [])
 
-  const applyCreateDefaults = useCallback((settings: Awaited<ReturnType<typeof fetchBrowserSettings>>, groupList: BrowserGroup[], preserveDirty = false) => {
+  const applyCreateDefaults = useCallback((settings: BrowserSettings, groupList: BrowserGroup[], preserveDirty = false) => {
     const dirtyFields = dirtyFieldsRef.current
     const resolvedDefaultLaunchArgs = resolveDefaultLaunchArgs(settings.defaultLaunchArgs || [])
     setFormData(prev => {
@@ -155,29 +156,42 @@ export function BrowserEditPage() {
     }
   }, [])
 
-  const loadData = useCallback(async (preserveDirty = false) => {
-    const [coreList, proxyList, tagList, groupList, settings] = await Promise.all([
-      fetchBrowserCores(),
-      fetchBrowserProxies(),
-      fetchAllTags(),
-      fetchGroups(),
-      fetchBrowserSettings(),
-    ])
+  const applySharedDataSnapshot = useCallback((snapshot: BrowserSharedDataState, preserveDirty = false) => {
+    const coreList = snapshot.cores
+    const proxyList = snapshot.proxies
+    const tagList = snapshot.tags
+    const groupList = snapshot.groups
+    const settings = snapshot.browserSettings
     setCores(coreList)
     setProxies(proxyList)
     setAllTags(tagList)
     setGroups(groupList)
-
     if (isCreate) {
       applyCreateDefaults(settings, groupList, preserveDirty)
       return
     }
 
-    const list = await fetchBrowserProfiles()
-    const current = list.find(item => item.profileId === id)
+    const current = snapshot.profiles.find(item => item.profileId === id)
     if (!current) return
     applyProfileSnapshot(current, preserveDirty)
   }, [applyCreateDefaults, applyProfileSnapshot, id, isCreate])
+
+  const loadData = useCallback(async (preserveDirty = false) => {
+    await refreshBrowserSharedData(['profiles', 'cores', 'proxies', 'groups', 'tags', 'settings'], { silent: true })
+    applySharedDataSnapshot(getBrowserSharedDataSnapshot(), preserveDirty)
+  }, [applySharedDataSnapshot])
+
+  useEffect(() => {
+    if (saving) return
+    const requiredLoaded = sharedData.loaded.cores
+      && sharedData.loaded.proxies
+      && sharedData.loaded.groups
+      && sharedData.loaded.tags
+      && sharedData.loaded.settings
+      && (isCreate || sharedData.loaded.profiles)
+    if (!requiredLoaded) return
+    applySharedDataSnapshot(sharedData, true)
+  }, [applySharedDataSnapshot, isCreate, saving, sharedData])
   const refreshData = useSingleFlightCallback((preserveDirty: boolean = true) => loadData(preserveDirty))
 
   useEffect(() => {
@@ -185,26 +199,6 @@ export function BrowserEditPage() {
   }, [loadData])
 
   useVisibleRefresh(() => refreshData(true), 2000, !saving)
-
-  useEffect(() => {
-    const refreshFromEvent = () => {
-      void refreshData(true)
-    }
-
-    const offProfilesUpdated = onRuntimeEvent('browser:profiles:updated', refreshFromEvent)
-    const offGroupsUpdated = onRuntimeEvent('browser:groups:updated', refreshFromEvent)
-    const offCoresUpdated = onRuntimeEvent('browser:cores:updated', refreshFromEvent)
-    const offProxiesUpdated = onRuntimeEvent('browser:proxies:updated', refreshFromEvent)
-    const offSettingsUpdated = onRuntimeEvent('browser:settings:updated', refreshFromEvent)
-
-    return () => {
-      offProfilesUpdated?.()
-      offGroupsUpdated?.()
-      offCoresUpdated?.()
-      offProxiesUpdated?.()
-      offSettingsUpdated?.()
-    }
-  }, [refreshData])
 
   const handleChange = (field: keyof BrowserProfileInput, value: string | string[] | boolean | number) => {
     markDirty(field)

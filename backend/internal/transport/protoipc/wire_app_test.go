@@ -79,6 +79,26 @@ func TestAppDashboardAndLicenseRoundTrip(t *testing.T) {
 		t.Fatalf("performance snapshot was not preserved: %#v", snapshot)
 	}
 
+	versions, err := DecodeAppDataVersions(EncodeAppDataVersions(AppDataVersions{
+		TimestampMS:       1700000000000,
+		ProfilesVersion:   1,
+		GroupsVersion:     2,
+		ProxiesVersion:    3,
+		CoresVersion:      4,
+		ExtensionsVersion: 5,
+		DefaultsVersion:   6,
+		SettingsVersion:   7,
+		CookiesVersion:    8,
+		SnapshotsVersion:  9,
+		LogsVersion:       10,
+	}))
+	if err != nil {
+		t.Fatalf("DecodeAppDataVersions failed: %v", err)
+	}
+	if versions.ProfilesVersion != 1 || versions.ExtensionsVersion != 5 || versions.LogsVersion != 10 {
+		t.Fatalf("data versions were not preserved: %#v", versions)
+	}
+
 	status, err := DecodeAppLicenseStatus(EncodeAppLicenseStatus(AppLicenseStatus{
 		MaxLimit:  50,
 		UsedCount: 10,
@@ -170,23 +190,40 @@ func TestAppWindowStateSaveRoundTrip(t *testing.T) {
 
 func TestAppRuntimeAndWindowRoundTrip(t *testing.T) {
 	event, err := DecodeAppRuntimeEventPayload(EncodeAppRuntimeEventPayload(AppRuntimeEventPayload{
-		ProfileID:      "p1",
-		ProfileName:    "测试实例",
-		Error:          "boom",
-		Key:            "bridge",
-		Engine:         "xray",
-		DebugPort:      9222,
-		PID:            1234,
-		Reused:         true,
-		Running:        true,
-		DebugReady:     true,
-		RuntimeWarning: "pending",
+		ProfileID:         "p1",
+		ProfileName:       "测试实例",
+		Error:             "boom",
+		Key:               "bridge",
+		Engine:            "xray",
+		DebugPort:         9222,
+		PID:               1234,
+		Reused:            true,
+		Running:           true,
+		DebugReady:        true,
+		RuntimeWarning:    "pending",
+		Domain:            "profiles",
+		Reason:            "data-updated",
+		Version:           11,
+		ProfilesVersion:   11,
+		GroupsVersion:     12,
+		ProxiesVersion:    13,
+		CoresVersion:      14,
+		ExtensionsVersion: 15,
+		DefaultsVersion:   16,
+		SettingsVersion:   17,
+		CookiesVersion:    18,
+		SnapshotsVersion:  19,
+		LogsVersion:       20,
+		ChangedIDs:        []string{"p1", "p2"},
 	}))
 	if err != nil {
 		t.Fatalf("DecodeAppRuntimeEventPayload failed: %v", err)
 	}
 	if event.ProfileID != "p1" || event.DebugPort != 9222 || !event.DebugReady {
 		t.Fatalf("runtime event was not preserved: %#v", event)
+	}
+	if event.Domain != "profiles" || event.ProfilesVersion != 11 || event.LogsVersion != 20 || len(event.ChangedIDs) != 2 {
+		t.Fatalf("runtime data version event was not preserved: %#v", event)
 	}
 
 	size, err := DecodeAppWindowSize(EncodeAppWindowSize(AppWindowSize{Width: 1280, Height: 720}))

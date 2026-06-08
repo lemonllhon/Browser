@@ -4,6 +4,7 @@ import {
   METHOD_APP_CONFIG_GET,
   METHOD_APP_CONFIG_RELOAD,
   METHOD_APP_DASHBOARD_STATS_GET,
+  METHOD_APP_DATA_VERSIONS_GET,
   METHOD_APP_ENVIRONMENT_GET,
   METHOD_APP_FORCE_QUIT,
   METHOD_APP_GITHUB_STAR_REDEEM,
@@ -80,6 +81,20 @@ export type ProtoAppPerformanceSnapshot = {
   windowSyncDispatchTotal: number
 }
 
+export type ProtoAppDataVersions = {
+  timestampMs: number
+  profilesVersion: number
+  groupsVersion: number
+  proxiesVersion: number
+  coresVersion: number
+  extensionsVersion: number
+  defaultsVersion: number
+  settingsVersion: number
+  cookiesVersion: number
+  snapshotsVersion: number
+  logsVersion: number
+}
+
 export type ProtoAppLicenseStatus = {
   maxLimit: number
   usedCount: number
@@ -106,6 +121,20 @@ export type ProtoAppRuntimeEventPayload = {
   running?: boolean
   debugReady?: boolean
   runtimeWarning?: string
+  domain?: string
+  reason?: string
+  version?: number
+  profilesVersion?: number
+  groupsVersion?: number
+  proxiesVersion?: number
+  coresVersion?: number
+  extensionsVersion?: number
+  defaultsVersion?: number
+  settingsVersion?: number
+  cookiesVersion?: number
+  snapshotsVersion?: number
+  logsVersion?: number
+  changedIds?: string[]
 }
 
 export type ProtoAppWindowSize = {
@@ -189,6 +218,11 @@ export async function getDashboardStats(): Promise<ProtoAppDashboardStats> {
 export async function getPerformanceSnapshot(): Promise<ProtoAppPerformanceSnapshot> {
   const payload = await appProtoClient.request(METHOD_APP_PERFORMANCE_SNAPSHOT_GET, new Uint8Array())
   return decodeAppPerformanceSnapshot(payload)
+}
+
+export async function getDataVersions(): Promise<ProtoAppDataVersions> {
+  const payload = await appProtoClient.request(METHOD_APP_DATA_VERSIONS_GET, new Uint8Array())
+  return decodeAppDataVersions(payload)
 }
 
 export async function getLicenseStatus(): Promise<ProtoAppLicenseStatus> {
@@ -506,6 +540,64 @@ export function decodeAppPerformanceSnapshot(payload: Uint8Array): ProtoAppPerfo
   return snapshot
 }
 
+export function decodeAppDataVersions(payload: Uint8Array): ProtoAppDataVersions {
+  const versions: ProtoAppDataVersions = {
+    timestampMs: 0,
+    profilesVersion: 0,
+    groupsVersion: 0,
+    proxiesVersion: 0,
+    coresVersion: 0,
+    extensionsVersion: 0,
+    defaultsVersion: 0,
+    settingsVersion: 0,
+    cookiesVersion: 0,
+    snapshotsVersion: 0,
+    logsVersion: 0,
+  }
+  for (const field of readFields(payload)) {
+    if (field.wireType !== WireType.Varint) {
+      continue
+    }
+    const number = Number(decodeVarintField(field.value))
+    switch (field.fieldNumber) {
+      case 1:
+        versions.timestampMs = number
+        break
+      case 2:
+        versions.profilesVersion = number
+        break
+      case 3:
+        versions.groupsVersion = number
+        break
+      case 4:
+        versions.proxiesVersion = number
+        break
+      case 5:
+        versions.coresVersion = number
+        break
+      case 6:
+        versions.extensionsVersion = number
+        break
+      case 7:
+        versions.defaultsVersion = number
+        break
+      case 8:
+        versions.settingsVersion = number
+        break
+      case 9:
+        versions.cookiesVersion = number
+        break
+      case 10:
+        versions.snapshotsVersion = number
+        break
+      case 11:
+        versions.logsVersion = number
+        break
+    }
+  }
+  return versions
+}
+
 export function decodeAppLicenseStatus(payload: Uint8Array): ProtoAppLicenseStatus {
   const status: ProtoAppLicenseStatus = {
     maxLimit: 0,
@@ -628,9 +720,21 @@ export function decodeAppRuntimeEventPayload(payload: Uint8Array): ProtoAppRunti
         case 5:
           result.engine = text
           break
-        case 11:
-          result.runtimeWarning = text
-          break
+      case 11:
+        result.runtimeWarning = text
+        break
+      case 12:
+        result.domain = text
+        break
+      case 13:
+        result.reason = text
+        break
+      case 24:
+        if (!result.changedIds) {
+          result.changedIds = []
+        }
+        result.changedIds.push(text)
+        break
       }
       continue
     }
@@ -653,6 +757,39 @@ export function decodeAppRuntimeEventPayload(payload: Uint8Array): ProtoAppRunti
         break
       case 10:
         result.debugReady = number !== 0
+        break
+      case 14:
+        result.version = number
+        break
+      case 15:
+        result.profilesVersion = number
+        break
+      case 16:
+        result.groupsVersion = number
+        break
+      case 17:
+        result.proxiesVersion = number
+        break
+      case 18:
+        result.coresVersion = number
+        break
+      case 19:
+        result.extensionsVersion = number
+        break
+      case 20:
+        result.defaultsVersion = number
+        break
+      case 21:
+        result.settingsVersion = number
+        break
+      case 22:
+        result.cookiesVersion = number
+        break
+      case 23:
+        result.snapshotsVersion = number
+        break
+      case 25:
+        result.logsVersion = number
         break
     }
   }

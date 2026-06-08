@@ -2,9 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, Loader2, Search, Wifi, X } from 'lucide-react'
 import type { BrowserProxy } from '../types'
-import { browserProxyBatchTestSpeed, browserProxyTestSpeed, fetchBrowserProxies, fetchBrowserProxyGroups, onBrowserProxySpeedResult } from '../api'
-import { onRuntimeEvent } from '../../../shared/backend/runtime'
-import { useSingleFlightCallback } from '../hooks/useSingleFlightCallback'
+import { browserProxyBatchTestSpeed, browserProxyTestSpeed, onBrowserProxySpeedResult } from '../api'
+import { refreshBrowserSharedData, useBrowserSharedData } from '../stores/browserSharedDataStore'
 
 interface ProxyPickerModalProps {
   open: boolean
@@ -19,37 +18,20 @@ const ALL_GROUP = '__all__'
 const BATCH_TEST_CONCURRENCY = 20
 
 export function ProxyPickerModal({ open, currentProxyId, onSelect, onClose }: ProxyPickerModalProps) {
-  const [groups, setGroups] = useState<string[]>([])
-  const [allProxies, setAllProxies] = useState<BrowserProxy[]>([])
   const [displayProxies, setDisplayProxies] = useState<BrowserProxy[]>([])
   const [selectedGroup, setSelectedGroup] = useState<string>(ALL_GROUP)
   const [search, setSearch] = useState('')
-  const [loading, setLoading] = useState(false)
   // proxyId -> speed result
   const [speedMap, setSpeedMap] = useState<Record<string, SpeedResult>>({})
   const [testingIds, setTestingIds] = useState<Set<string>>(new Set())
   const abortRef = useRef(false)
-  const loadData = useSingleFlightCallback(async () => {
-    setLoading(true)
-    try {
-      const [groupList, proxyList] = await Promise.all([
-        fetchBrowserProxyGroups(),
-        fetchBrowserProxies(),
-      ])
-      setGroups(groupList)
-      setAllProxies(proxyList)
-      // 从代理数据初始化已有测速结果
-      const initMap: Record<string, SpeedResult> = {}
-      proxyList.forEach(p => {
-        if (p.lastTestedAt) {
-          initMap[p.proxyId] = { ok: p.lastTestOk ?? false, latencyMs: p.lastLatencyMs ?? -1, error: '' }
-        }
-      })
-      setSpeedMap(initMap)
-    } finally {
-      setLoading(false)
-    }
-  })
+  const sharedData = useBrowserSharedData(['proxies', 'proxyGroups'])
+  const groups = sharedData.proxyGroups
+  const allProxies = sharedData.proxies
+  const loading = sharedData.loading.proxies
+    || sharedData.loading.proxyGroups
+    || !sharedData.loaded.proxies
+    || !sharedData.loaded.proxyGroups
 
   useEffect(() => {
     if (!open) return
@@ -58,15 +40,36 @@ export function ProxyPickerModal({ open, currentProxyId, onSelect, onClose }: Pr
     setSpeedMap({})
     setTestingIds(new Set())
     abortRef.current = false
-    loadData()
-    const offProxiesUpdated = onRuntimeEvent('browser:proxies:updated', () => {
-      void loadData()
-    })
+    void refreshBrowserSharedData(['proxies', 'proxyGroups'], { silent: false })
     return () => {
       abortRef.current = true
-      offProxiesUpdated?.()
     }
-  }, [open, loadData])
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    const validGroups = new Set([ALL_GROUP, ...groups])
+    if (!validGroups.has(selectedGroup)) {
+      setSelectedGroup(ALL_GROUP)
+    }
+  }, [groups, open, selectedGroup])
+
+  useEffect(() => {
+    if (!open) return
+    setSpeedMap(prev => {
+      const next: Record<string, SpeedResult> = {}
+      allProxies.forEach(p => {
+        if (prev[p.proxyId]) {
+          next[p.proxyId] = prev[p.proxyId]
+          return
+        }
+        if (p.lastTestedAt) {
+          next[p.proxyId] = { ok: p.lastTestOk ?? false, latencyMs: p.lastLatencyMs ?? -1, error: '' }
+        }
+      })
+      return next
+    })
+  }, [allProxies, open])
 
   useEffect(() => {
     let list = allProxies

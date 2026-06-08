@@ -2,8 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Wand2 } from 'lucide-react'
 import { Button, FormItem, Input, Modal, Progress, Select, Textarea, toast } from '../../../shared/components'
 import type { BrowserCore, BrowserGroupWithCount, BrowserProfile, BrowserProfileInput, BrowserProxy, BrowserSettings } from '../types'
-import { createBrowserProfile, fetchBrowserSettings } from '../api'
-import { onRuntimeEvent } from '../../../shared/backend/runtime'
+import { createBrowserProfile } from '../api'
 import { FingerprintPanel } from './FingerprintPanel'
 import { GroupSelector } from './GroupSelector'
 import { TagInput } from './TagInput'
@@ -15,6 +14,7 @@ import {
   serialize as serializeFingerprint,
 } from '../utils/fingerprintSerializer'
 import { resolveActionErrorMessage } from '../utils/actionErrors'
+import { getBrowserSharedDataSnapshot, refreshBrowserSharedData, useBrowserSharedData } from '../stores/browserSharedDataStore'
 
 type FingerprintBatchMode = 'randomHardware' | 'seedOnly' | 'keepTemplate'
 type ProxyMode = 'none' | 'pool' | 'manual' | 'autoSwitch'
@@ -156,6 +156,7 @@ export function BatchRandomFingerprintModal({
   const [lastSummary, setLastSummary] = useState('')
   const launchTemplateDirtyRef = useRef(false)
   const fingerprintTemplateDirtyRef = useRef(false)
+  const sharedData = useBrowserSharedData(['settings'])
 
   const applyDefaultSettingsTemplate = (settings: BrowserSettings, force = false) => {
     const launchArgs = settings.defaultLaunchArgs?.length ? settings.defaultLaunchArgs : fallbackLaunchArgs
@@ -189,8 +190,8 @@ export function BatchRandomFingerprintModal({
     setProgress(0)
     setProgressText('')
     setLastSummary('')
-    void fetchBrowserSettings().then(settings => {
-      applyDefaultSettingsTemplate(settings, true)
+    void refreshBrowserSharedData(['settings'], { silent: false }).then(() => {
+      applyDefaultSettingsTemplate(getBrowserSharedDataSnapshot().browserSettings, true)
     }).catch(() => {
       setLaunchArgsText(fallbackLaunchArgs.join('\n'))
       setFingerprintArgs(seedVisibleFingerprintArgs([]))
@@ -199,18 +200,12 @@ export function BatchRandomFingerprintModal({
 
   useEffect(() => {
     if (!open) return
-    const offSettingsUpdated = onRuntimeEvent('browser:settings:updated', () => {
-      if (busy || (launchTemplateDirtyRef.current && fingerprintTemplateDirtyRef.current)) {
-        return
-      }
-      void fetchBrowserSettings().then(settings => {
-        applyDefaultSettingsTemplate(settings)
-      }).catch(() => {})
-    })
-    return () => {
-      offSettingsUpdated?.()
+    if (!sharedData.loaded.settings) return
+    if (busy || (launchTemplateDirtyRef.current && fingerprintTemplateDirtyRef.current)) {
+      return
     }
-  }, [busy, open])
+    applyDefaultSettingsTemplate(sharedData.browserSettings)
+  }, [busy, open, sharedData.browserSettings, sharedData.loaded.settings])
 
   const selectedProxyGroups = useMemo(() => (
     Array.from(new Set(proxies.map(item => (item.groupName || '').trim()).filter(Boolean))).sort()

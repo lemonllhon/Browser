@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Copy, Globe, Play, RefreshCw, RotateCcw, Square } from 'lucide-react'
 import { Badge, Button, Card, Input, Table, toast } from '../../../shared/components'
@@ -6,8 +6,6 @@ import type { TableColumn } from '../../../shared/components/Table'
 import type { BrowserProfile, BrowserTab } from '../types'
 import { onRuntimeEvent } from '../../../shared/backend/runtime'
 import {
-  fetchBrowserProfiles,
-  fetchBrowserProxies,
   fetchBrowserTabs,
   openBrowserUrl,
   regenerateBrowserProfileCode,
@@ -19,6 +17,7 @@ import {
 import { CookieManagerCard } from '../components/CookieManagerCard'
 import { SnapshotTab } from '../components/SnapshotTab'
 import { resolveActionErrorMessage, resolveActionFeedback } from '../utils/actionErrors'
+import { getBrowserSharedDataSnapshot, refreshBrowserSharedData, useBrowserSharedData } from '../stores/browserSharedDataStore'
 
 const resolveRuntimeStatus = (running: boolean, debugReady: boolean) => {
   if (!running) return { variant: 'warning' as const, label: '已停止' }
@@ -67,17 +66,27 @@ export function BrowserDetailPage() {
   const { id } = useParams()
   const [profile, setProfile] = useState<BrowserProfile | null>(null)
   const [tabs, setTabs] = useState<BrowserTab[]>([])
-  const [proxyNames, setProxyNames] = useState<Record<string, string>>({})
   const [targetUrl, setTargetUrl] = useState('https://example.com')
   const [activeTab, setActiveTab] = useState<TabKey>('overview')
   const [pendingAction, setPendingAction] = useState<'starting' | 'stopping' | 'restarting' | 'switchingProxy' | null>(null)
+  const sharedData = useBrowserSharedData(['profiles', 'proxies'])
 
-  const loadProfile = async () => {
-    const list = await fetchBrowserProfiles()
-    const current = list.find(item => item.profileId === id) || null
+  const proxyNames = useMemo(() => {
+    const names: Record<string, string> = {}
+    sharedData.proxies.forEach(item => { names[item.proxyId] = item.proxyName || item.proxyId })
+    return names
+  }, [sharedData.proxies])
+
+  const loadProfile = useCallback(async () => {
+    if (!id) {
+      setProfile(null)
+      return null
+    }
+    await refreshBrowserSharedData(['profiles', 'tags'], { silent: true })
+    const current = getBrowserSharedDataSnapshot().profiles.find(item => item.profileId === id) || null
     setProfile(current)
     return current
-  }
+  }, [id])
 
   const loadTabs = async () => {
     if (!id) return
@@ -88,26 +97,15 @@ export function BrowserDetailPage() {
   useEffect(() => { void loadProfile() }, [id])
   useEffect(() => { void loadTabs() }, [id])
   useEffect(() => {
-    fetchBrowserProxies().then(items => {
-      const names: Record<string, string> = {}
-      items.forEach(item => { names[item.proxyId] = item.proxyName || item.proxyId })
-      setProxyNames(names)
-    })
-  }, [])
+    if (!sharedData.loaded.profiles) return
+    setProfile(sharedData.profiles.find(item => item.profileId === id) || null)
+  }, [id, sharedData.loaded.profiles, sharedData.profiles])
 
   useEffect(() => {
     if (!id) return
 
     const refreshProfileSnapshot = () => {
       void loadProfile()
-    }
-
-    const refreshProxyNames = () => {
-      fetchBrowserProxies().then(items => {
-        const names: Record<string, string> = {}
-        items.forEach(item => { names[item.proxyId] = item.proxyName || item.proxyId })
-        setProxyNames(names)
-      })
     }
 
     const handleRuntimeChange = (payload: unknown) => {
@@ -129,7 +127,6 @@ export function BrowserDetailPage() {
     const offStopped = onRuntimeEvent('browser:instance:stopped', handleRuntimeChange)
     const offCrashed = onRuntimeEvent('browser:instance:crashed', handleRuntimeChange)
     const offProfilesUpdated = onRuntimeEvent('browser:profiles:updated', refreshProfileSnapshot)
-    const offProxiesUpdated = onRuntimeEvent('browser:proxies:updated', refreshProxyNames)
 
     return () => {
       offStarted?.()
@@ -137,9 +134,8 @@ export function BrowserDetailPage() {
       offStopped?.()
       offCrashed?.()
       offProfilesUpdated?.()
-      offProxiesUpdated?.()
     }
-  }, [id])
+  }, [id, loadProfile])
 
   if (!profile) {
     return (

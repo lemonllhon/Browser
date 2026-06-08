@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Card, ConfirmModal, toast } from '../../../shared/components'
 import type { SortOrder, TableColumn } from '../../../shared/components/Table'
 import type { BrowserProxy, ProxyIPHealthResult } from '../types'
-import { fetchBrowserProxies, fetchBrowserProxyGroups, saveBrowserProxies, browserProxyPreviewBatchTestSpeed, browserProxyPreviewBatchCheckIPHealth, fetchClashImportFromURL } from '../api'
+import { saveBrowserProxies, browserProxyPreviewBatchTestSpeed, browserProxyPreviewBatchCheckIPHealth, fetchClashImportFromURL } from '../api'
 import { ProxyImportModal } from '../components/proxy-pool/ProxyImportModal'
 import { ProxyImportPreviewModal } from '../components/proxy-pool/ProxyImportPreviewModal'
 import { ProxyEditModal } from '../components/proxy-pool/ProxyEditModal'
@@ -33,6 +33,7 @@ import { useProxyProbeState } from '../hooks/useProxyProbeState'
 import { useProxyPreviewProbeState } from '../hooks/useProxyPreviewProbeState'
 import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
 import { resolveActionErrorMessage } from '../utils/actionErrors'
+import { getBrowserSharedDataSnapshot, refreshBrowserSharedData, useBrowserSharedData } from '../stores/browserSharedDataStore'
 
 type ProxyImportMode = 'clash' | 'direct'
 async function applySourceRefreshFilterToParsedProxies(
@@ -164,6 +165,7 @@ export function ProxyPoolPage() {
   const refreshingSourceIdsRef = useRef<Set<string>>(new Set())
   const autoRefreshOwnerIdRef = useRef(createProxyAutoRefreshOwnerId())
   const loadProxiesInFlightRef = useRef<Promise<void> | null>(null)
+  const sharedData = useBrowserSharedData(['proxies', 'proxyGroups'])
 
   const {
     latencyMap,
@@ -203,7 +205,8 @@ export function ProxyPoolPage() {
   }, [globalRefreshIntervalM])
 
   const fetchLatestProxyList = useCallback(async () => {
-    const raw = await fetchBrowserProxies()
+    await refreshBrowserSharedData(['proxies'], { silent: true })
+    const raw = getBrowserSharedDataSnapshot().proxies
     return ensureBuiltinProxies(raw)
   }, [])
 
@@ -308,8 +311,8 @@ export function ProxyPoolPage() {
           return next
         })
         setIPHealthMap(prev => ({ ...prev, ...persistedIPHealth }))
-        const grps = await fetchBrowserProxyGroups()
-        setGroups(grps)
+        await refreshBrowserSharedData(['proxyGroups'], { silent: true })
+        setGroups(getBrowserSharedDataSnapshot().proxyGroups)
       } finally {
         if (!silent) {
           setLoading(false)
@@ -362,13 +365,27 @@ export function ProxyPoolPage() {
   const saveProxies = useCallback(async (list: BrowserProxy[]) => {
     const nextList = ensureBuiltinProxies(list)
     await saveBrowserProxies(nextList)
+    await refreshBrowserSharedData(['proxies', 'proxyGroups'], { silent: true })
     updateSourceArchive(current => collectURLImportSources(nextList, current))
     setProxies(nextList)
     setDisplayList(toDisplayList(nextList))
     // 刷新分组列表（可能有新分组加入）
-    const grps = await fetchBrowserProxyGroups()
-    setGroups(grps)
+    setGroups(getBrowserSharedDataSnapshot().proxyGroups)
   }, [updateSourceArchive])
+
+  useEffect(() => {
+    if (sharedData.loaded.proxies) {
+      const proxyList = ensureBuiltinProxies(sharedData.proxies)
+      setProxies(proxyList)
+      setDisplayList(toDisplayList(proxyList))
+    }
+  }, [sharedData.loaded.proxies, sharedData.proxies])
+
+  useEffect(() => {
+    if (sharedData.loaded.proxyGroups) {
+      setGroups(sharedData.proxyGroups)
+    }
+  }, [sharedData.loaded.proxyGroups, sharedData.proxyGroups])
 
   const saveLatestProxies = useCallback(async (updater: (latest: BrowserProxy[]) => BrowserProxy[] | Promise<BrowserProxy[]>) => {
     const latest = await fetchLatestProxyList()

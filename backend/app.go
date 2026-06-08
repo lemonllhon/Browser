@@ -82,6 +82,16 @@ type App struct {
 	windowSyncPromptAdapter  WindowSyncPromptAdapter
 	windowSyncEventsTotal    atomic.Int64
 	windowSyncDispatchTotal  atomic.Int64
+	profilesDataVersion      atomic.Int64
+	groupsDataVersion        atomic.Int64
+	proxiesDataVersion       atomic.Int64
+	coresDataVersion         atomic.Int64
+	extensionsDataVersion    atomic.Int64
+	defaultsDataVersion      atomic.Int64
+	settingsDataVersion      atomic.Int64
+	cookiesDataVersion       atomic.Int64
+	snapshotsDataVersion     atomic.Int64
+	logsDataVersion          atomic.Int64
 	extensionAutoSyncMu      sync.Mutex
 	extensionAutoSyncBlocked map[string]struct{}
 	stopServicesOnce         sync.Once
@@ -932,6 +942,7 @@ func (a *App) GetAppLogs() []logger.MemoryLogEntry {
 // ClearAppLogs 清空内存缓冲日志
 func (a *App) ClearAppLogs() {
 	logger.GetMemoryWriter().Clear()
+	a.emitBrowserLogsUpdated()
 }
 
 // GetRunningInstances 获取运行中实例的详细信息

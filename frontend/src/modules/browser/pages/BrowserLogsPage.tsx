@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { RefreshCw, Trash2 } from 'lucide-react'
 import { Badge, Button, Card } from '../../../shared/components'
-import { clearAppLogs, listAppLogs, type ProtoJSONObject } from '../../../shared/backend/client'
+import { clearAppLogs, type ProtoJSONObject } from '../../../shared/backend/client'
 import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
+import { getBrowserSharedDataSnapshot, refreshBrowserSharedData, useBrowserSharedData } from '../stores/browserSharedDataStore'
 
 interface LogEntry {
   time: string
@@ -32,12 +33,6 @@ const levelColor = (level: string) => {
   }
 }
 
-async function fetchLogs(): Promise<LogEntry[]> {
-  try {
-    return await listAppLogs()
-  } catch { return [] }
-}
-
 async function clearLogs() {
   try {
     await clearAppLogs()
@@ -51,12 +46,13 @@ export function BrowserLogsPage() {
   const [autoScroll, setAutoScroll] = useState(true)
   const [loading, setLoading] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const sharedData = useBrowserSharedData(['logs'])
 
   const load = async () => {
     setLoading(true)
     try {
-      const data = await fetchLogs()
-      setLogs(data)
+      await refreshBrowserSharedData(['logs'], { silent: true })
+      setLogs(getBrowserSharedDataSnapshot().logs)
     } finally {
       setLoading(false)
     }
@@ -65,6 +61,12 @@ export function BrowserLogsPage() {
   useEffect(() => {
     load()
   }, [])
+
+  useEffect(() => {
+    if (sharedData.loaded.logs) {
+      setLogs(sharedData.logs)
+    }
+  }, [sharedData.loaded.logs, sharedData.logs])
 
   useVisibleRefresh(load, 3000)
 
@@ -77,6 +79,7 @@ export function BrowserLogsPage() {
   const handleClear = async () => {
     await clearLogs()
     setLogs([])
+    await refreshBrowserSharedData(['logs'], { silent: true })
   }
 
   const filtered = logs.filter(entry => {

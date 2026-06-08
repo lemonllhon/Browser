@@ -8,6 +8,7 @@ const (
 	MethodAppReleasePageOpen     = "trace.app.ReleasePageOpen"
 	MethodAppDashboardStats      = "trace.app.DashboardStatsGet"
 	MethodAppPerformanceSnapshot = "trace.app.PerformanceSnapshotGet"
+	MethodAppDataVersions        = "trace.app.DataVersionsGet"
 	MethodAppLicenseStatus       = "trace.app.LicenseStatusGet"
 	MethodAppCDKeyRedeem         = "trace.app.CDKeyRedeem"
 	MethodAppGithubStarRedeem    = "trace.app.GithubStarRedeem"
@@ -77,6 +78,20 @@ type AppPerformanceSnapshot struct {
 	WindowSyncDispatchTotal int64
 }
 
+type AppDataVersions struct {
+	TimestampMS       int64
+	ProfilesVersion   int64
+	GroupsVersion     int64
+	ProxiesVersion    int64
+	CoresVersion      int64
+	ExtensionsVersion int64
+	DefaultsVersion   int64
+	SettingsVersion   int64
+	CookiesVersion    int64
+	SnapshotsVersion  int64
+	LogsVersion       int64
+}
+
 type AppLicenseStatus struct {
 	MaxLimit  int32
 	UsedCount int32
@@ -122,17 +137,31 @@ type AppWindowStateSaveRequest struct {
 }
 
 type AppRuntimeEventPayload struct {
-	ProfileID      string
-	ProfileName    string
-	Error          string
-	Key            string
-	Engine         string
-	DebugPort      int32
-	PID            int32
-	Reused         bool
-	Running        bool
-	DebugReady     bool
-	RuntimeWarning string
+	ProfileID         string
+	ProfileName       string
+	Error             string
+	Key               string
+	Engine            string
+	DebugPort         int32
+	PID               int32
+	Reused            bool
+	Running           bool
+	DebugReady        bool
+	RuntimeWarning    string
+	Domain            string
+	Reason            string
+	Version           int64
+	ProfilesVersion   int64
+	GroupsVersion     int64
+	ProxiesVersion    int64
+	CoresVersion      int64
+	ExtensionsVersion int64
+	DefaultsVersion   int64
+	SettingsVersion   int64
+	CookiesVersion    int64
+	SnapshotsVersion  int64
+	LogsVersion       int64
+	ChangedIDs        []string
 }
 
 type AppWindowSize struct {
@@ -453,6 +482,80 @@ func DecodeAppPerformanceSnapshot(payload []byte) (AppPerformanceSnapshot, error
 	return result, nil
 }
 
+func EncodeAppDataVersions(message AppDataVersions) []byte {
+	var out []byte
+	out = appendInt64Field(out, 1, message.TimestampMS)
+	out = appendInt64Field(out, 2, message.ProfilesVersion)
+	out = appendInt64Field(out, 3, message.GroupsVersion)
+	out = appendInt64Field(out, 4, message.ProxiesVersion)
+	out = appendInt64Field(out, 5, message.CoresVersion)
+	out = appendInt64Field(out, 6, message.ExtensionsVersion)
+	out = appendInt64Field(out, 7, message.DefaultsVersion)
+	out = appendInt64Field(out, 8, message.SettingsVersion)
+	out = appendInt64Field(out, 9, message.CookiesVersion)
+	out = appendInt64Field(out, 10, message.SnapshotsVersion)
+	out = appendInt64Field(out, 11, message.LogsVersion)
+	return out
+}
+
+func DecodeAppDataVersions(payload []byte) (AppDataVersions, error) {
+	var result AppDataVersions
+	err := consumeFields(payload, func(field protowire.Number, wireType protowire.Type, value []byte) error {
+		switch field {
+		case 1:
+			number, err := consumeVarintValue(wireType, value)
+			result.TimestampMS = int64(number)
+			return err
+		case 2:
+			number, err := consumeVarintValue(wireType, value)
+			result.ProfilesVersion = int64(number)
+			return err
+		case 3:
+			number, err := consumeVarintValue(wireType, value)
+			result.GroupsVersion = int64(number)
+			return err
+		case 4:
+			number, err := consumeVarintValue(wireType, value)
+			result.ProxiesVersion = int64(number)
+			return err
+		case 5:
+			number, err := consumeVarintValue(wireType, value)
+			result.CoresVersion = int64(number)
+			return err
+		case 6:
+			number, err := consumeVarintValue(wireType, value)
+			result.ExtensionsVersion = int64(number)
+			return err
+		case 7:
+			number, err := consumeVarintValue(wireType, value)
+			result.DefaultsVersion = int64(number)
+			return err
+		case 8:
+			number, err := consumeVarintValue(wireType, value)
+			result.SettingsVersion = int64(number)
+			return err
+		case 9:
+			number, err := consumeVarintValue(wireType, value)
+			result.CookiesVersion = int64(number)
+			return err
+		case 10:
+			number, err := consumeVarintValue(wireType, value)
+			result.SnapshotsVersion = int64(number)
+			return err
+		case 11:
+			number, err := consumeVarintValue(wireType, value)
+			result.LogsVersion = int64(number)
+			return err
+		default:
+			return nil
+		}
+	})
+	if err != nil {
+		return AppDataVersions{}, err
+	}
+	return result, nil
+}
+
 func EncodeAppLicenseStatus(message AppLicenseStatus) []byte {
 	var out []byte
 	out = appendInt32Field(out, 1, message.MaxLimit)
@@ -721,6 +824,20 @@ func EncodeAppRuntimeEventPayload(message AppRuntimeEventPayload) []byte {
 	out = appendBoolField(out, 9, message.Running)
 	out = appendBoolField(out, 10, message.DebugReady)
 	out = appendStringField(out, 11, message.RuntimeWarning)
+	out = appendStringField(out, 12, message.Domain)
+	out = appendStringField(out, 13, message.Reason)
+	out = appendInt64Field(out, 14, message.Version)
+	out = appendInt64Field(out, 15, message.ProfilesVersion)
+	out = appendInt64Field(out, 16, message.GroupsVersion)
+	out = appendInt64Field(out, 17, message.ProxiesVersion)
+	out = appendInt64Field(out, 18, message.CoresVersion)
+	out = appendInt64Field(out, 19, message.ExtensionsVersion)
+	out = appendInt64Field(out, 20, message.DefaultsVersion)
+	out = appendInt64Field(out, 21, message.SettingsVersion)
+	out = appendInt64Field(out, 22, message.CookiesVersion)
+	out = appendInt64Field(out, 23, message.SnapshotsVersion)
+	out = appendRepeatedStringField(out, 24, message.ChangedIDs)
+	out = appendInt64Field(out, 25, message.LogsVersion)
 	return out
 }
 
@@ -771,6 +888,62 @@ func DecodeAppRuntimeEventPayload(payload []byte) (AppRuntimeEventPayload, error
 		case 11:
 			text, err := consumeStringValue(wireType, value)
 			result.RuntimeWarning = text
+			return err
+		case 12:
+			text, err := consumeStringValue(wireType, value)
+			result.Domain = text
+			return err
+		case 13:
+			text, err := consumeStringValue(wireType, value)
+			result.Reason = text
+			return err
+		case 14:
+			number, err := consumeVarintValue(wireType, value)
+			result.Version = int64(number)
+			return err
+		case 15:
+			number, err := consumeVarintValue(wireType, value)
+			result.ProfilesVersion = int64(number)
+			return err
+		case 16:
+			number, err := consumeVarintValue(wireType, value)
+			result.GroupsVersion = int64(number)
+			return err
+		case 17:
+			number, err := consumeVarintValue(wireType, value)
+			result.ProxiesVersion = int64(number)
+			return err
+		case 18:
+			number, err := consumeVarintValue(wireType, value)
+			result.CoresVersion = int64(number)
+			return err
+		case 19:
+			number, err := consumeVarintValue(wireType, value)
+			result.ExtensionsVersion = int64(number)
+			return err
+		case 20:
+			number, err := consumeVarintValue(wireType, value)
+			result.DefaultsVersion = int64(number)
+			return err
+		case 21:
+			number, err := consumeVarintValue(wireType, value)
+			result.SettingsVersion = int64(number)
+			return err
+		case 22:
+			number, err := consumeVarintValue(wireType, value)
+			result.CookiesVersion = int64(number)
+			return err
+		case 23:
+			number, err := consumeVarintValue(wireType, value)
+			result.SnapshotsVersion = int64(number)
+			return err
+		case 24:
+			text, err := consumeStringValue(wireType, value)
+			result.ChangedIDs = append(result.ChangedIDs, text)
+			return err
+		case 25:
+			number, err := consumeVarintValue(wireType, value)
+			result.LogsVersion = int64(number)
 			return err
 		default:
 			return nil

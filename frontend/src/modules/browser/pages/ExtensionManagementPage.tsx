@@ -3,9 +3,10 @@ import { Archive, Eye, EyeOff, FileCode2, FolderOpen, Link2, RefreshCw, Settings
 import { Badge, Button, Card, ConfirmModal, FormItem, Input, Modal, Select, Switch, Table, toast } from '../../../shared/components'
 import type { TableColumn } from '../../../shared/components/Table'
 import type { BrowserExtension, BrowserExtensionBinding, BrowserExtensionImportResult, BrowserProfile } from '../types'
-import { assignBrowserExtensionProfiles, chooseBrowserExtensionArchive, chooseBrowserExtensionDirectory, deleteBrowserExtension, fetchBrowserExtension, fetchBrowserExtensionProfileBindings, fetchBrowserExtensions, fetchBrowserProfiles, importBrowserExtensionArchive, importBrowserExtensionDirectory, setBrowserExtensionAutoBind, syncBrowserExtensionData, unassignBrowserExtensionProfiles } from '../api'
+import { assignBrowserExtensionProfiles, chooseBrowserExtensionArchive, chooseBrowserExtensionDirectory, deleteBrowserExtension, fetchBrowserExtension, fetchBrowserExtensionProfileBindings, importBrowserExtensionArchive, importBrowserExtensionDirectory, setBrowserExtensionAutoBind, syncBrowserExtensionData, unassignBrowserExtensionProfiles } from '../api'
 import { clearRuntimeFileDrop, onRuntimeEvent, onRuntimeFileDrop } from '../../../shared/backend/runtime'
 import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
+import { getBrowserSharedDataSnapshot, refreshBrowserSharedData, useBrowserSharedData } from '../stores/browserSharedDataStore'
 
 const sourceTypeText: Record<string, string> = {
   zip: '压缩包',
@@ -102,6 +103,7 @@ export function ExtensionManagementPage() {
   const [syncSourceProfileId, setSyncSourceProfileId] = useState('')
   const [syncTargetProfileIds, setSyncTargetProfileIds] = useState<Set<string>>(new Set())
   const [syncingData, setSyncingData] = useState(false)
+  const sharedData = useBrowserSharedData(['extensions', 'profiles'])
 
   const selectedProfilesNeedRestart = useMemo(() => (
     profiles.some(profile => selectedProfileIds.has(profile.profileId) && profile.running)
@@ -118,8 +120,8 @@ export function ExtensionManagementPage() {
       setLoading(true)
     }
     try {
-      const list = await fetchBrowserExtensions()
-      setExtensions(list)
+      await refreshBrowserSharedData(['extensions'], { silent })
+      setExtensions(getBrowserSharedDataSnapshot().extensions)
     } catch (error: unknown) {
       toast.error(errorMessage(error, '加载扩展列表失败'), 6000)
     } finally {
@@ -204,7 +206,8 @@ export function ExtensionManagementPage() {
 
   const loadProfiles = async () => {
     try {
-      const list = await fetchBrowserProfiles()
+      await refreshBrowserSharedData(['profiles'], { silent: true })
+      const list = getBrowserSharedDataSnapshot().profiles
       setProfiles(list)
       return list
     } catch (error: unknown) {
@@ -285,6 +288,18 @@ export function ExtensionManagementPage() {
       offProfilesUpdated?.()
     }
   }, [bindingModalOpen, selectedExtension?.extensionId])
+
+  useEffect(() => {
+    if (sharedData.loaded.extensions) {
+      setExtensions(sharedData.extensions)
+    }
+  }, [sharedData.extensions, sharedData.loaded.extensions])
+
+  useEffect(() => {
+    if (sharedData.loaded.profiles) {
+      setProfiles(sharedData.profiles)
+    }
+  }, [sharedData.loaded.profiles, sharedData.profiles])
 
   const handleDeleteClick = (record: BrowserExtension) => {
     setDeletingExtension(record)

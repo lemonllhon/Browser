@@ -2,11 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Bookmark, FolderTree, Link2, Plus, Save, Tag, Trash2 } from 'lucide-react'
 import { Badge, Button, Card, Input, Select, Switch, toast } from '../../../shared/components'
 import type { BrowserBookmark, BrowserGroupWithCount, BrowserStartURL, DefaultContentRule } from '../types'
-import { fetchAllTags, fetchDefaultContentRules, fetchGroups, saveDefaultContentRules } from '../api'
+import { saveDefaultContentRules } from '../api'
 import { resolveActionErrorMessage } from '../utils/actionErrors'
 import { BookmarkSettingsPage } from './BookmarkSettingsPage'
-import { onRuntimeEvent } from '../../../shared/backend/runtime'
 import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
+import { getBrowserSharedDataSnapshot, refreshBrowserSharedData, useBrowserSharedData } from '../stores/browserSharedDataStore'
 
 type ManagedItem = BrowserStartURL | BrowserBookmark
 
@@ -107,6 +107,7 @@ export function DefaultContentLinkPage() {
   const [dirty, setDirty] = useState(false)
   const savingRef = useRef(false)
   const dirtyRef = useRef(false)
+  const sharedData = useBrowserSharedData(['defaults', 'tags', 'groups'])
 
   const groupsById = useMemo(() => new Map(groups.map(group => [group.groupId, group])), [groups])
   const tagOptions = useMemo(() => tags.map(tag => ({ value: tag, label: tag })), [tags])
@@ -128,15 +129,10 @@ export function DefaultContentLinkPage() {
     setSaving(value)
   }
 
-  const load = useCallback(async (options?: { force?: boolean }) => {
+  const applyData = useCallback((ruleList: DefaultContentRule[], tagList: string[], groupList: BrowserGroupWithCount[], options?: { force?: boolean }) => {
     if (!options?.force && (dirtyRef.current || savingRef.current)) {
       return
     }
-    const [ruleList, tagList, groupList] = await Promise.all([
-      fetchDefaultContentRules(),
-      fetchAllTags(),
-      fetchGroups(),
-    ])
     setRules(ruleList)
     setTags(tagList)
     setGroups(groupList)
@@ -149,20 +145,27 @@ export function DefaultContentLinkPage() {
     markClean()
   }, [])
 
+  const load = useCallback(async (options?: { force?: boolean }) => {
+    if (!options?.force && (dirtyRef.current || savingRef.current)) {
+      return
+    }
+    await refreshBrowserSharedData(['defaults', 'tags', 'groups'], { silent: !options?.force })
+    const snapshot = getBrowserSharedDataSnapshot()
+    applyData(snapshot.defaultContentRules, snapshot.tags, snapshot.groups, options)
+  }, [applyData])
+
   useEffect(() => {
     void load({ force: true })
-    const reload = () => {
-      void load()
-    }
-    const offDefaultsUpdated = onRuntimeEvent('browser:defaults:updated', reload)
-    const offProfilesUpdated = onRuntimeEvent('browser:profiles:updated', reload)
-    const offGroupsUpdated = onRuntimeEvent('browser:groups:updated', reload)
-    return () => {
-      offDefaultsUpdated?.()
-      offProfilesUpdated?.()
-      offGroupsUpdated?.()
-    }
   }, [load])
+
+  useEffect(() => {
+    if (dirtyRef.current || savingRef.current) {
+      return
+    }
+    if (sharedData.loaded.defaults || sharedData.loaded.tags || sharedData.loaded.groups) {
+      applyData(sharedData.defaultContentRules, sharedData.tags, sharedData.groups)
+    }
+  }, [applyData, sharedData.defaultContentRules, sharedData.groups, sharedData.loaded.defaults, sharedData.loaded.groups, sharedData.loaded.tags, sharedData.tags])
 
   useVisibleRefresh(() => load(), 2000, !dirty && !saving)
 

@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Keyboard, Play, Search, Tag } from 'lucide-react'
 import { Badge, Button, Modal, toast } from '../../../shared/components'
-import { onRuntimeEvent } from '../../../shared/backend/runtime'
-import { fetchBrowserProfiles, fetchGroups, startBrowserInstanceByCode } from '../api'
+import { startBrowserInstanceByCode } from '../api'
 import type { BrowserGroupWithCount, BrowserProfile } from '../types'
 import { resolveActionFeedback } from '../utils/actionErrors'
-import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
-import { useSingleFlightCallback } from '../hooks/useSingleFlightCallback'
+import { refreshBrowserSharedData, useBrowserSharedData } from '../stores/browserSharedDataStore'
 
 interface QuickLaunchModalProps {
   open: boolean
@@ -60,9 +58,6 @@ function pickPrimaryTag(profile: BrowserProfile): string {
 }
 
 export function QuickLaunchModal({ open, onClose }: QuickLaunchModalProps) {
-  const [profiles, setProfiles] = useState<BrowserProfile[]>([])
-  const [groups, setGroups] = useState<BrowserGroupWithCount[]>([])
-  const [loading, setLoading] = useState(false)
   const [query, setQuery] = useState('')
   const [groupFilter, setGroupFilter] = useState(GROUP_ALL)
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -74,36 +69,13 @@ export function QuickLaunchModal({ open, onClose }: QuickLaunchModalProps) {
   const sectionsScrollableRef = useRef(false)
   const autoScrollingRef = useRef(false)
   const autoScrollTimerRef = useRef<number | null>(null)
-  const openRef = useRef(open)
-  const loadOpenData = useSingleFlightCallback(async (showLoading = false) => {
-    if (showLoading) {
-      setLoading(true)
-    }
-    const [profilesResult, groupsResult] = await Promise.allSettled([fetchBrowserProfiles(), fetchGroups()])
-    if (!openRef.current) return
-
-    if (profilesResult.status === 'fulfilled') {
-      setProfiles((profilesResult.value || []).slice().sort(sortProfiles))
-    } else {
-      toast.error('加载实例列表失败')
-      setProfiles([])
-    }
-
-    if (groupsResult.status === 'fulfilled') {
-      setGroups(groupsResult.value || [])
-    } else {
-      setGroups([])
-    }
-
-    if (showLoading) {
-      setLoading(false)
-      setTimeout(() => inputRef.current?.focus(), 0)
-    }
-  })
-
-  useEffect(() => {
-    openRef.current = open
-  }, [open])
+  const sharedData = useBrowserSharedData(['profiles', 'groups'])
+  const profiles = useMemo(() => sharedData.profiles.slice().sort(sortProfiles), [sharedData.profiles])
+  const groups: BrowserGroupWithCount[] = sharedData.groups
+  const loading = sharedData.loading.profiles
+    || sharedData.loading.groups
+    || !sharedData.loaded.profiles
+    || !sharedData.loaded.groups
 
   useEffect(() => {
     if (!open) return
@@ -112,25 +84,15 @@ export function QuickLaunchModal({ open, onClose }: QuickLaunchModalProps) {
     setGroupFilter(GROUP_ALL)
     setSelectedIndex(0)
 
-    void loadOpenData(true)
-    const reloadOpenData = () => { void loadOpenData(false) }
-    const offProfilesUpdated = onRuntimeEvent('browser:profiles:updated', reloadOpenData)
-    const offGroupsUpdated = onRuntimeEvent('browser:groups:updated', reloadOpenData)
+    void refreshBrowserSharedData(['profiles', 'groups'], { silent: false })
+      .catch(() => toast.error('加载实例列表失败'))
+      .finally(() => setTimeout(() => inputRef.current?.focus(), 0))
 
     return () => {
-      openRef.current = false
-      setLoading(false)
-      offProfilesUpdated?.()
-      offGroupsUpdated?.()
       setStartingCode('')
       setActiveTag('')
     }
-  }, [open, loadOpenData])
-
-  useVisibleRefresh(() => {
-    if (!open) return
-    return loadOpenData(false)
-  }, 2000, open)
+  }, [open])
 
   const groupNameMap = useMemo(() => {
     const map = new Map<string, string>()

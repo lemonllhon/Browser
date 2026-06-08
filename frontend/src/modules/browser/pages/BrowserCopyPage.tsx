@@ -1,11 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Button, Card, FormItem, Input, Select, toast } from '../../../shared/components'
-import { onRuntimeEvent } from '../../../shared/backend/runtime'
-import type { BrowserProfile } from '../types'
-import { createBrowserProfile, fetchBrowserProfiles } from '../api'
+import { createBrowserProfile } from '../api'
 import { type FingerprintCopyMode, prepareFingerprintArgsForCopy } from '../utils/fingerprintSerializer'
-import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
+import { useBrowserSharedData } from '../stores/browserSharedDataStore'
 
 const FINGERPRINT_COPY_OPTIONS: Array<{ value: FingerprintCopyMode; label: string; hint: string }> = [
   {
@@ -28,32 +26,24 @@ const FINGERPRINT_COPY_OPTIONS: Array<{ value: FingerprintCopyMode; label: strin
 export function BrowserCopyPage() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const [profiles, setProfiles] = useState<BrowserProfile[]>([])
   const [sourceId, setSourceId] = useState(id || '')
   const [targetName, setTargetName] = useState('')
   const [fingerprintMode, setFingerprintMode] = useState<FingerprintCopyMode>('regenerateSeed')
   const [saving, setSaving] = useState(false)
-
-  const loadProfiles = useCallback(async () => {
-    const list = await fetchBrowserProfiles()
-    setProfiles(list)
-    setSourceId(current => {
-      if (current && list.some(item => item.profileId === current)) return current
-      return list[0]?.profileId || ''
-    })
-  }, [])
+  const sharedData = useBrowserSharedData(['profiles'])
+  const profiles = sharedData.profiles
 
   useEffect(() => {
-    void loadProfiles()
-    const offProfilesUpdated = onRuntimeEvent('browser:profiles:updated', () => {
-      void loadProfiles()
-    })
-    return () => {
-      offProfilesUpdated?.()
-    }
-  }, [loadProfiles])
+    setSourceId(id || '')
+  }, [id])
 
-  useVisibleRefresh(() => loadProfiles(), 2000, !saving)
+  useEffect(() => {
+    if (!sharedData.loaded.profiles) return
+    setSourceId(current => {
+      if (current && profiles.some(item => item.profileId === current)) return current
+      return profiles[0]?.profileId || ''
+    })
+  }, [profiles, sharedData.loaded.profiles])
 
   const sourceProfile = profiles.find(item => item.profileId === sourceId)
   const fingerprintModeHint = FINGERPRINT_COPY_OPTIONS.find(item => item.value === fingerprintMode)?.hint || ''

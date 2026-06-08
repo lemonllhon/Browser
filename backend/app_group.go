@@ -196,12 +196,12 @@ func (a *App) syncProfilesMovedFromDeletedGroup(deletedGroupId, parentGroupId st
 
 func (a *App) emitGroupDataUpdated() {
 	if a != nil && a.ctx != nil {
-		a.emitEvent("browser:groups:updated", nil)
+		a.emitEvent("browser:groups:updated", a.browserDataVersionPayload(browserDataDomainGroups, nil, nil))
 	}
 }
 
 func (a *App) emitProfileDataUpdated() {
 	if a != nil && a.ctx != nil {
-		a.emitEvent("browser:profiles:updated", nil)
+		a.emitEvent("browser:profiles:updated", a.browserDataVersionPayload(browserDataDomainProfiles, nil, nil))
 	}
 }

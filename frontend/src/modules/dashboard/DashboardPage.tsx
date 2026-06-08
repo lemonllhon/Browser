@@ -1,9 +1,12 @@
 ﻿import { useEffect, useState } from 'react'
 import { Monitor, Play, Shield, Cpu, ArrowRight, Globe, Settings } from 'lucide-react'
+import { useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { Card } from '../../shared/components'
+import { onRuntimeEvent } from '../../shared/backend/runtime'
 import { fetchDashboardStats, reloadConfig } from './api'
 import type { DashboardStats } from './types'
+import { getBrowserSharedDataSnapshot, refreshBrowserSharedData, useBrowserSharedData } from '../browser/stores/browserSharedDataStore'
 
 interface StatCardProps {
   title: string
@@ -33,6 +36,17 @@ const QUICK_LINKS = [
   { to: '/settings', icon: <Settings className="w-5 h-5" />, label: '系统设置', desc: '全局参数配置' },
 ]
 
+const mergeSharedCounts = (stats: DashboardStats): DashboardStats => {
+  const snapshot = getBrowserSharedDataSnapshot()
+  return {
+    ...stats,
+    totalInstances: snapshot.loaded.profiles ? snapshot.profiles.length : stats.totalInstances,
+    runningInstances: snapshot.loaded.profiles ? snapshot.profiles.filter(item => item.running).length : stats.runningInstances,
+    proxyCount: snapshot.loaded.proxies ? snapshot.proxies.length : stats.proxyCount,
+    coreCount: snapshot.loaded.cores ? snapshot.cores.length : stats.coreCount,
+  }
+}
+
 export function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats>({
     totalInstances: 0,
@@ -44,19 +58,87 @@ export function DashboardPage() {
     appVersion: 'dev',
   })
   const [loading, setLoading] = useState(true)
-  useEffect(() => {
-    load()
+  const refreshTimerRef = useRef<number | null>(null)
+  const sharedData = useBrowserSharedData(['profiles', 'proxies', 'cores'])
+
+  const load = useCallback(async ({ silent = false, reload = true } = {}) => {
+    if (!silent) setLoading(true)
+    try {
+      if (reload) {
+        await reloadConfig() // 强制从本地磁盘刷一次最新配置，解决各种情况下的容量不同步
+      }
+      await refreshBrowserSharedData(['profiles', 'proxies', 'cores'], { silent: true }).catch(() => {})
+      setStats(mergeSharedCounts(await fetchDashboardStats()))
+    } finally {
+      if (!silent) setLoading(false)
+    }
   }, [])
 
-  const load = async () => {
-    setLoading(true)
-    try {
-      await reloadConfig() // 强制从本地磁盘刷一次最新配置，解决各种情况下的容量不同步
-      setStats(await fetchDashboardStats())
-    } finally {
-      setLoading(false)
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  useEffect(() => {
+    setStats(prev => ({
+      ...prev,
+      totalInstances: sharedData.loaded.profiles ? sharedData.profiles.length : prev.totalInstances,
+      runningInstances: sharedData.loaded.profiles ? sharedData.profiles.filter(item => item.running).length : prev.runningInstances,
+      proxyCount: sharedData.loaded.proxies ? sharedData.proxies.length : prev.proxyCount,
+      coreCount: sharedData.loaded.cores ? sharedData.cores.length : prev.coreCount,
+    }))
+  }, [
+    sharedData.cores,
+    sharedData.loaded.cores,
+    sharedData.loaded.profiles,
+    sharedData.loaded.proxies,
+    sharedData.profiles,
+    sharedData.proxies,
+  ])
+
+  useEffect(() => {
+    const scheduleRefresh = () => {
+      if (document.visibilityState !== 'visible') return
+      if (refreshTimerRef.current !== null) {
+        window.clearTimeout(refreshTimerRef.current)
+      }
+      refreshTimerRef.current = window.setTimeout(() => {
+        refreshTimerRef.current = null
+        void load({ silent: true, reload: false })
+      }, 150)
     }
-  }
+
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void load({ silent: true, reload: false })
+      }
+    }
+
+    const offStarted = onRuntimeEvent('browser:instance:started', scheduleRefresh)
+    const offUpdated = onRuntimeEvent('browser:instance:updated', scheduleRefresh)
+    const offStopped = onRuntimeEvent('browser:instance:stopped', scheduleRefresh)
+    const offCrashed = onRuntimeEvent('browser:instance:crashed', scheduleRefresh)
+    const offProfilesUpdated = onRuntimeEvent('browser:profiles:updated', scheduleRefresh)
+    const offProxiesUpdated = onRuntimeEvent('browser:proxies:updated', scheduleRefresh)
+    const offCoresUpdated = onRuntimeEvent('browser:cores:updated', scheduleRefresh)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    window.addEventListener('focus', refreshWhenVisible)
+
+    return () => {
+      if (refreshTimerRef.current !== null) {
+        window.clearTimeout(refreshTimerRef.current)
+        refreshTimerRef.current = null
+      }
+      offStarted?.()
+      offUpdated?.()
+      offStopped?.()
+      offCrashed?.()
+      offProfilesUpdated?.()
+      offProxiesUpdated?.()
+      offCoresUpdated?.()
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+      window.removeEventListener('focus', refreshWhenVisible)
+    }
+  }, [load])
 
   const v = (n: number) => loading ? '-' : n.toString()
 

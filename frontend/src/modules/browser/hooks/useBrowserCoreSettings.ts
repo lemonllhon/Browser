@@ -4,7 +4,6 @@ import { onRuntimeEvent } from '../../../shared/backend/runtime'
 import type { BrowserCore, BrowserCoreInput, BrowserCoreValidateResult, BrowserSettings } from '../types'
 import {
   deleteBrowserCore,
-  fetchBrowserSettings,
   saveBrowserCore,
   saveBrowserSettings,
   setDefaultBrowserCore,
@@ -12,6 +11,7 @@ import {
 } from '../api'
 import { resolveActionErrorMessage } from '../utils/actionErrors'
 import { useVisibleRefresh } from './useVisibleRefresh'
+import { getBrowserSharedDataSnapshot, refreshBrowserSharedData, useBrowserSharedData } from '../stores/browserSharedDataStore'
 
 const DEFAULT_BROWSER_SETTINGS: BrowserSettings = {
   userDataRoot: 'data',
@@ -47,6 +47,7 @@ export function useBrowserCoreSettings({ cores, loadCores }: UseBrowserCoreSetti
   const [coreValidation, setCoreValidation] = useState<BrowserCoreValidateResult | null>(null)
   const [savingCore, setSavingCore] = useState(false)
   const dirtySettingsFieldsRef = useRef<Set<BrowserSettingsField>>(new Set())
+  const sharedData = useBrowserSharedData(['settings'])
 
   const applySettingsSnapshot = useCallback((data: BrowserSettings, preserveDirty = false) => {
     const dirtyFields = dirtySettingsFieldsRef.current
@@ -67,24 +68,23 @@ export function useBrowserCoreSettings({ cores, loadCores }: UseBrowserCoreSetti
   }, [])
 
   const loadSettings = useCallback(async (preserveDirty = false) => {
-    const data = await fetchBrowserSettings()
-    applySettingsSnapshot(data, preserveDirty)
+    await refreshBrowserSharedData(['settings'], { silent: true })
+    applySettingsSnapshot(getBrowserSharedDataSnapshot().browserSettings, preserveDirty)
   }, [applySettingsSnapshot])
 
   useEffect(() => {
-    const offSettingsUpdated = onRuntimeEvent('browser:settings:updated', () => {
-      if (settingsModalOpen) {
-        void loadSettings(true)
-      }
-    })
     const offCoresUpdated = onRuntimeEvent('browser:cores:updated', () => {
       void loadCores()
     })
     return () => {
-      offSettingsUpdated?.()
       offCoresUpdated?.()
     }
-  }, [settingsModalOpen, loadCores, loadSettings])
+  }, [loadCores])
+
+  useEffect(() => {
+    if (!settingsModalOpen || !sharedData.loaded.settings || savingSettings) return
+    applySettingsSnapshot(sharedData.browserSettings, true)
+  }, [applySettingsSnapshot, savingSettings, settingsModalOpen, sharedData.browserSettings, sharedData.loaded.settings])
 
   useVisibleRefresh(() => {
     if (!settingsModalOpen) return
@@ -105,6 +105,7 @@ export function useBrowserCoreSettings({ cores, loadCores }: UseBrowserCoreSetti
         defaultFingerprintArgs: fingerprintText.split('\n').map(value => value.trim()).filter(Boolean),
         defaultLaunchArgs: launchText.split('\n').map(value => value.trim()).filter(Boolean),
       })
+      await refreshBrowserSharedData(['settings'], { silent: true })
       dirtySettingsFieldsRef.current.clear()
       toast.success('配置已保存')
       setSettingsModalOpen(false)

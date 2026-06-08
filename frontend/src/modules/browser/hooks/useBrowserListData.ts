@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import type { BrowserCore, BrowserGroupWithCount, BrowserProfile, BrowserProxy } from '../types'
-import { fetchBrowserCores, fetchBrowserProfiles, fetchBrowserProxies, fetchGroups } from '../api'
+import { getBrowserSharedDataSnapshot, refreshBrowserSharedData, useBrowserSharedData } from '../stores/browserSharedDataStore'
 
 type PendingIdSetter = Dispatch<SetStateAction<Set<string>>>
 
@@ -39,6 +39,7 @@ export function useBrowserListData({ setStartingIds, setStoppingIds }: UseBrowse
   const [cores, setCores] = useState<BrowserCore[]>([])
   const profilesRef = useRef<BrowserProfile[]>([])
   const silentRefreshInFlightRef = useRef(false)
+  const sharedData = useBrowserSharedData(['profiles', 'groups', 'proxies', 'cores'])
 
   const replaceProfilesState = useCallback((items: BrowserProfile[]) => {
     profilesRef.current = items
@@ -86,7 +87,8 @@ export function useBrowserListData({ setStartingIds, setStoppingIds }: UseBrowse
       silentRefreshInFlightRef.current = true
     }
     try {
-      const items = await fetchBrowserProfiles()
+      await refreshBrowserSharedData(['profiles', 'tags'], { silent })
+      const items = getBrowserSharedDataSnapshot().profiles
       syncProfiles(items, syncRuntimeState)
       return items
     } finally {
@@ -99,15 +101,18 @@ export function useBrowserListData({ setStartingIds, setStoppingIds }: UseBrowse
   }, [syncProfiles])
 
   const loadGroups = useCallback(async () => {
-    setGroups(await fetchGroups())
+    await refreshBrowserSharedData(['groups'])
+    setGroups(getBrowserSharedDataSnapshot().groups)
   }, [])
 
   const loadCores = useCallback(async () => {
-    setCores(await fetchBrowserCores())
+    await refreshBrowserSharedData(['cores'])
+    setCores(getBrowserSharedDataSnapshot().cores)
   }, [])
 
   const loadProxies = useCallback(async () => {
-    setProxies(await fetchBrowserProxies())
+    await refreshBrowserSharedData(['proxies'])
+    setProxies(getBrowserSharedDataSnapshot().proxies)
   }, [])
 
   useEffect(() => {
@@ -116,6 +121,30 @@ export function useBrowserListData({ setStartingIds, setStoppingIds }: UseBrowse
     void loadProxies()
     void loadCores()
   }, [loadCores, loadGroups, loadProfiles, loadProxies])
+
+  useEffect(() => {
+    if (sharedData.loaded.profiles) {
+      syncProfiles(sharedData.profiles, true)
+    }
+  }, [sharedData.loaded.profiles, sharedData.profiles, syncProfiles])
+
+  useEffect(() => {
+    if (sharedData.loaded.groups) {
+      setGroups(sharedData.groups)
+    }
+  }, [sharedData.loaded.groups, sharedData.groups])
+
+  useEffect(() => {
+    if (sharedData.loaded.proxies) {
+      setProxies(sharedData.proxies)
+    }
+  }, [sharedData.loaded.proxies, sharedData.proxies])
+
+  useEffect(() => {
+    if (sharedData.loaded.cores) {
+      setCores(sharedData.cores)
+    }
+  }, [sharedData.loaded.cores, sharedData.cores])
 
   return {
     profiles,

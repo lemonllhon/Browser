@@ -19,6 +19,7 @@ func registerProtoAppHandlers(app *App, dispatcher *protoipc.Dispatcher) {
 	dispatcher.Register(protoipc.MethodAppReleasePageOpen, app.handleProtoAppReleasePageOpen)
 	dispatcher.Register(protoipc.MethodAppDashboardStats, app.handleProtoAppDashboardStats)
 	dispatcher.Register(protoipc.MethodAppPerformanceSnapshot, app.handleProtoAppPerformanceSnapshot)
+	dispatcher.Register(protoipc.MethodAppDataVersions, app.handleProtoAppDataVersions)
 	dispatcher.Register(protoipc.MethodAppLicenseStatus, app.handleProtoAppLicenseStatus)
 	dispatcher.Register(protoipc.MethodAppCDKeyRedeem, app.handleProtoAppCDKeyRedeem)
 	dispatcher.Register(protoipc.MethodAppGithubStarRedeem, app.handleProtoAppGithubStarRedeem)
@@ -94,6 +95,10 @@ func (a *App) handleProtoAppDashboardStats(ctx context.Context, request protoipc
 
 func (a *App) handleProtoAppPerformanceSnapshot(ctx context.Context, request protoipc.Envelope) ([]byte, *protoipc.RPCError) {
 	return protoipc.EncodeAppPerformanceSnapshot(appPerformanceSnapshotToProto(a.GetPerformanceSnapshot())), nil
+}
+
+func (a *App) handleProtoAppDataVersions(ctx context.Context, request protoipc.Envelope) ([]byte, *protoipc.RPCError) {
+	return protoipc.EncodeAppDataVersions(appDataVersionsToProto(a.GetDataVersions())), nil
 }
 
 func (a *App) handleProtoAppLicenseStatus(ctx context.Context, request protoipc.Envelope) ([]byte, *protoipc.RPCError) {
@@ -315,6 +320,22 @@ func appPerformanceSnapshotToProto(snapshot AppPerformanceSnapshot) protoipc.App
 	}
 }
 
+func appDataVersionsToProto(versions AppDataVersions) protoipc.AppDataVersions {
+	return protoipc.AppDataVersions{
+		TimestampMS:       versions.TimestampMS,
+		ProfilesVersion:   versions.ProfilesVersion,
+		GroupsVersion:     versions.GroupsVersion,
+		ProxiesVersion:    versions.ProxiesVersion,
+		CoresVersion:      versions.CoresVersion,
+		ExtensionsVersion: versions.ExtensionsVersion,
+		DefaultsVersion:   versions.DefaultsVersion,
+		SettingsVersion:   versions.SettingsVersion,
+		CookiesVersion:    versions.CookiesVersion,
+		SnapshotsVersion:  versions.SnapshotsVersion,
+		LogsVersion:       versions.LogsVersion,
+	}
+}
+
 func backupActionResultToProto(result map[string]interface{}) protoipc.BackupActionResult {
 	return protoipc.BackupActionResult{
 		Cancelled:        mapBool(result, "cancelled"),
@@ -429,6 +450,7 @@ func isProtoRuntimeEvent(eventName string) bool {
 		"browser:extensions:updated",
 		"browser:cookies:updated",
 		"browser:snapshots:updated",
+		"browser:logs:updated",
 		"window-sync:master-closed",
 		"proxy:bridge:failed",
 		"proxy:bridge:died":
@@ -448,17 +470,31 @@ func appRuntimeEventPayloadToProto(optionalData ...any) protoipc.AppRuntimeEvent
 		return protoipc.AppRuntimeEventPayload{ProfileID: strings.TrimSpace(value)}
 	case map[string]interface{}:
 		return protoipc.AppRuntimeEventPayload{
-			ProfileID:      mapString(value, "profileId"),
-			ProfileName:    mapString(value, "profileName"),
-			Error:          mapString(value, "error"),
-			Key:            mapString(value, "key"),
-			Engine:         mapString(value, "engine"),
-			DebugPort:      int32(mapInt64(value, "debugPort")),
-			PID:            int32(mapInt64(value, "pid")),
-			Reused:         mapBool(value, "reused"),
-			Running:        mapBool(value, "running"),
-			DebugReady:     mapBool(value, "debugReady"),
-			RuntimeWarning: mapString(value, "runtimeWarning"),
+			ProfileID:         mapString(value, "profileId"),
+			ProfileName:       mapString(value, "profileName"),
+			Error:             mapString(value, "error"),
+			Key:               mapString(value, "key"),
+			Engine:            mapString(value, "engine"),
+			DebugPort:         int32(mapInt64(value, "debugPort")),
+			PID:               int32(mapInt64(value, "pid")),
+			Reused:            mapBool(value, "reused"),
+			Running:           mapBool(value, "running"),
+			DebugReady:        mapBool(value, "debugReady"),
+			RuntimeWarning:    mapString(value, "runtimeWarning"),
+			Domain:            mapString(value, "domain"),
+			Reason:            mapString(value, "reason"),
+			Version:           mapInt64(value, "version"),
+			ProfilesVersion:   mapInt64(value, "profilesVersion"),
+			GroupsVersion:     mapInt64(value, "groupsVersion"),
+			ProxiesVersion:    mapInt64(value, "proxiesVersion"),
+			CoresVersion:      mapInt64(value, "coresVersion"),
+			ExtensionsVersion: mapInt64(value, "extensionsVersion"),
+			DefaultsVersion:   mapInt64(value, "defaultsVersion"),
+			SettingsVersion:   mapInt64(value, "settingsVersion"),
+			CookiesVersion:    mapInt64(value, "cookiesVersion"),
+			SnapshotsVersion:  mapInt64(value, "snapshotsVersion"),
+			LogsVersion:       mapInt64(value, "logsVersion"),
+			ChangedIDs:        mapStringList(value, "changedIds"),
 		}
 	case map[string]string:
 		return protoipc.AppRuntimeEventPayload{
@@ -486,6 +522,24 @@ func appLogFieldsJSON(fields map[string]interface{}) string {
 		return ""
 	}
 	return string(fallback)
+}
+
+func mapStringList(value map[string]interface{}, key string) []string {
+	raw := value[key]
+	switch items := raw.(type) {
+	case []string:
+		return normalizeChangedIDs(items)
+	case []interface{}:
+		out := make([]string, 0, len(items))
+		for _, item := range items {
+			out = append(out, strings.TrimSpace(fmt.Sprint(item)))
+		}
+		return normalizeChangedIDs(out)
+	case string:
+		return normalizeChangedIDs([]string{items})
+	default:
+		return nil
+	}
 }
 
 func (a *App) emitBackupProgressEvent(eventName string, event backupProgressEvent) {

@@ -32,8 +32,24 @@ interface BackupExportLogItem {
   text: string
 }
 
+const SETTINGS_STORAGE_KEY = 'app_settings'
+const SETTINGS_BROADCAST_CHANNEL = 'trace-app-settings'
+
 function isOfficialInstallableUpdate(kind?: string) {
   return kind === 'installer' || kind === 'selfupdate'
+}
+
+function broadcastSettingsUpdated() {
+  if (typeof BroadcastChannel === 'undefined') {
+    return
+  }
+  try {
+    const channel = new BroadcastChannel(SETTINGS_BROADCAST_CHANNEL)
+    channel.postMessage({ type: 'settings-updated', sentAt: Date.now() })
+    channel.close()
+  } catch {
+    // localStorage storage events are still available as a fallback for other windows.
+  }
 }
 
 export function SettingsPage() {
@@ -53,11 +69,49 @@ export function SettingsPage() {
   const [updateModalOpen, setUpdateModalOpen] = useState(false)
   const [updateAction, setUpdateAction] = useState<'none' | 'download-now'>('none')
   const exportLogsRef = useRef<HTMLDivElement | null>(null)
+  const hasChangesRef = useRef(false)
+  const savingRef = useRef(false)
   const setImportState = useBackupStore((s) => s.setImportState)
   const clearImportState = useBackupStore((s) => s.clearImportState)
 
   useEffect(() => {
     loadSettings()
+  }, [])
+
+  useEffect(() => {
+    hasChangesRef.current = hasChanges
+  }, [hasChanges])
+
+  useEffect(() => {
+    savingRef.current = saving
+  }, [saving])
+
+  useEffect(() => {
+    let channel: BroadcastChannel | null = null
+    const refreshFromExternalWindow = () => {
+      if (hasChangesRef.current || savingRef.current) {
+        return
+      }
+      void loadSettings()
+    }
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === SETTINGS_STORAGE_KEY) {
+        refreshFromExternalWindow()
+      }
+    }
+    window.addEventListener('storage', handleStorage)
+    if (typeof BroadcastChannel !== 'undefined') {
+      channel = new BroadcastChannel(SETTINGS_BROADCAST_CHANNEL)
+      channel.onmessage = event => {
+        if (event.data?.type === 'settings-updated') {
+          refreshFromExternalWindow()
+        }
+      }
+    }
+    return () => {
+      window.removeEventListener('storage', handleStorage)
+      channel?.close()
+    }
   }, [])
 
   useEffect(() => {
@@ -208,6 +262,7 @@ export function SettingsPage() {
       const success = await saveSettings(settings)
       if (success) {
         setHasChanges(false)
+        broadcastSettingsUpdated()
         toast.success('设置已保存')
       }
     } catch (error: any) {
@@ -264,6 +319,7 @@ export function SettingsPage() {
       const data = await resetSettings()
       setSettings(data)
       setHasChanges(false)
+      broadcastSettingsUpdated()
     }
   }
 
