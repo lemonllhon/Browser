@@ -63,6 +63,10 @@ const OrganizationManagementPage = lazyNamed(() => import('./modules/browser/pag
 const AutomationPage = lazyNamed(() => import('./modules/browser/pages/AutomationPage'), 'AutomationPage')
 const UsageTutorialPage = lazyNamed(() => import('./modules/browser/pages/UsageTutorialPage'), 'UsageTutorialPage')
 const QuickLaunchModal = lazyNamed(() => import('./modules/browser/components/QuickLaunchModal'), 'QuickLaunchModal')
+const FirstRunOnboarding = lazy(async () => {
+  const module = await import('./modules/onboarding/components/FirstRunOnboarding')
+  return { default: module.FirstRunOnboarding }
+})
 
 async function saveNormalWindowSize() {
   try {
@@ -669,6 +673,9 @@ function App() {
         {autoUpdateModal}
         <CloseConfirmModal />
         <WindowSyncMasterClosedModal />
+        <Suspense fallback={null}>
+          <FirstRunOnboarding />
+        </Suspense>
         <Suspense fallback={null}>
           {quickLaunchOpen ? (
             <QuickLaunchModal open={quickLaunchOpen} onClose={() => setQuickLaunchOpen(false)} />

@@ -765,3 +765,193 @@ input, select, textarea {
   height: 18px;
   accent-color: var(--color-accent);
 }
+
+/* 首次使用引导演示 */
+.onboarding-stage {
+  position: relative;
+  min-height: 360px;
+  overflow: hidden;
+  border: 1px solid var(--color-border-default);
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--color-accent) 10%, transparent), transparent 42%),
+    var(--color-bg-base);
+}
+
+.onboarding-stage::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--color-border-muted) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-border-muted) 1px, transparent 1px);
+  background-size: 28px 28px;
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.onboarding-stage-scene {
+  position: absolute;
+  inset: 0;
+  animation: fadeIn 0.22s ease-out;
+}
+
+.onboarding-stage-card {
+  border: 1px solid var(--color-border-default);
+  border-radius: 10px;
+  background: var(--color-bg-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.onboarding-float {
+  animation: onboardingFloat 4.2s ease-in-out infinite;
+}
+
+.onboarding-delay-1 {
+  animation-delay: 160ms;
+}
+
+.onboarding-delay-2 {
+  animation-delay: 320ms;
+}
+
+.onboarding-delay-3 {
+  animation-delay: 480ms;
+}
+
+.onboarding-package-drop {
+  animation: onboardingPackageDrop 1.7s ease-out infinite;
+}
+
+.onboarding-proxy-node {
+  animation: onboardingProxyFlow 2.8s ease-in-out infinite;
+}
+
+.onboarding-pool-pulse {
+  animation: onboardingPoolPulse 2.4s ease-in-out infinite;
+}
+
+.onboarding-fill-bar {
+  transform-origin: left center;
+  animation: onboardingFillBar 1.6s ease-out both;
+}
+
+.onboarding-card-create {
+  animation: onboardingCardCreate 2s ease-in-out infinite;
+}
+
+.onboarding-sync-cursor {
+  animation: onboardingSyncCursor 2.7s ease-in-out infinite;
+}
+
+.onboarding-finish-pop {
+  animation: onboardingFinishPop 2.8s ease-in-out infinite;
+}
+
+@keyframes onboardingFloat {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes onboardingPackageDrop {
+  0% {
+    opacity: 0;
+    transform: translateY(-38px) scale(0.92);
+  }
+  35% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  78% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0.55;
+    transform: translateY(42px) scale(0.96);
+  }
+}
+
+@keyframes onboardingProxyFlow {
+  0%, 100% {
+    opacity: 0.72;
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    opacity: 1;
+    transform: translate3d(18px, 10px, 0);
+  }
+}
+
+@keyframes onboardingPoolPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 20%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 12px color-mix(in srgb, var(--color-accent) 0%, transparent);
+  }
+}
+
+@keyframes onboardingFillBar {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes onboardingCardCreate {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+  }
+  45% {
+    transform: translateY(-6px) scale(1.02);
+  }
+}
+
+@keyframes onboardingSyncCursor {
+  0%, 100% {
+    transform: translate(0, 0);
+  }
+  35% {
+    transform: translate(86px, -22px);
+  }
+  70% {
+    transform: translate(118px, 56px);
+  }
+}
+
+@keyframes onboardingFinishPop {
+  0%, 100% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.08);
+  }
+}
+
+@media (max-width: 720px) {
+  .onboarding-stage {
+    min-height: 300px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-stage-scene,
+  .onboarding-float,
+  .onboarding-package-drop,
+  .onboarding-proxy-node,
+  .onboarding-pool-pulse,
+  .onboarding-fill-bar,
+  .onboarding-card-create,
+  .onboarding-sync-cursor,
+  .onboarding-finish-pop {
+    animation: none !important;
+    transition: none !important;
+  }
+}

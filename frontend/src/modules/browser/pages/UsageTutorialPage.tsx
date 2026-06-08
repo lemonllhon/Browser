@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { BookOpen, Download, Globe, Keyboard, Layers, Monitor, Rocket } from 'lucide-react'
+import { BookOpen, Download, Globe, Keyboard, Layers, Monitor, PlayCircle, Rocket } from 'lucide-react'
 import { Button, Card } from '../../../shared/components'
 import { openExternalURL } from '../../../shared/backend/runtime'
 import type { ReactNode } from 'react'
 import { fetchLaunchServerInfo, type LaunchServerInfo } from '../api'
+import { requestFirstRunOnboardingReplay } from '../../onboarding'
 
 const DEFAULT_LAUNCH_BASE_URL = 'http://127.0.0.1:19876'
 const DEFAULT_API_AUTH: LaunchServerInfo['apiAuth'] = {
@@ -106,6 +107,10 @@ export function UsageTutorialPage() {
               按照下面步骤，你可以完成内核下载、代理池配置、实例创建与启动。
             </p>
           </div>
+          <Button variant="secondary" onClick={requestFirstRunOnboardingReplay}>
+            <PlayCircle className="w-4 h-4" />
+            播放新手演示
+          </Button>
         </div>
       </Card>
 
