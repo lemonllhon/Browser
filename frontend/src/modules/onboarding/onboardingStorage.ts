@@ -58,7 +58,12 @@ export function resetFirstRunOnboarding() {
   }
 }
 
-export function requestFirstRunOnboardingReplay() {
+export function requestFirstRunOnboardingReplay(options?: { startStepId?: string }) {
   if (typeof window === 'undefined') return
-  window.dispatchEvent(new CustomEvent(FIRST_RUN_ONBOARDING_OPEN_EVENT, { detail: { manual: true } }))
+  window.dispatchEvent(new CustomEvent(FIRST_RUN_ONBOARDING_OPEN_EVENT, {
+    detail: {
+      manual: true,
+      startStepId: options?.startStepId,
+    },
+  }))
 }

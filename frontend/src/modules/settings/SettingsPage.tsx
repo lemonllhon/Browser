@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Save, RotateCcw, Upload, Download, RefreshCw, ExternalLink } from 'lucide-react'
+import { Save, RotateCcw, Upload, Download, RefreshCw, ExternalLink, PlayCircle } from 'lucide-react'
 import { Card, Button, FormItem, Input, Select, Switch, ThemeSwitcher, toast, Modal, Progress } from '../../shared/components'
 import {
   checkAppUpdate,
@@ -24,6 +24,7 @@ import {
 import type { AppSettings } from './types'
 import { defaultSettings } from './types'
 import { useBackupStore } from '../../store/backupStore'
+import { requestFirstRunOnboardingReplay } from '../onboarding'
 
 interface BackupExportLogItem {
   id: number
@@ -448,6 +449,10 @@ export function SettingsPage() {
           <p className="text-sm text-[var(--color-text-muted)] mt-1">配置应用的各项参数</p>
         </div>
         <div className="flex gap-2">
+          <Button variant="secondary" size="sm" onClick={() => requestFirstRunOnboardingReplay()}>
+            <PlayCircle className="w-4 h-4" />
+            播放新手演示
+          </Button>
           <Button variant="secondary" size="sm" onClick={handleReset}>
             <RotateCcw className="w-4 h-4" />
             重置

@@ -107,7 +107,7 @@ export function UsageTutorialPage() {
               按照下面步骤，你可以完成内核下载、代理池配置、实例创建与启动。
             </p>
           </div>
-          <Button variant="secondary" onClick={requestFirstRunOnboardingReplay}>
+          <Button variant="secondary" onClick={() => requestFirstRunOnboardingReplay()}>
             <PlayCircle className="w-4 h-4" />
             播放新手演示
           </Button>
