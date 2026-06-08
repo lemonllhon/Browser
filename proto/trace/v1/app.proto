@@ -27,6 +27,31 @@ message AppDashboardStats {
   string app_version = 6;
 }
 
+message AppPerformanceSnapshot {
+  int64 timestamp_ms = 1;
+  string app_version = 2;
+  string platform = 3;
+  string arch = 4;
+  int32 mem_alloc_mb = 5;
+  int32 mem_sys_mb = 6;
+  int32 mem_heap_inuse_mb = 7;
+  int32 mem_num_gc = 8;
+  int32 goroutines = 9;
+  int32 total_instances = 10;
+  int32 running_instances = 11;
+  int32 browser_processes = 12;
+  int32 proxy_bridge_refs = 13;
+  int32 xray_bridge_refs = 14;
+  int32 clash_bridge_refs = 15;
+  int32 switch_bridge_refs = 16;
+  int32 auth_proxy_bridge_refs = 17;
+  bool window_sync_active = 18;
+  int32 window_sync_windows = 19;
+  int32 window_sync_controllable = 20;
+  int64 window_sync_events_total = 21;
+  int64 window_sync_dispatch_total = 22;
+}
+
 message AppLicenseStatus {
   int32 max_limit = 1;
   int32 used_count = 2;

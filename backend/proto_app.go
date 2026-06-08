@@ -18,6 +18,7 @@ func registerProtoAppHandlers(app *App, dispatcher *protoipc.Dispatcher) {
 	dispatcher.Register(protoipc.MethodAppPathOpen, app.handleProtoAppPathOpen)
 	dispatcher.Register(protoipc.MethodAppReleasePageOpen, app.handleProtoAppReleasePageOpen)
 	dispatcher.Register(protoipc.MethodAppDashboardStats, app.handleProtoAppDashboardStats)
+	dispatcher.Register(protoipc.MethodAppPerformanceSnapshot, app.handleProtoAppPerformanceSnapshot)
 	dispatcher.Register(protoipc.MethodAppLicenseStatus, app.handleProtoAppLicenseStatus)
 	dispatcher.Register(protoipc.MethodAppCDKeyRedeem, app.handleProtoAppCDKeyRedeem)
 	dispatcher.Register(protoipc.MethodAppGithubStarRedeem, app.handleProtoAppGithubStarRedeem)
@@ -89,6 +90,10 @@ func (a *App) handleProtoAppDashboardStats(ctx context.Context, request protoipc
 		MemUsedMB:        int32(mapInt64(stats, "memUsedMB")),
 		AppVersion:       mapString(stats, "appVersion"),
 	}), nil
+}
+
+func (a *App) handleProtoAppPerformanceSnapshot(ctx context.Context, request protoipc.Envelope) ([]byte, *protoipc.RPCError) {
+	return protoipc.EncodeAppPerformanceSnapshot(appPerformanceSnapshotToProto(a.GetPerformanceSnapshot())), nil
 }
 
 func (a *App) handleProtoAppLicenseStatus(ctx context.Context, request protoipc.Envelope) ([]byte, *protoipc.RPCError) {
@@ -281,6 +286,33 @@ func (a *App) handleProtoBackupImport(ctx context.Context, request protoipc.Enve
 		return nil, protoBrowserOperationError("加载配置失败", err)
 	}
 	return protoipc.EncodeBackupActionResult(backupActionResultToProto(result)), nil
+}
+
+func appPerformanceSnapshotToProto(snapshot AppPerformanceSnapshot) protoipc.AppPerformanceSnapshot {
+	return protoipc.AppPerformanceSnapshot{
+		TimestampMS:             snapshot.TimestampMS,
+		AppVersion:              snapshot.AppVersion,
+		Platform:                snapshot.Platform,
+		Arch:                    snapshot.Arch,
+		MemAllocMB:              snapshot.MemAllocMB,
+		MemSysMB:                snapshot.MemSysMB,
+		MemHeapInuseMB:          snapshot.MemHeapInuseMB,
+		MemNumGC:                snapshot.MemNumGC,
+		Goroutines:              snapshot.Goroutines,
+		TotalInstances:          snapshot.TotalInstances,
+		RunningInstances:        snapshot.RunningInstances,
+		BrowserProcesses:        snapshot.BrowserProcesses,
+		ProxyBridgeRefs:         snapshot.ProxyBridgeRefs,
+		XrayBridgeRefs:          snapshot.XrayBridgeRefs,
+		ClashBridgeRefs:         snapshot.ClashBridgeRefs,
+		SwitchBridgeRefs:        snapshot.SwitchBridgeRefs,
+		AuthProxyBridgeRefs:     snapshot.AuthProxyBridgeRefs,
+		WindowSyncActive:        snapshot.WindowSyncActive,
+		WindowSyncWindows:       snapshot.WindowSyncWindows,
+		WindowSyncControllable:  snapshot.WindowSyncControllable,
+		WindowSyncEventsTotal:   snapshot.WindowSyncEventsTotal,
+		WindowSyncDispatchTotal: snapshot.WindowSyncDispatchTotal,
+	}
 }
 
 func backupActionResultToProto(result map[string]interface{}) protoipc.BackupActionResult {

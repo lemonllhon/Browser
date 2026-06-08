@@ -11,6 +11,7 @@ import {
   METHOD_APP_LOG_CLEAR,
   METHOD_APP_LOG_LIST,
   METHOD_APP_PATH_OPEN,
+  METHOD_APP_PERFORMANCE_SNAPSHOT_GET,
   METHOD_APP_QUIT_ONLY,
   METHOD_APP_REMOTE_AUTHOR_PROFILE_FETCH,
   METHOD_APP_RELEASE_PAGE_OPEN,
@@ -52,6 +53,31 @@ export type ProtoAppDashboardStats = {
   coreCount: number
   memUsedMB: number
   appVersion: string
+}
+
+export type ProtoAppPerformanceSnapshot = {
+  timestampMs: number
+  appVersion: string
+  platform: string
+  arch: string
+  memAllocMB: number
+  memSysMB: number
+  memHeapInuseMB: number
+  memNumGC: number
+  goroutines: number
+  totalInstances: number
+  runningInstances: number
+  browserProcesses: number
+  proxyBridgeRefs: number
+  xrayBridgeRefs: number
+  clashBridgeRefs: number
+  switchBridgeRefs: number
+  authProxyBridgeRefs: number
+  windowSyncActive: boolean
+  windowSyncWindows: number
+  windowSyncControllable: number
+  windowSyncEventsTotal: number
+  windowSyncDispatchTotal: number
 }
 
 export type ProtoAppLicenseStatus = {
@@ -158,6 +184,11 @@ export async function openAppReleasePage(url = ''): Promise<boolean> {
 export async function getDashboardStats(): Promise<ProtoAppDashboardStats> {
   const payload = await appProtoClient.request(METHOD_APP_DASHBOARD_STATS_GET, new Uint8Array())
   return decodeAppDashboardStats(payload)
+}
+
+export async function getPerformanceSnapshot(): Promise<ProtoAppPerformanceSnapshot> {
+  const payload = await appProtoClient.request(METHOD_APP_PERFORMANCE_SNAPSHOT_GET, new Uint8Array())
+  return decodeAppPerformanceSnapshot(payload)
 }
 
 export async function getLicenseStatus(): Promise<ProtoAppLicenseStatus> {
@@ -369,6 +400,110 @@ export function decodeAppDashboardStats(payload: Uint8Array): ProtoAppDashboardS
     }
   }
   return stats
+}
+
+export function decodeAppPerformanceSnapshot(payload: Uint8Array): ProtoAppPerformanceSnapshot {
+  const snapshot: ProtoAppPerformanceSnapshot = {
+    timestampMs: 0,
+    appVersion: '',
+    platform: '',
+    arch: '',
+    memAllocMB: 0,
+    memSysMB: 0,
+    memHeapInuseMB: 0,
+    memNumGC: 0,
+    goroutines: 0,
+    totalInstances: 0,
+    runningInstances: 0,
+    browserProcesses: 0,
+    proxyBridgeRefs: 0,
+    xrayBridgeRefs: 0,
+    clashBridgeRefs: 0,
+    switchBridgeRefs: 0,
+    authProxyBridgeRefs: 0,
+    windowSyncActive: false,
+    windowSyncWindows: 0,
+    windowSyncControllable: 0,
+    windowSyncEventsTotal: 0,
+    windowSyncDispatchTotal: 0,
+  }
+  for (const field of readFields(payload)) {
+    if (field.wireType === WireType.LengthDelimited) {
+      const text = decodeString(field.value)
+      if (field.fieldNumber === 2) {
+        snapshot.appVersion = text
+      } else if (field.fieldNumber === 3) {
+        snapshot.platform = text
+      } else if (field.fieldNumber === 4) {
+        snapshot.arch = text
+      }
+      continue
+    }
+    if (field.wireType !== WireType.Varint) {
+      continue
+    }
+    const number = Number(decodeVarintField(field.value))
+    switch (field.fieldNumber) {
+      case 1:
+        snapshot.timestampMs = number
+        break
+      case 5:
+        snapshot.memAllocMB = number
+        break
+      case 6:
+        snapshot.memSysMB = number
+        break
+      case 7:
+        snapshot.memHeapInuseMB = number
+        break
+      case 8:
+        snapshot.memNumGC = number
+        break
+      case 9:
+        snapshot.goroutines = number
+        break
+      case 10:
+        snapshot.totalInstances = number
+        break
+      case 11:
+        snapshot.runningInstances = number
+        break
+      case 12:
+        snapshot.browserProcesses = number
+        break
+      case 13:
+        snapshot.proxyBridgeRefs = number
+        break
+      case 14:
+        snapshot.xrayBridgeRefs = number
+        break
+      case 15:
+        snapshot.clashBridgeRefs = number
+        break
+      case 16:
+        snapshot.switchBridgeRefs = number
+        break
+      case 17:
+        snapshot.authProxyBridgeRefs = number
+        break
+      case 18:
+        snapshot.windowSyncActive = number !== 0
+        break
+      case 19:
+        snapshot.windowSyncWindows = number
+        break
+      case 20:
+        snapshot.windowSyncControllable = number
+        break
+      case 21:
+        snapshot.windowSyncEventsTotal = number
+        break
+      case 22:
+        snapshot.windowSyncDispatchTotal = number
+        break
+    }
+  }
+  return snapshot
 }
 
 export function decodeAppLicenseStatus(payload: Uint8Array): ProtoAppLicenseStatus {

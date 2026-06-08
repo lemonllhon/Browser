@@ -354,6 +354,7 @@ func (a *App) handleWindowSyncPayload(seq int, payload string) {
 	if err := json.Unmarshal([]byte(payload), &event); err != nil {
 		return
 	}
+	a.windowSyncEventsTotal.Add(1)
 	state := a.windowSyncGetState(false)
 	if state == nil || !state.Active || state.Paused {
 		return
@@ -374,6 +375,7 @@ func (a *App) handleWindowSyncPayload(seq int, payload string) {
 		return
 	}
 
+	dispatched := int64(0)
 	for _, item := range state.Windows {
 		if item.ProfileId == state.MasterProfileId {
 			continue
@@ -389,7 +391,12 @@ func (a *App) handleWindowSyncPayload(seq int, payload string) {
 				logger.F("error", err.Error()),
 			)
 			a.handleWindowSyncControlledUnavailable(item, "dispatch-unavailable")
+			continue
 		}
+		dispatched++
+	}
+	if dispatched > 0 {
+		a.windowSyncDispatchTotal.Add(dispatched)
 	}
 }
 

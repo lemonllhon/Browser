@@ -3,29 +3,30 @@ package protoipc
 import "google.golang.org/protobuf/encoding/protowire"
 
 const (
-	MethodAppConfigGet          = "trace.app.ConfigGet"
-	MethodAppPathOpen           = "trace.app.PathOpen"
-	MethodAppReleasePageOpen    = "trace.app.ReleasePageOpen"
-	MethodAppDashboardStats     = "trace.app.DashboardStatsGet"
-	MethodAppLicenseStatus      = "trace.app.LicenseStatusGet"
-	MethodAppCDKeyRedeem        = "trace.app.CDKeyRedeem"
-	MethodAppGithubStarRedeem   = "trace.app.GithubStarRedeem"
-	MethodAppConfigReload       = "trace.app.ConfigReload"
-	MethodAppCDKeysGenerate     = "trace.app.CDKeysGenerate"
-	MethodAppRemoteProfileFetch = "trace.app.RemoteAuthorProfileFetch"
-	MethodAppLogList            = "trace.app.LogList"
-	MethodAppLogClear           = "trace.app.LogClear"
-	MethodAppForceQuit          = "trace.app.ForceQuit"
-	MethodAppQuitOnly           = "trace.app.QuitOnly"
-	MethodAppWindowStateSave    = "trace.app.WindowStateSave"
-	MethodAppEnvironmentGet     = "trace.app.EnvironmentGet"
-	MethodAppWindowSizeGet      = "trace.app.WindowSizeGet"
-	MethodAppWindowStateGet     = "trace.app.WindowStateGet"
-	MethodAppWindowHide         = "trace.app.WindowHide"
-	MethodAppWindowMinimise     = "trace.app.WindowMinimise"
-	MethodBackupInitialize      = "trace.backup.Initialize"
-	MethodBackupExport          = "trace.backup.Export"
-	MethodBackupImport          = "trace.backup.Import"
+	MethodAppConfigGet           = "trace.app.ConfigGet"
+	MethodAppPathOpen            = "trace.app.PathOpen"
+	MethodAppReleasePageOpen     = "trace.app.ReleasePageOpen"
+	MethodAppDashboardStats      = "trace.app.DashboardStatsGet"
+	MethodAppPerformanceSnapshot = "trace.app.PerformanceSnapshotGet"
+	MethodAppLicenseStatus       = "trace.app.LicenseStatusGet"
+	MethodAppCDKeyRedeem         = "trace.app.CDKeyRedeem"
+	MethodAppGithubStarRedeem    = "trace.app.GithubStarRedeem"
+	MethodAppConfigReload        = "trace.app.ConfigReload"
+	MethodAppCDKeysGenerate      = "trace.app.CDKeysGenerate"
+	MethodAppRemoteProfileFetch  = "trace.app.RemoteAuthorProfileFetch"
+	MethodAppLogList             = "trace.app.LogList"
+	MethodAppLogClear            = "trace.app.LogClear"
+	MethodAppForceQuit           = "trace.app.ForceQuit"
+	MethodAppQuitOnly            = "trace.app.QuitOnly"
+	MethodAppWindowStateSave     = "trace.app.WindowStateSave"
+	MethodAppEnvironmentGet      = "trace.app.EnvironmentGet"
+	MethodAppWindowSizeGet       = "trace.app.WindowSizeGet"
+	MethodAppWindowStateGet      = "trace.app.WindowStateGet"
+	MethodAppWindowHide          = "trace.app.WindowHide"
+	MethodAppWindowMinimise      = "trace.app.WindowMinimise"
+	MethodBackupInitialize       = "trace.backup.Initialize"
+	MethodBackupExport           = "trace.backup.Export"
+	MethodBackupImport           = "trace.backup.Import"
 )
 
 type AppConfigInfo struct {
@@ -49,6 +50,31 @@ type AppDashboardStats struct {
 	CoreCount        int32
 	MemUsedMB        int32
 	AppVersion       string
+}
+
+type AppPerformanceSnapshot struct {
+	TimestampMS             int64
+	AppVersion              string
+	Platform                string
+	Arch                    string
+	MemAllocMB              int32
+	MemSysMB                int32
+	MemHeapInuseMB          int32
+	MemNumGC                int32
+	Goroutines              int32
+	TotalInstances          int32
+	RunningInstances        int32
+	BrowserProcesses        int32
+	ProxyBridgeRefs         int32
+	XrayBridgeRefs          int32
+	ClashBridgeRefs         int32
+	SwitchBridgeRefs        int32
+	AuthProxyBridgeRefs     int32
+	WindowSyncActive        bool
+	WindowSyncWindows       int32
+	WindowSyncControllable  int32
+	WindowSyncEventsTotal   int64
+	WindowSyncDispatchTotal int64
 }
 
 type AppLicenseStatus struct {
@@ -294,6 +320,135 @@ func DecodeAppDashboardStats(payload []byte) (AppDashboardStats, error) {
 	})
 	if err != nil {
 		return AppDashboardStats{}, err
+	}
+	return result, nil
+}
+
+func EncodeAppPerformanceSnapshot(message AppPerformanceSnapshot) []byte {
+	var out []byte
+	out = appendInt64Field(out, 1, message.TimestampMS)
+	out = appendStringField(out, 2, message.AppVersion)
+	out = appendStringField(out, 3, message.Platform)
+	out = appendStringField(out, 4, message.Arch)
+	out = appendInt32Field(out, 5, message.MemAllocMB)
+	out = appendInt32Field(out, 6, message.MemSysMB)
+	out = appendInt32Field(out, 7, message.MemHeapInuseMB)
+	out = appendInt32Field(out, 8, message.MemNumGC)
+	out = appendInt32Field(out, 9, message.Goroutines)
+	out = appendInt32Field(out, 10, message.TotalInstances)
+	out = appendInt32Field(out, 11, message.RunningInstances)
+	out = appendInt32Field(out, 12, message.BrowserProcesses)
+	out = appendInt32Field(out, 13, message.ProxyBridgeRefs)
+	out = appendInt32Field(out, 14, message.XrayBridgeRefs)
+	out = appendInt32Field(out, 15, message.ClashBridgeRefs)
+	out = appendInt32Field(out, 16, message.SwitchBridgeRefs)
+	out = appendInt32Field(out, 17, message.AuthProxyBridgeRefs)
+	out = appendBoolField(out, 18, message.WindowSyncActive)
+	out = appendInt32Field(out, 19, message.WindowSyncWindows)
+	out = appendInt32Field(out, 20, message.WindowSyncControllable)
+	out = appendInt64Field(out, 21, message.WindowSyncEventsTotal)
+	out = appendInt64Field(out, 22, message.WindowSyncDispatchTotal)
+	return out
+}
+
+func DecodeAppPerformanceSnapshot(payload []byte) (AppPerformanceSnapshot, error) {
+	var result AppPerformanceSnapshot
+	err := consumeFields(payload, func(field protowire.Number, wireType protowire.Type, value []byte) error {
+		switch field {
+		case 1:
+			number, err := consumeVarintValue(wireType, value)
+			result.TimestampMS = int64(number)
+			return err
+		case 2:
+			text, err := consumeStringValue(wireType, value)
+			result.AppVersion = text
+			return err
+		case 3:
+			text, err := consumeStringValue(wireType, value)
+			result.Platform = text
+			return err
+		case 4:
+			text, err := consumeStringValue(wireType, value)
+			result.Arch = text
+			return err
+		case 5:
+			number, err := consumeVarintValue(wireType, value)
+			result.MemAllocMB = int32(number)
+			return err
+		case 6:
+			number, err := consumeVarintValue(wireType, value)
+			result.MemSysMB = int32(number)
+			return err
+		case 7:
+			number, err := consumeVarintValue(wireType, value)
+			result.MemHeapInuseMB = int32(number)
+			return err
+		case 8:
+			number, err := consumeVarintValue(wireType, value)
+			result.MemNumGC = int32(number)
+			return err
+		case 9:
+			number, err := consumeVarintValue(wireType, value)
+			result.Goroutines = int32(number)
+			return err
+		case 10:
+			number, err := consumeVarintValue(wireType, value)
+			result.TotalInstances = int32(number)
+			return err
+		case 11:
+			number, err := consumeVarintValue(wireType, value)
+			result.RunningInstances = int32(number)
+			return err
+		case 12:
+			number, err := consumeVarintValue(wireType, value)
+			result.BrowserProcesses = int32(number)
+			return err
+		case 13:
+			number, err := consumeVarintValue(wireType, value)
+			result.ProxyBridgeRefs = int32(number)
+			return err
+		case 14:
+			number, err := consumeVarintValue(wireType, value)
+			result.XrayBridgeRefs = int32(number)
+			return err
+		case 15:
+			number, err := consumeVarintValue(wireType, value)
+			result.ClashBridgeRefs = int32(number)
+			return err
+		case 16:
+			number, err := consumeVarintValue(wireType, value)
+			result.SwitchBridgeRefs = int32(number)
+			return err
+		case 17:
+			number, err := consumeVarintValue(wireType, value)
+			result.AuthProxyBridgeRefs = int32(number)
+			return err
+		case 18:
+			boolValue, err := consumeBoolValue(wireType, value)
+			result.WindowSyncActive = boolValue
+			return err
+		case 19:
+			number, err := consumeVarintValue(wireType, value)
+			result.WindowSyncWindows = int32(number)
+			return err
+		case 20:
+			number, err := consumeVarintValue(wireType, value)
+			result.WindowSyncControllable = int32(number)
+			return err
+		case 21:
+			number, err := consumeVarintValue(wireType, value)
+			result.WindowSyncEventsTotal = int64(number)
+			return err
+		case 22:
+			number, err := consumeVarintValue(wireType, value)
+			result.WindowSyncDispatchTotal = int64(number)
+			return err
+		default:
+			return nil
+		}
+	})
+	if err != nil {
+		return AppPerformanceSnapshot{}, err
 	}
 	return result, nil
 }

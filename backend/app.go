@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -79,6 +80,8 @@ type App struct {
 	windowSyncToolbarAdapter WindowSyncToolbarAdapter
 	windowSyncPromptMu       sync.RWMutex
 	windowSyncPromptAdapter  WindowSyncPromptAdapter
+	windowSyncEventsTotal    atomic.Int64
+	windowSyncDispatchTotal  atomic.Int64
 	extensionAutoSyncMu      sync.Mutex
 	extensionAutoSyncBlocked map[string]struct{}
 	stopServicesOnce         sync.Once

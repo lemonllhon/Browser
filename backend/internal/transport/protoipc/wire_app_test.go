@@ -48,6 +48,37 @@ func TestAppDashboardAndLicenseRoundTrip(t *testing.T) {
 		t.Fatalf("dashboard stats were not preserved: %#v", stats)
 	}
 
+	snapshot, err := DecodeAppPerformanceSnapshot(EncodeAppPerformanceSnapshot(AppPerformanceSnapshot{
+		TimestampMS:             1700000000000,
+		AppVersion:              "1.2.3",
+		Platform:                "windows",
+		Arch:                    "amd64",
+		MemAllocMB:              64,
+		MemSysMB:                96,
+		MemHeapInuseMB:          72,
+		MemNumGC:                4,
+		Goroutines:              12,
+		TotalInstances:          11,
+		RunningInstances:        3,
+		BrowserProcesses:        2,
+		ProxyBridgeRefs:         5,
+		XrayBridgeRefs:          1,
+		ClashBridgeRefs:         2,
+		SwitchBridgeRefs:        1,
+		AuthProxyBridgeRefs:     1,
+		WindowSyncActive:        true,
+		WindowSyncWindows:       3,
+		WindowSyncControllable:  2,
+		WindowSyncEventsTotal:   100,
+		WindowSyncDispatchTotal: 180,
+	}))
+	if err != nil {
+		t.Fatalf("DecodeAppPerformanceSnapshot failed: %v", err)
+	}
+	if !snapshot.WindowSyncActive || snapshot.WindowSyncEventsTotal != 100 || snapshot.MemAllocMB != 64 {
+		t.Fatalf("performance snapshot was not preserved: %#v", snapshot)
+	}
+
 	status, err := DecodeAppLicenseStatus(EncodeAppLicenseStatus(AppLicenseStatus{
 		MaxLimit:  50,
 		UsedCount: 10,
