@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft,
   ArrowRight,
@@ -67,6 +67,29 @@ type DragState = {
   startTop: number
 }
 
+type OnboardingTargetRole = 'button' | 'heading' | 'text'
+
+type OnboardingTargetConfig = {
+  text: string
+  label?: string
+  role?: OnboardingTargetRole
+}
+
+type OnboardingTargetRect = {
+  left: number
+  top: number
+  width: number
+  height: number
+  label: string
+}
+
+type FloatingRect = {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
 const FLOATING_WINDOW_WIDTH = 960
 const FLOATING_WINDOW_MARGIN = 16
 const FLOATING_HEADER_VISIBLE_HEIGHT = 72
@@ -95,8 +118,245 @@ function getInitialFloatingPosition(): FloatingPosition {
   const width = getFloatingWindowWidth()
   return constrainFloatingPosition({
     left: Math.round((window.innerWidth - width) / 2),
-    top: 72,
+    top: Math.max(72, Math.round(window.innerHeight - 560)),
   })
+}
+
+function normalizeElementText(value: string | null | undefined) {
+  return String(value || '').replace(/\s+/g, ' ').trim()
+}
+
+function isElementVisible(element: Element) {
+  const rect = element.getBoundingClientRect()
+  const style = window.getComputedStyle(element)
+  return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'
+}
+
+function isInsideOnboardingWindow(element: Element) {
+  return !!element.closest('[aria-label="演示模式"]')
+}
+
+function elementScore(element: Element, target: OnboardingTargetConfig) {
+  const text = normalizeElementText(element.textContent)
+  const targetText = normalizeElementText(target.text)
+  if (!text || !targetText) return -1
+
+  let score = -1
+  if (text === targetText) score = 100
+  else if (text.includes(targetText)) score = 70
+  else return -1
+
+  const tagName = element.tagName.toLowerCase()
+  const role = element.getAttribute('role')
+  if (target.role === 'button' && (tagName === 'button' || tagName === 'a' || role === 'button')) score += 40
+  if (target.role === 'heading' && (/^h[1-6]$/.test(tagName) || role === 'heading')) score += 35
+  if (tagName === 'button') score += 10
+
+  const rect = element.getBoundingClientRect()
+  const area = rect.width * rect.height
+  if (area > 0 && area < 60000) score += 10
+  if (area > 200000) score -= 25
+  return score
+}
+
+function findOnboardingTargetElement(target: OnboardingTargetConfig) {
+  if (typeof document === 'undefined') return null
+
+  const selector = target.role === 'button'
+    ? 'button,a,[role="button"]'
+    : target.role === 'heading'
+      ? 'h1,h2,h3,h4,h5,h6,[role="heading"]'
+      : 'button,a,[role="button"],h1,h2,h3,h4,h5,h6,label,th,td,p,span,div'
+
+  const candidates = Array.from(document.querySelectorAll(selector))
+    .filter(element => !isInsideOnboardingWindow(element) && isElementVisible(element))
+    .map(element => ({ element, score: elementScore(element, target) }))
+    .filter(item => item.score >= 0)
+    .sort((a, b) => b.score - a.score)
+
+  return candidates[0]?.element || null
+}
+
+function isRectMostlyVisible(rect: DOMRect) {
+  return (
+    rect.top >= 12 &&
+    rect.left >= 12 &&
+    rect.bottom <= window.innerHeight - 12 &&
+    rect.right <= window.innerWidth - 12
+  )
+}
+
+function rectsOverlap(a: FloatingRect, b: OnboardingTargetRect) {
+  return !(a.left + a.width < b.left || b.left + b.width < a.left || a.top + a.height < b.top || b.top + b.height < a.top)
+}
+
+function placeFloatingAwayFromTarget(targetRect: OnboardingTargetRect, floatingRect: FloatingRect): FloatingPosition | null {
+  if (typeof window === 'undefined' || !rectsOverlap(floatingRect, targetRect)) return null
+
+  const width = getFloatingWindowWidth()
+  const height = Math.min(floatingRect.height || 520, Math.max(360, window.innerHeight - FLOATING_WINDOW_MARGIN * 2))
+  const centeredLeft = Math.round((window.innerWidth - width) / 2)
+  const belowTop = targetRect.top + targetRect.height + FLOATING_WINDOW_MARGIN
+  const aboveTop = targetRect.top - height - FLOATING_WINDOW_MARGIN
+
+  if (belowTop + FLOATING_HEADER_VISIBLE_HEIGHT < window.innerHeight) {
+    return constrainFloatingPosition({ left: centeredLeft, top: belowTop })
+  }
+  if (aboveTop > FLOATING_WINDOW_MARGIN) {
+    return constrainFloatingPosition({ left: centeredLeft, top: aboveTop })
+  }
+
+  const rightLeft = targetRect.left + targetRect.width + FLOATING_WINDOW_MARGIN
+  if (rightLeft + width < window.innerWidth - FLOATING_WINDOW_MARGIN) {
+    return constrainFloatingPosition({ left: rightLeft, top: FLOATING_WINDOW_MARGIN })
+  }
+  const leftLeft = targetRect.left - width - FLOATING_WINDOW_MARGIN
+  if (leftLeft > FLOATING_WINDOW_MARGIN) {
+    return constrainFloatingPosition({ left: leftLeft, top: FLOATING_WINDOW_MARGIN })
+  }
+
+  return null
+}
+
+function getStepTarget(step: OnboardingStep): OnboardingTargetConfig | null {
+  switch (step.id) {
+    case 'core-entry':
+      return { text: '内核管理', label: '左侧菜单：内核管理', role: 'button' }
+    case 'proxy-entry':
+      return { text: '代理池管理', label: '左侧菜单：代理池管理', role: 'button' }
+    case 'list-entry':
+      return { text: '实例列表', label: '左侧菜单：实例列表', role: 'button' }
+    case 'organization-entry':
+      return { text: '组织管理', label: '左侧菜单：组织管理', role: 'button' }
+    case 'extension-entry':
+      return { text: '扩展插件管理', label: '左侧菜单：扩展插件管理', role: 'button' }
+    case 'settings-entry':
+      return { text: '系统设置', label: '左侧菜单：系统设置', role: 'button' }
+    case 'core-download':
+      return { text: '下载内核', role: 'button' }
+    case 'core-scan':
+      return { text: '扫描内核', role: 'button' }
+    case 'core-add':
+      return { text: '新增内核', role: 'button' }
+    case 'proxy-resource':
+      return { text: '添加资源', role: 'button' }
+    case 'proxy-node':
+      return { text: '代理节点', role: 'button' }
+    case 'proxy-maintain':
+      return { text: '刷新订阅', label: '刷新订阅 / IP 健康 / 测试全部 / 删除超时节点', role: 'button' }
+    case 'list-panel':
+      return { text: '收起面板', label: '收起面板 / 展开面板', role: 'button' }
+    case 'profile-create-entry':
+      return { text: '新建配置', role: 'button' }
+    case 'profile-basic':
+      return { text: '基础信息', role: 'heading' }
+    case 'profile-proxy':
+      return { text: '代理配置', role: 'heading' }
+    case 'profile-fingerprint':
+      return { text: '指纹配置', role: 'heading' }
+    case 'profile-launch':
+      return { text: '启动参数', role: 'heading' }
+    case 'profile-batch':
+      return { text: '批量生成', role: 'button' }
+    case 'profile-backup':
+    case 'backup-export':
+    case 'backup-restore':
+      return { text: '实例备份与恢复', role: 'button' }
+    case 'organization-tags':
+      return { text: '标签', role: 'button' }
+    case 'organization-groups':
+      return { text: '分组', role: 'button' }
+    case 'organization-default':
+      return { text: '默认内容', label: '默认功能和联动', role: 'button' }
+    case 'extension-import':
+      return { text: '导入目录', label: '导入目录 / 导入压缩包', role: 'button' }
+    case 'extension-manage':
+      return { text: '扩展列表', role: 'heading' }
+    case 'sync':
+      return { text: '窗口同步', role: 'button' }
+    case 'settings-demo':
+      return { text: '播放新手演示', role: 'button' }
+    default:
+      return null
+  }
+}
+
+function getArrowAnchor(floatingRect: FloatingRect, targetRect: OnboardingTargetRect) {
+  const targetCenterX = targetRect.left + targetRect.width / 2
+  const targetCenterY = targetRect.top + targetRect.height / 2
+  const floatingCenterX = floatingRect.left + floatingRect.width / 2
+  const floatingCenterY = floatingRect.top + floatingRect.height / 2
+  const dx = targetCenterX - floatingCenterX
+  const dy = targetCenterY - floatingCenterY
+
+  if (Math.abs(dx) > Math.abs(dy)) {
+    return {
+      x: dx > 0 ? floatingRect.left + floatingRect.width : floatingRect.left,
+      y: Math.min(Math.max(targetCenterY, floatingRect.top + 24), floatingRect.top + floatingRect.height - 24),
+    }
+  }
+
+  return {
+    x: Math.min(Math.max(targetCenterX, floatingRect.left + 24), floatingRect.left + floatingRect.width - 24),
+    y: dy > 0 ? floatingRect.top + floatingRect.height : floatingRect.top,
+  }
+}
+
+function OnboardingTargetOverlay({
+  floatingRect,
+  targetRect,
+}: {
+  floatingRect: FloatingRect | null
+  targetRect: OnboardingTargetRect | null
+}) {
+  if (!floatingRect || !targetRect) return null
+
+  const start = getArrowAnchor(floatingRect, targetRect)
+  const end = {
+    x: targetRect.left + targetRect.width / 2,
+    y: targetRect.top + targetRect.height / 2,
+  }
+  const controlX = (start.x + end.x) / 2
+  const controlY = Math.min(start.y, end.y) - 32
+  const path = `M ${start.x} ${start.y} Q ${controlX} ${controlY} ${end.x} ${end.y}`
+  const labelTop = Math.max(10, targetRect.top - 34)
+  const labelLeft = Math.min(Math.max(10, targetRect.left), Math.max(10, window.innerWidth - 260))
+
+  return (
+    <>
+      <svg className="fixed inset-0 z-[49] pointer-events-none" width="100%" height="100%" aria-hidden="true">
+        <defs>
+          <marker id="onboarding-arrow-head" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--color-accent)" />
+          </marker>
+        </defs>
+        <path
+          d={path}
+          fill="none"
+          stroke="var(--color-accent)"
+          strokeWidth="3"
+          strokeLinecap="round"
+          markerEnd="url(#onboarding-arrow-head)"
+          className="onboarding-target-arrow"
+        />
+      </svg>
+      <div
+        className="fixed z-[49] pointer-events-none rounded-lg border-2 border-[var(--color-accent)] onboarding-target-highlight"
+        style={{
+          left: targetRect.left - 6,
+          top: targetRect.top - 6,
+          width: targetRect.width + 12,
+          height: targetRect.height + 12,
+        }}
+      />
+      <div
+        className="fixed z-[49] pointer-events-none rounded-lg bg-[var(--color-accent)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-inverse)] shadow-lg"
+        style={{ left: labelLeft, top: labelTop }}
+      >
+        指向：{targetRect.label}
+      </div>
+    </>
+  )
 }
 
 const FIRST_RUN_ONBOARDING_STEPS: OnboardingStep[] = [
@@ -431,20 +691,86 @@ function findStepIndex(stepId?: string) {
 
 export function FirstRunOnboarding() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [open, setOpen] = useState(false)
   const [manualReplay, setManualReplay] = useState(false)
   const [stepIndex, setStepIndex] = useState(0)
   const [floatingPosition, setFloatingPosition] = useState<FloatingPosition>(() => getInitialFloatingPosition())
+  const [targetRect, setTargetRect] = useState<OnboardingTargetRect | null>(null)
+  const [floatingRect, setFloatingRect] = useState<FloatingRect | null>(null)
   const dragStateRef = useRef<DragState | null>(null)
+  const dialogRef = useRef<HTMLElement | null>(null)
   const step = FIRST_RUN_ONBOARDING_STEPS[stepIndex]
   const isFirstStep = stepIndex === 0
   const isLastStep = stepIndex === FIRST_RUN_ONBOARDING_STEPS.length - 1
+
+  const measureFloatingRect = useCallback(() => {
+    const rect = dialogRef.current?.getBoundingClientRect()
+    if (!rect) {
+      setFloatingRect(null)
+      return null
+    }
+    const next = {
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+    }
+    setFloatingRect(next)
+    return next
+  }, [])
+
+  const measureTargetElement = useCallback((element: Element, target: OnboardingTargetConfig) => {
+    const rect = element.getBoundingClientRect()
+    const nextTarget = {
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+      label: target.label || target.text,
+    }
+    setTargetRect(nextTarget)
+
+    const currentFloatingRect = measureFloatingRect()
+    if (currentFloatingRect) {
+      const nextFloatingPosition = placeFloatingAwayFromTarget(nextTarget, currentFloatingRect)
+      if (nextFloatingPosition) {
+        setFloatingPosition(nextFloatingPosition)
+      }
+    }
+  }, [measureFloatingRect])
+
+  const resolveStepTarget = useCallback(() => {
+    if (!open) return false
+    const target = getStepTarget(step)
+    if (!target) {
+      setTargetRect(null)
+      return true
+    }
+
+    const element = findOnboardingTargetElement(target)
+    if (!element) {
+      setTargetRect(null)
+      return false
+    }
+
+    const rect = element.getBoundingClientRect()
+    if (!isRectMostlyVisible(rect)) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' })
+      window.setTimeout(() => measureTargetElement(element, target), 260)
+      return true
+    }
+
+    measureTargetElement(element, target)
+    return true
+  }, [measureTargetElement, open, step])
 
   const openAtStep = useCallback((stepId?: string, manual = false) => {
     const index = findStepIndex(stepId)
     const target = FIRST_RUN_ONBOARDING_STEPS[index]
     setManualReplay(manual)
     setStepIndex(index)
+    setTargetRect(null)
     setFloatingPosition(getInitialFloatingPosition())
     setOpen(true)
     if (target.routePath) {
@@ -486,6 +812,7 @@ export function FirstRunOnboarding() {
     const boundedIndex = Math.max(0, Math.min(FIRST_RUN_ONBOARDING_STEPS.length - 1, nextIndex))
     const next = FIRST_RUN_ONBOARDING_STEPS[boundedIndex]
     setStepIndex(boundedIndex)
+    setTargetRect(null)
     navigateForStep(next)
   }, [navigateForStep])
 
@@ -493,16 +820,19 @@ export function FirstRunOnboarding() {
     if (!manualReplay) {
       markFirstRunOnboardingCompleted()
     }
+    setTargetRect(null)
     setOpen(false)
   }, [manualReplay])
 
   const skipOnboarding = useCallback(() => {
     markFirstRunOnboardingCompleted()
+    setTargetRect(null)
     setOpen(false)
   }, [])
 
   const finishOnboarding = useCallback(() => {
     markFirstRunOnboardingCompleted()
+    setTargetRect(null)
     setOpen(false)
   }, [])
 
@@ -512,6 +842,7 @@ export function FirstRunOnboarding() {
     }
     if (current.actionNextId) {
       setStepIndex(findStepIndex(current.actionNextId))
+      setTargetRect(null)
     }
   }, [navigate])
 
@@ -528,13 +859,73 @@ export function FirstRunOnboarding() {
 
     const onResize = () => {
       setFloatingPosition(current => constrainFloatingPosition(current))
+      window.setTimeout(() => {
+        measureFloatingRect()
+        resolveStepTarget()
+      }, 80)
     }
 
     window.addEventListener('resize', onResize)
     return () => {
       window.removeEventListener('resize', onResize)
     }
-  }, [open])
+  }, [measureFloatingRect, open, resolveStepTarget])
+
+  useEffect(() => {
+    if (!open) return
+
+    const frame = window.requestAnimationFrame(() => {
+      measureFloatingRect()
+    })
+    return () => {
+      window.cancelAnimationFrame(frame)
+    }
+  }, [floatingPosition.left, floatingPosition.top, measureFloatingRect, open, stepIndex])
+
+  useEffect(() => {
+    if (!open) {
+      setFloatingRect(null)
+      setTargetRect(null)
+      return
+    }
+
+    const timers: number[] = []
+    const schedule = (delay: number, attempt: number) => {
+      const timer = window.setTimeout(() => {
+        const resolved = resolveStepTarget()
+        if (!resolved && attempt < 8) {
+          schedule(160, attempt + 1)
+        }
+      }, delay)
+      timers.push(timer)
+    }
+
+    schedule(120, 0)
+    schedule(420, 0)
+
+    return () => {
+      timers.forEach(timer => window.clearTimeout(timer))
+    }
+  }, [location.pathname, location.search, open, resolveStepTarget, stepIndex])
+
+  useEffect(() => {
+    if (!open) return
+
+    let frame = 0
+    const update = () => {
+      window.cancelAnimationFrame(frame)
+      frame = window.requestAnimationFrame(() => {
+        measureFloatingRect()
+        resolveStepTarget()
+      })
+    }
+
+    window.addEventListener('scroll', update, true)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.removeEventListener('scroll', update, true)
+    }
+  }, [measureFloatingRect, open, resolveStepTarget])
 
   const handleDragStart = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return
@@ -685,16 +1076,19 @@ export function FirstRunOnboarding() {
   if (!open) return null
 
   return (
-    <div
-      className="fixed z-50 pointer-events-none"
-      style={{
-        left: floatingPosition.left,
-        top: floatingPosition.top,
-        width: 'min(960px, calc(100vw - 32px))',
-        maxHeight: 'calc(100vh - 32px)',
-      }}
-    >
+    <>
+      <OnboardingTargetOverlay floatingRect={floatingRect} targetRect={targetRect} />
+      <div
+        className="fixed z-50 pointer-events-none"
+        style={{
+          left: floatingPosition.left,
+          top: floatingPosition.top,
+          width: 'min(960px, calc(100vw - 32px))',
+          maxHeight: 'calc(100vh - 32px)',
+        }}
+      >
       <section
+        ref={dialogRef}
         role="dialog"
         aria-modal="false"
         aria-label="演示模式"
@@ -726,7 +1120,7 @@ export function FirstRunOnboarding() {
 
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1.12fr)_minmax(320px,0.88fr)]">
-            <OnboardingAnimation sceneKey={step.sceneKey} />
+            <OnboardingAnimation sceneKey={step.sceneKey} activeStepId={step.id} />
             <div className="flex min-w-0 flex-col justify-between gap-5 rounded-xl border border-[var(--color-border-default)] bg-[var(--color-bg-base)] p-4">
               <div>
                 <div className="mb-4 inline-flex items-center gap-2 rounded-lg bg-[var(--color-accent-muted)] px-3 py-1.5 text-xs font-medium text-[var(--color-accent)]">
@@ -773,6 +1167,7 @@ export function FirstRunOnboarding() {
           {footer}
         </div>
       </section>
-    </div>
+      </div>
+    </>
   )
 }

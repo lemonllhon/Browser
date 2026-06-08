@@ -848,6 +848,19 @@ input, select, textarea {
   animation: onboardingFinishPop 2.8s ease-in-out infinite;
 }
 
+.onboarding-target-arrow {
+  filter: drop-shadow(0 2px 4px color-mix(in srgb, var(--color-accent) 35%, transparent));
+  stroke-dasharray: 10 8;
+  animation: onboardingArrowDash 1.4s linear infinite;
+}
+
+.onboarding-target-highlight {
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--color-accent) 14%, transparent),
+    0 8px 28px color-mix(in srgb, var(--color-accent) 22%, transparent);
+  animation: onboardingTargetPulse 1.7s ease-in-out infinite;
+}
+
 @keyframes onboardingFloat {
   0%, 100% {
     transform: translateY(0);
@@ -935,6 +948,23 @@ input, select, textarea {
   }
 }
 
+@keyframes onboardingArrowDash {
+  to {
+    stroke-dashoffset: -36;
+  }
+}
+
+@keyframes onboardingTargetPulse {
+  0%, 100% {
+    opacity: 0.86;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.02);
+  }
+}
+
 @media (max-width: 720px) {
   .onboarding-stage {
     min-height: 300px;
@@ -950,7 +980,9 @@ input, select, textarea {
   .onboarding-fill-bar,
   .onboarding-card-create,
   .onboarding-sync-cursor,
-  .onboarding-finish-pop {
+  .onboarding-finish-pop,
+  .onboarding-target-arrow,
+  .onboarding-target-highlight {
     animation: none !important;
     transition: none !important;
   }

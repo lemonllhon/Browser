@@ -47,6 +47,7 @@ export type OnboardingSceneKey =
 
 interface OnboardingAnimationProps {
   sceneKey: OnboardingSceneKey
+  activeStepId?: string
 }
 
 function StatusDot({ active = false }: { active?: boolean }) {
@@ -187,12 +188,12 @@ function CoreScene() {
   )
 }
 
-function CoreToolsScene() {
+function CoreToolsScene({ activeStepId }: { activeStepId?: string }) {
   return (
     <div className="onboarding-stage-scene grid grid-cols-1 gap-3 p-8 sm:grid-cols-3">
-      <ToolTile icon={<Download className="h-5 w-5" />} title="下载内核" detail="从 Releases 或自定义地址下载 ZIP 内核。" active />
-      <ToolTile icon={<Search className="h-5 w-5" />} title="扫描内核" detail="扫描 chrome 目录并自动注册可用内核。" delay="onboarding-delay-1" />
-      <ToolTile icon={<Plus className="h-5 w-5" />} title="新增内核" detail="手动登记已有 chrome.exe 路径。" delay="onboarding-delay-2" />
+      <ToolTile icon={<Download className="h-5 w-5" />} title="下载内核" detail="从 Releases 或自定义地址下载 ZIP 内核。" active={activeStepId === 'core-download'} />
+      <ToolTile icon={<Search className="h-5 w-5" />} title="扫描内核" detail="扫描 chrome 目录并自动注册可用内核。" active={activeStepId === 'core-scan'} delay="onboarding-delay-1" />
+      <ToolTile icon={<Plus className="h-5 w-5" />} title="新增内核" detail="手动登记已有 chrome.exe 路径。" active={activeStepId === 'core-add'} delay="onboarding-delay-2" />
       <div className="col-span-full rounded-xl border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-4">
         <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-[var(--color-text-primary)]">
           <Cpu className="h-4 w-4 text-[var(--color-accent)]" />
@@ -242,16 +243,21 @@ function ProxyScene() {
   )
 }
 
-function ProxyToolsScene() {
+function ProxyToolsScene({ activeStepId }: { activeStepId?: string }) {
+  const maintainActive = activeStepId === 'proxy-maintain'
   return (
     <div className="onboarding-stage-scene p-7">
       <div className="grid grid-cols-2 gap-3">
-        <ToolTile icon={<Upload className="h-5 w-5" />} title="添加资源" detail="导入 Clash 订阅、YAML 或批量代理。" active />
-        <ToolTile icon={<Server className="h-5 w-5" />} title="代理节点" detail="集中查看节点协议、延迟、分组和来源。" delay="onboarding-delay-1" />
-        <ToolTile icon={<RefreshCw className="h-5 w-5" />} title="刷新订阅" detail="批量刷新订阅并同步来源下节点。" delay="onboarding-delay-2" />
-        <ToolTile icon={<ShieldCheck className="h-5 w-5" />} title="IP健康 / 测试全部" detail="检测出口 IP 与连通性，快速筛掉不可用节点。" delay="onboarding-delay-3" />
+        <ToolTile icon={<Upload className="h-5 w-5" />} title="添加资源" detail="导入 Clash 订阅、YAML 或批量代理。" active={activeStepId === 'proxy-resource'} />
+        <ToolTile icon={<Server className="h-5 w-5" />} title="代理节点" detail="集中查看节点协议、延迟、分组和来源。" active={activeStepId === 'proxy-node'} delay="onboarding-delay-1" />
+        <ToolTile icon={<RefreshCw className="h-5 w-5" />} title="刷新订阅" detail="批量刷新订阅并同步来源下节点。" active={maintainActive} delay="onboarding-delay-2" />
+        <ToolTile icon={<ShieldCheck className="h-5 w-5" />} title="IP健康 / 测试全部" detail="检测出口 IP 与连通性，快速筛掉不可用节点。" active={maintainActive} delay="onboarding-delay-3" />
       </div>
-      <div className="mt-3 flex items-center justify-between rounded-xl border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] px-4 py-3 text-xs text-[var(--color-text-secondary)]">
+      <div className={`mt-3 flex items-center justify-between rounded-xl border px-4 py-3 text-xs ${
+        maintainActive
+          ? 'border-[var(--color-accent)] bg-[var(--color-accent-muted)] text-[var(--color-accent)]'
+          : 'border-[var(--color-border-default)] bg-[var(--color-bg-surface)] text-[var(--color-text-secondary)]'
+      }`}>
         <span className="inline-flex items-center gap-2"><Trash2 className="h-4 w-4 text-[var(--color-error)]" />删除超时节点</span>
         <span className="rounded-md bg-[var(--color-bg-muted)] px-2 py-1">保留直连 / 本地代理</span>
       </div>
@@ -259,7 +265,14 @@ function ProxyToolsScene() {
   )
 }
 
-function ListToolsScene() {
+function ListToolsScene({ activeStepId }: { activeStepId?: string }) {
+  const isActive = (title: string) => {
+    if (title === '收起面板') return activeStepId === 'list-panel'
+    if (title === '新建配置') return activeStepId === 'profile-create-entry'
+    if (title === '批量生成') return activeStepId === 'profile-batch'
+    if (title === '备份与恢复') return activeStepId === 'profile-backup' || activeStepId === 'backup-export' || activeStepId === 'backup-restore'
+    return false
+  }
   return (
     <div className="onboarding-stage-scene p-7">
       <div className="rounded-xl border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-4 shadow-sm">
@@ -274,9 +287,16 @@ function ListToolsScene() {
             ['批量生成', '批量创建随机指纹实例'],
             ['备份与恢复', '导出或恢复实例包'],
           ].map(([title, detail], index) => (
-            <div key={title} className={`rounded-lg border border-[var(--color-border-default)] bg-[var(--color-bg-base)] p-3 onboarding-float ${index % 2 ? 'onboarding-delay-1' : ''}`}>
-              <div className="font-semibold text-[var(--color-text-primary)]">{title}</div>
-              <div className="mt-1 text-[var(--color-text-secondary)]">{detail}</div>
+            <div
+              key={title}
+              className={`rounded-lg border p-3 onboarding-float ${index % 2 ? 'onboarding-delay-1' : ''} ${
+                isActive(title)
+                  ? 'border-[var(--color-accent)] bg-[var(--color-accent-muted)] text-[var(--color-accent)]'
+                  : 'border-[var(--color-border-default)] bg-[var(--color-bg-base)] text-[var(--color-text-secondary)]'
+              }`}
+            >
+              <div className="font-semibold">{title}</div>
+              <div className="mt-1">{detail}</div>
             </div>
           ))}
         </div>
@@ -324,14 +344,14 @@ function ProfileScene() {
   )
 }
 
-function ProfileEditScene() {
+function ProfileEditScene({ activeStepId }: { activeStepId?: string }) {
   return (
     <div className="onboarding-stage-scene p-7">
       <div className="grid grid-cols-2 gap-3">
-        <ToolTile icon={<Monitor className="h-5 w-5" />} title="基础信息" detail="名称、Code、内核、分组、标签。" active />
-        <ToolTile icon={<Globe2 className="h-5 w-5" />} title="代理配置" detail="代理池选择、手动代理和自动切换。" delay="onboarding-delay-1" />
-        <ToolTile icon={<ShieldCheck className="h-5 w-5" />} title="指纹配置" detail="地区、时区、语言和完整指纹参数。" delay="onboarding-delay-2" />
-        <ToolTile icon={<Settings className="h-5 w-5" />} title="启动参数" detail="无痕模式和每行一个浏览器启动参数。" delay="onboarding-delay-3" />
+        <ToolTile icon={<Monitor className="h-5 w-5" />} title="基础信息" detail="名称、Code、内核、分组、标签。" active={activeStepId === 'profile-basic'} />
+        <ToolTile icon={<Globe2 className="h-5 w-5" />} title="代理配置" detail="代理池选择、手动代理和自动切换。" active={activeStepId === 'profile-proxy'} delay="onboarding-delay-1" />
+        <ToolTile icon={<ShieldCheck className="h-5 w-5" />} title="指纹配置" detail="地区、时区、语言和完整指纹参数。" active={activeStepId === 'profile-fingerprint'} delay="onboarding-delay-2" />
+        <ToolTile icon={<Settings className="h-5 w-5" />} title="启动参数" detail="无痕模式和每行一个浏览器启动参数。" active={activeStepId === 'profile-launch'} delay="onboarding-delay-3" />
       </div>
       <div className="mt-4 rounded-xl border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-4">
         <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-[var(--color-text-primary)]">
@@ -346,16 +366,26 @@ function ProfileEditScene() {
   )
 }
 
-function BackupScene() {
+function BackupScene({ activeStepId }: { activeStepId?: string }) {
+  const exportActive = activeStepId === 'profile-backup' || activeStepId === 'backup-export'
+  const restoreActive = activeStepId === 'backup-restore'
   return (
     <div className="onboarding-stage-scene p-7">
       <div className="grid grid-cols-2 gap-4">
-        <div className="rounded-xl border border-[var(--color-accent)] bg-[var(--color-accent-muted)] p-5 text-[var(--color-accent)] onboarding-float">
+        <div className={`rounded-xl border p-5 onboarding-float ${
+          exportActive
+            ? 'border-[var(--color-accent)] bg-[var(--color-accent-muted)] text-[var(--color-accent)]'
+            : 'border-[var(--color-border-default)] bg-[var(--color-bg-surface)] text-[var(--color-text-secondary)]'
+        }`}>
           <FileArchive className="mb-3 h-8 w-8" />
           <div className="text-sm font-semibold">导出实例备份</div>
           <p className="mt-2 text-xs leading-5">可按全部、选中、筛选或自定义范围导出实例包。</p>
         </div>
-        <div className="rounded-xl border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-5 text-[var(--color-text-secondary)] onboarding-float onboarding-delay-1">
+        <div className={`rounded-xl border p-5 onboarding-float onboarding-delay-1 ${
+          restoreActive
+            ? 'border-[var(--color-accent)] bg-[var(--color-accent-muted)] text-[var(--color-accent)]'
+            : 'border-[var(--color-border-default)] bg-[var(--color-bg-surface)] text-[var(--color-text-secondary)]'
+        }`}>
           <Upload className="mb-3 h-8 w-8 text-[var(--color-accent)]" />
           <div className="text-sm font-semibold text-[var(--color-text-primary)]">恢复实例备份</div>
           <p className="mt-2 text-xs leading-5">选择备份包后预览实例，再按需恢复 Cookie 和配置。</p>
@@ -371,14 +401,14 @@ function BackupScene() {
   )
 }
 
-function OrganizationScene() {
+function OrganizationScene({ activeStepId }: { activeStepId?: string }) {
   return (
     <div className="onboarding-stage-scene p-7">
       <div className="grid grid-cols-2 gap-3">
-        <ToolTile icon={<Tags className="h-5 w-5" />} title="标签" detail="用于实例标记、筛选和批量组织。" active />
-        <ToolTile icon={<Layers3 className="h-5 w-5" />} title="分组" detail="为实例建立业务层级与归属。" delay="onboarding-delay-1" />
-        <ToolTile icon={<CheckCircle2 className="h-5 w-5" />} title="默认功能" detail="新建实例时自动应用默认标签、分组和内容。" delay="onboarding-delay-2" />
-        <ToolTile icon={<ListChecks className="h-5 w-5" />} title="联动" detail="标签、分组与默认内容规则联动同步。" delay="onboarding-delay-3" />
+        <ToolTile icon={<Tags className="h-5 w-5" />} title="标签" detail="用于实例标记、筛选和批量组织。" active={activeStepId === 'organization-tags'} />
+        <ToolTile icon={<Layers3 className="h-5 w-5" />} title="分组" detail="为实例建立业务层级与归属。" active={activeStepId === 'organization-groups'} delay="onboarding-delay-1" />
+        <ToolTile icon={<CheckCircle2 className="h-5 w-5" />} title="默认功能" detail="新建实例时自动应用默认标签、分组和内容。" active={activeStepId === 'organization-default'} delay="onboarding-delay-2" />
+        <ToolTile icon={<ListChecks className="h-5 w-5" />} title="联动" detail="标签、分组与默认内容规则联动同步。" active={activeStepId === 'organization-default'} delay="onboarding-delay-3" />
       </div>
       <div className="mt-4 flex items-center justify-center gap-3 rounded-xl border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-4">
         <FlowNode icon={<Tags className="h-5 w-5" />} label="标签" active />
@@ -391,12 +421,12 @@ function OrganizationScene() {
   )
 }
 
-function ExtensionScene() {
+function ExtensionScene({ activeStepId }: { activeStepId?: string }) {
   return (
     <div className="onboarding-stage-scene p-7">
       <div className="grid grid-cols-2 gap-4">
-        <ToolTile icon={<Upload className="h-5 w-5" />} title="导入插件" detail="支持目录、ZIP、CRX，也支持拖拽导入。" active />
-        <ToolTile icon={<Puzzle className="h-5 w-5" />} title="插件管理" detail="查看版本、绑定实例、设置默认自动绑定。" delay="onboarding-delay-1" />
+        <ToolTile icon={<Upload className="h-5 w-5" />} title="导入插件" detail="支持目录、ZIP、CRX，也支持拖拽导入。" active={activeStepId === 'extension-import'} />
+        <ToolTile icon={<Puzzle className="h-5 w-5" />} title="插件管理" detail="查看版本、绑定实例、设置默认自动绑定。" active={activeStepId === 'extension-manage'} delay="onboarding-delay-1" />
       </div>
       <div className="mt-4 rounded-xl border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-4">
         <div className="mb-3 text-sm font-semibold text-[var(--color-text-primary)]">扩展库</div>
@@ -411,7 +441,7 @@ function ExtensionScene() {
   )
 }
 
-function SettingsScene() {
+function SettingsScene({ activeStepId }: { activeStepId?: string }) {
   return (
     <div className="onboarding-stage-scene p-7">
       <div className="rounded-xl border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-5 shadow-sm">
@@ -423,7 +453,7 @@ function SettingsScene() {
           <span className="rounded-md bg-[var(--color-accent-muted)] px-2 py-1 text-xs text-[var(--color-accent)]">演示模式</span>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <ToolTile icon={<Play className="h-5 w-5" />} title="播放新手演示" detail="随时重新进入完整演示流程。" active />
+          <ToolTile icon={<Play className="h-5 w-5" />} title="播放新手演示" detail="随时重新进入完整演示流程。" active={activeStepId === 'settings-demo'} />
           <ToolTile icon={<Download className="h-5 w-5" />} title="配置备份" detail="系统级配置导出、加载和初始化。" delay="onboarding-delay-1" />
         </div>
       </div>
@@ -477,21 +507,21 @@ function FinishScene() {
   )
 }
 
-export function OnboardingAnimation({ sceneKey }: OnboardingAnimationProps) {
+export function OnboardingAnimation({ sceneKey, activeStepId }: OnboardingAnimationProps) {
   return (
     <div className="onboarding-stage" aria-hidden="true">
       {sceneKey === 'overview' ? <OverviewScene /> : null}
       {sceneKey === 'core' ? <CoreScene /> : null}
-      {sceneKey === 'core-tools' ? <CoreToolsScene /> : null}
+      {sceneKey === 'core-tools' ? <CoreToolsScene activeStepId={activeStepId} /> : null}
       {sceneKey === 'proxy' ? <ProxyScene /> : null}
-      {sceneKey === 'proxy-tools' ? <ProxyToolsScene /> : null}
-      {sceneKey === 'list-tools' ? <ListToolsScene /> : null}
+      {sceneKey === 'proxy-tools' ? <ProxyToolsScene activeStepId={activeStepId} /> : null}
+      {sceneKey === 'list-tools' ? <ListToolsScene activeStepId={activeStepId} /> : null}
       {sceneKey === 'profile' ? <ProfileScene /> : null}
-      {sceneKey === 'profile-edit' ? <ProfileEditScene /> : null}
-      {sceneKey === 'backup' ? <BackupScene /> : null}
-      {sceneKey === 'organization' ? <OrganizationScene /> : null}
-      {sceneKey === 'extension' ? <ExtensionScene /> : null}
-      {sceneKey === 'settings' ? <SettingsScene /> : null}
+      {sceneKey === 'profile-edit' ? <ProfileEditScene activeStepId={activeStepId} /> : null}
+      {sceneKey === 'backup' ? <BackupScene activeStepId={activeStepId} /> : null}
+      {sceneKey === 'organization' ? <OrganizationScene activeStepId={activeStepId} /> : null}
+      {sceneKey === 'extension' ? <ExtensionScene activeStepId={activeStepId} /> : null}
+      {sceneKey === 'settings' ? <SettingsScene activeStepId={activeStepId} /> : null}
       {sceneKey === 'sync' ? <SyncScene /> : null}
       {sceneKey === 'finish' ? <FinishScene /> : null}
     </div>
