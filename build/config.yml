@@ -53,5 +53,7 @@ dev_mode:
 fileAssociations:
 
 protocols:
+  - scheme: trace-browser
+    description: Trace Browser Profile Transfer Link
 
 other:

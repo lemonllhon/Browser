@@ -61,6 +61,8 @@ type App struct {
 	coreDownloadMu     sync.Mutex
 	coreDownloadCancel context.CancelFunc
 	coreDownloadSeq    uint64
+	deepLinkMu         sync.Mutex
+	pendingDeepLink    *ProfileTransferDeepLink
 
 	forceQuit                bool       // 强制退出标志，用于跳过 OnBeforeClose 的拦截
 	quitMode                 quitMode   // 退出模式：全量退出 / 仅退出应用

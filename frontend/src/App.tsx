@@ -1,13 +1,13 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
 import type { ComponentType } from 'react'
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { ThemeProvider } from './shared/theme'
 import { Layout } from './shared/layout'
 import { ToastContainer, Modal, Button, Loading, Progress, toast } from './shared/components'
 import { AlertCircle } from 'lucide-react'
 import { useNotificationStore } from './store/notificationStore'
 import { useBackupStore } from './store/backupStore'
-import { forceQuitApp, quitAppOnly, saveWindowState, stopBrowserInstance } from './shared/backend/client'
+import { consumePendingProfileTransferDeepLink, forceQuitApp, quitAppOnly, saveWindowState, stopBrowserInstance } from './shared/backend/client'
 import {
   checkAppUpdate,
   downloadAppUpdate,
@@ -32,6 +32,12 @@ import {
   onRuntimeEvent,
   quitRuntime,
 } from './shared/backend/runtime'
+import {
+  PROFILE_TRANSFER_DEEP_LINK_EVENT,
+  isProfileTransferDeepLinkPayload,
+  storeProfileTransferDeepLink,
+  type ProfileTransferDeepLinkPayload,
+} from './modules/browser/profileTransferDeepLink'
 
 function lazyNamed<TModule extends Record<string, ComponentType<any>>>(
   loader: () => Promise<TModule>,
@@ -152,6 +158,41 @@ function useWailsNotifications() {
       offPendingInstallFailed?.()
     }
   }, [addNotification])
+}
+
+function ProfileTransferDeepLinkBridge() {
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    let lastHandled = ''
+
+    const handlePayload = (payload?: ProfileTransferDeepLinkPayload | null) => {
+      if (!isProfileTransferDeepLinkPayload(payload)) return
+      const key = String(payload.url || '')
+      if (key && key === lastHandled) return
+      lastHandled = key
+      storeProfileTransferDeepLink(payload)
+      navigate('/browser/list')
+    }
+
+    const off = onRuntimeEvent<ProfileTransferDeepLinkPayload>(PROFILE_TRANSFER_DEEP_LINK_EVENT, payload => {
+      handlePayload(payload)
+      void consumePendingProfileTransferDeepLink().catch(() => undefined)
+    })
+
+    const timers = [300, 1000, 2500].map(delay => window.setTimeout(() => {
+      void consumePendingProfileTransferDeepLink()
+        .then(handlePayload)
+        .catch(() => undefined)
+    }, delay))
+
+    return () => {
+      off?.()
+      timers.forEach(timer => window.clearTimeout(timer))
+    }
+  }, [navigate])
+
+  return null
 }
 
 type PendingUpdateInfo = AppUpdatePendingUpdate
@@ -641,6 +682,7 @@ function App() {
   return (
     <ThemeProvider>
       <Router>
+        <ProfileTransferDeepLinkBridge />
         <Layout>
           <Suspense fallback={routeFallback}>
             <Routes>

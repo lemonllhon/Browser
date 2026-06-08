@@ -25,6 +25,7 @@ const (
 	MethodAppWindowStateGet      = "trace.app.WindowStateGet"
 	MethodAppWindowHide          = "trace.app.WindowHide"
 	MethodAppWindowMinimise      = "trace.app.WindowMinimise"
+	MethodAppProfileTransferLink = "trace.app.ProfileTransferDeepLinkConsume"
 	MethodBackupInitialize       = "trace.backup.Initialize"
 	MethodBackupExport           = "trace.backup.Export"
 	MethodBackupImport           = "trace.backup.Import"
@@ -162,6 +163,11 @@ type AppRuntimeEventPayload struct {
 	SnapshotsVersion  int64
 	LogsVersion       int64
 	ChangedIDs        []string
+	URL               string
+	Action            string
+	ServerURL         string
+	Code              string
+	Source            string
 }
 
 type AppWindowSize struct {
@@ -838,6 +844,11 @@ func EncodeAppRuntimeEventPayload(message AppRuntimeEventPayload) []byte {
 	out = appendInt64Field(out, 23, message.SnapshotsVersion)
 	out = appendRepeatedStringField(out, 24, message.ChangedIDs)
 	out = appendInt64Field(out, 25, message.LogsVersion)
+	out = appendStringField(out, 26, message.URL)
+	out = appendStringField(out, 27, message.Action)
+	out = appendStringField(out, 28, message.ServerURL)
+	out = appendStringField(out, 29, message.Code)
+	out = appendStringField(out, 30, message.Source)
 	return out
 }
 
@@ -944,6 +955,26 @@ func DecodeAppRuntimeEventPayload(payload []byte) (AppRuntimeEventPayload, error
 		case 25:
 			number, err := consumeVarintValue(wireType, value)
 			result.LogsVersion = int64(number)
+			return err
+		case 26:
+			text, err := consumeStringValue(wireType, value)
+			result.URL = text
+			return err
+		case 27:
+			text, err := consumeStringValue(wireType, value)
+			result.Action = text
+			return err
+		case 28:
+			text, err := consumeStringValue(wireType, value)
+			result.ServerURL = text
+			return err
+		case 29:
+			text, err := consumeStringValue(wireType, value)
+			result.Code = text
+			return err
+		case 30:
+			text, err := consumeStringValue(wireType, value)
+			result.Source = text
 			return err
 		default:
 			return nil

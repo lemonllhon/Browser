@@ -29,6 +29,12 @@ import {
   type BackupRestoreDemoTab,
   type BrowserListBackupDemoDetail,
 } from '../browserOnboardingEvents'
+import {
+  PROFILE_TRANSFER_DEEP_LINK_EVENT,
+  profileTransferShareText,
+  takeStoredProfileTransferDeepLink,
+  type ProfileTransferDeepLinkPayload,
+} from '../profileTransferDeepLink'
 import { fetchSyncAuthSession, isSyncSessionOnline, loadSyncAuthSession, SYNC_AUTH_CHANGED_EVENT, type SyncAuthSession } from '../../profile/syncAuth'
 import { formatInstanceMarkerLabel, formatTime, getCookieActionTitle, resolveProfileStatus } from '../utils/browserListFormat'
 import { filterAndSortBrowserProfiles, getBrowserProfileCoreLabel, resolveBrowserProfileCore } from '../utils/browserListFilters'
@@ -85,6 +91,7 @@ export function BrowserListPage() {
   const [stoppingIds, setStoppingIds] = useState<Set<string>>(new Set())
   const [backupModalOpen, setBackupModalOpen] = useState(false)
   const [profileTransferModalOpen, setProfileTransferModalOpen] = useState(false)
+  const [profileTransferInitialShareText, setProfileTransferInitialShareText] = useState('')
   const [cloudSyncOnline, setCloudSyncOnline] = useState(() => isSyncSessionOnline(loadSyncAuthSession()))
   const [backupDemoTab, setBackupDemoTab] = useState<BackupRestoreDemoTab | null>(null)
   const [batchRandomModalOpen, setBatchRandomModalOpen] = useState(false)
@@ -149,6 +156,26 @@ export function BrowserListPage() {
     setWindowSyncSettings,
     setWindowSyncLayout,
   })
+
+  useEffect(() => {
+    const openProfileTransferDeepLink = (payload: ProfileTransferDeepLinkPayload | null) => {
+      const text = profileTransferShareText(payload)
+      if (!text) return
+      setProfileTransferInitialShareText(text)
+      setProfileTransferModalOpen(true)
+    }
+
+    openProfileTransferDeepLink(takeStoredProfileTransferDeepLink())
+    const handleProfileTransferDeepLink = (event: Event) => {
+      const stored = takeStoredProfileTransferDeepLink()
+      openProfileTransferDeepLink(stored || (event as CustomEvent<ProfileTransferDeepLinkPayload>).detail || null)
+    }
+
+    window.addEventListener(PROFILE_TRANSFER_DEEP_LINK_EVENT, handleProfileTransferDeepLink)
+    return () => {
+      window.removeEventListener(PROFILE_TRANSFER_DEEP_LINK_EVENT, handleProfileTransferDeepLink)
+    }
+  }, [])
 
   useEffect(() => {
     const handleBackupDemo = (event: Event) => {
@@ -700,7 +727,11 @@ export function BrowserListPage() {
 
       <ProfileTransferShareModal
         open={profileTransferModalOpen}
-        onClose={() => setProfileTransferModalOpen(false)}
+        initialShareText={profileTransferInitialShareText}
+        onClose={() => {
+          setProfileTransferModalOpen(false)
+          setProfileTransferInitialShareText('')
+        }}
         profiles={profiles}
         selectedProfileIds={selectedProfileIds}
         onRestored={() => {

@@ -601,6 +601,16 @@ func main() {
 		defer protoIPC.Close()
 	}
 
+	focusMainWindow := func() {
+		if mainWindow == nil {
+			return
+		}
+		mainWindow.Show()
+		mainWindow.UnMinimise()
+		mainWindow.Restore()
+		mainWindow.Focus()
+	}
+
 	wailsApp = application.New(application.Options{
 		Name:        cfg.App.Name,
 		Description: "Trace Browser",
@@ -624,6 +634,16 @@ func main() {
 		},
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
+		},
+		SingleInstance: &application.SingleInstanceOptions{
+			UniqueID: "com.tracebrowser.app",
+			OnSecondInstanceLaunch: func(data application.SecondInstanceData) {
+				if startupDebugEnabled {
+					log.Printf("收到第二实例启动参数: %v", data.Args)
+				}
+				app.HandleProfileTransferLaunchArgs(data.Args, "second-instance")
+				focusMainWindow()
+			},
 		},
 	})
 
@@ -675,6 +695,19 @@ func main() {
 		app.EmitFileDropEvent(files, x, y)
 	})
 
+	wailsApp.Event.OnApplicationEvent(events.Common.ApplicationLaunchedWithUrl, func(event *application.ApplicationEvent) {
+		if event == nil || event.Context() == nil {
+			return
+		}
+		launchURL := strings.TrimSpace(event.Context().URL())
+		if startupDebugEnabled {
+			log.Printf("收到 URL 协议唤起: %s", launchURL)
+		}
+		if app.HandleProfileTransferDeepLink(launchURL, "application-url") {
+			focusMainWindow()
+		}
+	})
+
 	mainWindow.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
 		if backend.ShouldBlockClose(app.App, shutdownContext()) {
 			event.Cancel()
@@ -688,6 +721,9 @@ func main() {
 			mainWindow.Center()
 			backend.Start(app.App, shutdownContext())
 			log.Printf("Wails3 后端服务初始化完成")
+			if !app.HandleProfileTransferLaunchArgs(os.Args, "startup") {
+				app.EmitPendingProfileTransferDeepLink()
+			}
 			go backend.RunTray(backend.TrayCallbacks{
 				OnShow: func() {
 					mainWindow.Show()

@@ -13,6 +13,7 @@ import {
   METHOD_APP_LOG_LIST,
   METHOD_APP_PATH_OPEN,
   METHOD_APP_PERFORMANCE_SNAPSHOT_GET,
+  METHOD_APP_PROFILE_TRANSFER_LINK_CONSUME,
   METHOD_APP_QUIT_ONLY,
   METHOD_APP_REMOTE_AUTHOR_PROFILE_FETCH,
   METHOD_APP_RELEASE_PAGE_OPEN,
@@ -135,6 +136,11 @@ export type ProtoAppRuntimeEventPayload = {
   snapshotsVersion?: number
   logsVersion?: number
   changedIds?: string[]
+  url?: string
+  action?: string
+  serverUrl?: string
+  code?: string
+  source?: string
 }
 
 export type ProtoAppWindowSize = {
@@ -312,6 +318,11 @@ export async function minimiseWindow(): Promise<boolean> {
 
 export function onAppRuntimeEvent(eventName: string, callback: (payload: ProtoAppRuntimeEventPayload) => void): () => void {
   return appProtoClient.onEvent(eventName, event => callback(decodeAppRuntimeEventPayload(event.payload)))
+}
+
+export async function consumePendingProfileTransferDeepLink(): Promise<ProtoAppRuntimeEventPayload> {
+  const payload = await appProtoClient.request(METHOD_APP_PROFILE_TRANSFER_LINK_CONSUME, new Uint8Array())
+  return decodeAppRuntimeEventPayload(payload)
 }
 
 export function onAppFileDrop(callback: (payload: ProtoAppFileDropPayload) => void): () => void {
@@ -720,21 +731,36 @@ export function decodeAppRuntimeEventPayload(payload: Uint8Array): ProtoAppRunti
         case 5:
           result.engine = text
           break
-      case 11:
-        result.runtimeWarning = text
-        break
-      case 12:
-        result.domain = text
-        break
-      case 13:
-        result.reason = text
-        break
-      case 24:
-        if (!result.changedIds) {
-          result.changedIds = []
-        }
-        result.changedIds.push(text)
-        break
+        case 11:
+          result.runtimeWarning = text
+          break
+        case 12:
+          result.domain = text
+          break
+        case 13:
+          result.reason = text
+          break
+        case 24:
+          if (!result.changedIds) {
+            result.changedIds = []
+          }
+          result.changedIds.push(text)
+          break
+        case 26:
+          result.url = text
+          break
+        case 27:
+          result.action = text
+          break
+        case 28:
+          result.serverUrl = text
+          break
+        case 29:
+          result.code = text
+          break
+        case 30:
+          result.source = text
+          break
       }
       continue
     }

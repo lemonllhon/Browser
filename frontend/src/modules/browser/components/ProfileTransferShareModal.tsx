@@ -18,6 +18,7 @@ import { resolveActionErrorMessage } from '../utils/actionErrors'
 
 interface Props {
   open: boolean
+  initialShareText?: string
   onClose: () => void
   profiles: BrowserProfile[]
   selectedProfileIds: string[]
@@ -33,6 +34,7 @@ type ProgressLog = {
 
 export function ProfileTransferShareModal({
   open,
+  initialShareText,
   onClose,
   profiles,
   selectedProfileIds,
@@ -64,9 +66,10 @@ export function ProfileTransferShareModal({
 
   useEffect(() => {
     if (!open) return
+    const incomingShareText = (initialShareText || '').trim()
     const stoppedSet = new Set(stoppedProfiles.map(profile => profile.profileId))
     const initialSelected = selectedProfileIds.filter(profileId => stoppedSet.has(profileId))
-    setTab('share')
+    setTab(incomingShareText ? 'receive' : 'share')
     setSelectedIds(new Set(initialSelected))
     setIncludeCookies(true)
     setIncludePlainCookies(false)
@@ -75,12 +78,23 @@ export function ProfileTransferShareModal({
     setProgress(null)
     setLogs([])
     setCreatedShare(null)
-    setShareText('')
+    setShareText(incomingShareText)
     setResolvedShare(null)
     setPreview(null)
     setRestoreProfileIds(new Set())
     setRestoreCompleted(false)
-  }, [open, selectedProfileIds, stoppedProfiles])
+  }, [initialShareText, open, selectedProfileIds, stoppedProfiles])
+
+  useEffect(() => {
+    if (!open) return
+    const incomingShareText = (initialShareText || '').trim()
+    if (!incomingShareText) return
+    setTab('receive')
+    setShareText(incomingShareText)
+    setResolvedShare(null)
+    setPreview(null)
+    setRestoreCompleted(false)
+  }, [initialShareText, open])
 
   useEffect(() => {
     if (!open) return

@@ -36,6 +36,7 @@ func registerProtoAppHandlers(app *App, dispatcher *protoipc.Dispatcher) {
 	dispatcher.Register(protoipc.MethodAppWindowStateGet, app.handleProtoAppWindowStateGet)
 	dispatcher.Register(protoipc.MethodAppWindowHide, app.handleProtoAppWindowHide)
 	dispatcher.Register(protoipc.MethodAppWindowMinimise, app.handleProtoAppWindowMinimise)
+	dispatcher.Register(protoipc.MethodAppProfileTransferLink, app.handleProtoAppProfileTransferDeepLinkConsume)
 	dispatcher.Register(protoipc.MethodBackupInitialize, app.handleProtoBackupInitialize)
 	dispatcher.Register(protoipc.MethodBackupExport, app.handleProtoBackupExport)
 	dispatcher.Register(protoipc.MethodBackupImport, app.handleProtoBackupImport)
@@ -79,6 +80,20 @@ func (a *App) handleProtoAppReleasePageOpen(ctx context.Context, request protoip
 		return nil, protoBrowserOperationError("打开发布页失败", err)
 	}
 	return protoipc.EncodeBrowserActionResponse(protoipc.BrowserActionResponse{OK: true}), nil
+}
+
+func (a *App) handleProtoAppProfileTransferDeepLinkConsume(ctx context.Context, request protoipc.Envelope) ([]byte, *protoipc.RPCError) {
+	link, ok := a.ConsumePendingProfileTransferDeepLink()
+	if !ok {
+		return protoipc.EncodeAppRuntimeEventPayload(protoipc.AppRuntimeEventPayload{}), nil
+	}
+	return protoipc.EncodeAppRuntimeEventPayload(protoipc.AppRuntimeEventPayload{
+		Action:    link.Action,
+		URL:       link.URL,
+		ServerURL: link.ServerURL,
+		Code:      link.Code,
+		Source:    link.Source,
+	}), nil
 }
 
 func (a *App) handleProtoAppDashboardStats(ctx context.Context, request protoipc.Envelope) ([]byte, *protoipc.RPCError) {
@@ -453,7 +468,8 @@ func isProtoRuntimeEvent(eventName string) bool {
 		"browser:logs:updated",
 		"window-sync:master-closed",
 		"proxy:bridge:failed",
-		"proxy:bridge:died":
+		"proxy:bridge:died",
+		profileTransferDeepLinkEvent:
 		return true
 	default:
 		return false
@@ -495,6 +511,11 @@ func appRuntimeEventPayloadToProto(optionalData ...any) protoipc.AppRuntimeEvent
 			SnapshotsVersion:  mapInt64(value, "snapshotsVersion"),
 			LogsVersion:       mapInt64(value, "logsVersion"),
 			ChangedIDs:        mapStringList(value, "changedIds"),
+			URL:               mapString(value, "url"),
+			Action:            mapString(value, "action"),
+			ServerURL:         mapString(value, "serverUrl"),
+			Code:              mapString(value, "code"),
+			Source:            mapString(value, "source"),
 		}
 	case map[string]string:
 		return protoipc.AppRuntimeEventPayload{
@@ -503,6 +524,11 @@ func appRuntimeEventPayloadToProto(optionalData ...any) protoipc.AppRuntimeEvent
 			Error:       strings.TrimSpace(value["error"]),
 			Key:         strings.TrimSpace(value["key"]),
 			Engine:      strings.TrimSpace(value["engine"]),
+			URL:         strings.TrimSpace(value["url"]),
+			Action:      strings.TrimSpace(value["action"]),
+			ServerURL:   strings.TrimSpace(value["serverUrl"]),
+			Code:        strings.TrimSpace(value["code"]),
+			Source:      strings.TrimSpace(value["source"]),
 		}
 	default:
 		return protoipc.AppRuntimeEventPayload{ProfileID: strings.TrimSpace(fmt.Sprint(value))}
