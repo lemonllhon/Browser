@@ -108,6 +108,8 @@ fi
 
 TARGET="darwin-$ARCH"
 APP_BIN_DIR="$ROOT_DIR/build/bin"
+APP_BINARY="$APP_BIN_DIR/trace-browser"
+APP_ICON_SRC="$ROOT_DIR/build/appicon.png"
 CHROME_README_SRC="$ROOT_DIR/chrome/README.md"
 CONFIG_INIT_SRC="$ROOT_DIR/publish/config.init.mac.yaml"
 ZIP_NAME="TraceBrowser-${VERSION}-macos-${ARCH}.zip"
@@ -116,7 +118,132 @@ STAGE_DIR="$STAGING_ROOT/$TARGET"
 APP_STAGE="$STAGE_DIR/Trace Browser.app"
 
 find_built_app_bundle() {
-  python3 -c 'from pathlib import Path; import sys; root = Path(sys.argv[1]); candidates = [] if not root.is_dir() else [p for p in root.iterdir() if p.is_dir() and p.suffix == ".app"]; candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True); print(candidates[0] if candidates else "")' "$APP_BIN_DIR"
+  python3 -c 'from pathlib import Path; import sys; roots = [Path(arg) for arg in sys.argv[1:]]; candidates = []; seen = set(); [candidates.append(p) for root in roots if root.is_dir() for p in root.rglob("*.app") if p.is_dir() and not (str(p) in seen or seen.add(str(p)))]; candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True); print(candidates[0] if candidates else "")' "$APP_BIN_DIR" "$ROOT_DIR/build"
+}
+
+config_info_value() {
+  local key="$1"
+  local fallback="$2"
+  python3 -c 'import sys; from pathlib import Path; path, key, fallback = sys.argv[1:4]; prefix = "  " + key + ":"; lines = Path(path).read_text(encoding="utf-8").splitlines(); line = next((line for line in lines if line.startswith(prefix)), ""); print(fallback if not line else line.split(":", 1)[1].strip().strip(chr(34)).strip(chr(39)))' "$ROOT_DIR/build/config.yml" "$key" "$fallback"
+}
+
+config_protocol_scheme() {
+  python3 -c 'import sys; from pathlib import Path; lines = Path(sys.argv[1]).read_text(encoding="utf-8").splitlines(); idx = next((i for i, line in enumerate(lines) if line.startswith("protocols:")), -1); section = [] if idx < 0 else lines[idx + 1:]; scheme = next((line.split(":", 1)[1].strip().strip(chr(34)).strip(chr(39)) for line in section if line.strip().startswith("- scheme:")), "trace-browser"); print(scheme or "trace-browser")' "$ROOT_DIR/build/config.yml"
+}
+
+xml_escape() {
+  python3 -c 'import html, sys; print(html.escape(sys.argv[1], quote=True))' "$1"
+}
+
+write_manual_info_plist() {
+  local plist_path="$1"
+  local product_name product_identifier product_version product_comments product_copyright protocol_scheme
+  local product_name_xml product_identifier_xml product_version_xml product_comments_xml product_copyright_xml protocol_scheme_xml
+
+  product_name="$(config_info_value productName "Trace Browser")"
+  product_identifier="$(config_info_value productIdentifier "com.tracebrowser.app")"
+  product_version="$VERSION"
+  product_comments="$(config_info_value comments "Trace Browser desktop application")"
+  product_copyright="$(config_info_value copyright "Copyright (c) 2026")"
+  protocol_scheme="$(config_protocol_scheme)"
+
+  product_name_xml="$(xml_escape "$product_name")"
+  product_identifier_xml="$(xml_escape "$product_identifier")"
+  product_version_xml="$(xml_escape "$product_version")"
+  product_comments_xml="$(xml_escape "$product_comments")"
+  product_copyright_xml="$(xml_escape "$product_copyright")"
+  protocol_scheme_xml="$(xml_escape "$protocol_scheme")"
+
+  cat > "$plist_path" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleName</key>
+  <string>$product_name_xml</string>
+  <key>CFBundleDisplayName</key>
+  <string>$product_name_xml</string>
+  <key>CFBundleExecutable</key>
+  <string>trace-browser</string>
+  <key>CFBundleIdentifier</key>
+  <string>$product_identifier_xml</string>
+  <key>CFBundleVersion</key>
+  <string>$product_version_xml</string>
+  <key>CFBundleShortVersionString</key>
+  <string>$product_version_xml</string>
+  <key>CFBundleGetInfoString</key>
+  <string>$product_comments_xml</string>
+  <key>CFBundleIconFile</key>
+  <string>iconfile</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>11.0</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <key>NSHumanReadableCopyright</key>
+  <string>$product_copyright_xml</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>wails.com.$protocol_scheme_xml</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>$protocol_scheme_xml</string>
+      </array>
+    </dict>
+  </array>
+</dict>
+</plist>
+EOF
+}
+
+create_icon_resource() {
+  local resources_dir="$1"
+  if [[ ! -f "$APP_ICON_SRC" ]]; then
+    return 0
+  fi
+
+  if command -v sips >/dev/null 2>&1 && command -v iconutil >/dev/null 2>&1; then
+    local iconset="$STAGE_DIR/icon.iconset"
+    rm -rf "$iconset"
+    mkdir -p "$iconset"
+    if sips -z 16 16 "$APP_ICON_SRC" --out "$iconset/icon_16x16.png" >/dev/null \
+      && sips -z 32 32 "$APP_ICON_SRC" --out "$iconset/icon_16x16@2x.png" >/dev/null \
+      && sips -z 32 32 "$APP_ICON_SRC" --out "$iconset/icon_32x32.png" >/dev/null \
+      && sips -z 64 64 "$APP_ICON_SRC" --out "$iconset/icon_32x32@2x.png" >/dev/null \
+      && sips -z 128 128 "$APP_ICON_SRC" --out "$iconset/icon_128x128.png" >/dev/null \
+      && sips -z 256 256 "$APP_ICON_SRC" --out "$iconset/icon_128x128@2x.png" >/dev/null \
+      && sips -z 256 256 "$APP_ICON_SRC" --out "$iconset/icon_256x256.png" >/dev/null \
+      && sips -z 512 512 "$APP_ICON_SRC" --out "$iconset/icon_256x256@2x.png" >/dev/null \
+      && sips -z 512 512 "$APP_ICON_SRC" --out "$iconset/icon_512x512.png" >/dev/null \
+      && sips -z 1024 1024 "$APP_ICON_SRC" --out "$iconset/icon_512x512@2x.png" >/dev/null \
+      && iconutil -c icns "$iconset" -o "$resources_dir/iconfile.icns" >/dev/null; then
+      rm -rf "$iconset"
+      return 0
+    fi
+    rm -rf "$iconset"
+    echo "[WARN] failed to generate macOS .icns icon, continuing without bundle icon" >&2
+  fi
+}
+
+create_app_bundle_from_binary() {
+  local app_dir="$1"
+  if [[ ! -f "$APP_BINARY" ]]; then
+    echo "[ERROR] failed to locate built .app bundle or fallback binary." >&2
+    echo "        Expected binary: $APP_BINARY" >&2
+    echo "        Build outputs:" >&2
+    find "$ROOT_DIR/build" -maxdepth 4 -type f -o -type d 2>/dev/null | sed 's#^#        - #' >&2 || true
+    exit 1
+  fi
+
+  echo "[INFO] no .app bundle found; assembling macOS .app from $APP_BINARY"
+  mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources"
+  cp "$APP_BINARY" "$app_dir/Contents/MacOS/trace-browser"
+  chmod +x "$app_dir/Contents/MacOS/trace-browser"
+  write_manual_info_plist "$app_dir/Contents/Info.plist"
+  create_icon_resource "$app_dir/Contents/Resources"
 }
 
 manifest_has_target() {
@@ -202,15 +329,16 @@ else
 fi
 
 APP_SOURCE="$(find_built_app_bundle)"
-if [[ -z "$APP_SOURCE" || ! -d "$APP_SOURCE" ]]; then
-  echo "[ERROR] failed to locate built .app bundle under $APP_BIN_DIR" >&2
-  exit 1
-fi
 
 echo "[4/4] Assembling macOS app bundle..."
 rm -rf "$APP_STAGE" "$APP_EXPORT"
 mkdir -p "$STAGE_DIR" "$OUTPUT_DIR"
-ditto "$APP_SOURCE" "$APP_STAGE"
+if [[ -n "$APP_SOURCE" && -d "$APP_SOURCE" ]]; then
+  echo "[INFO] found Wails .app bundle: $APP_SOURCE"
+  ditto "$APP_SOURCE" "$APP_STAGE"
+else
+  create_app_bundle_from_binary "$APP_STAGE"
+fi
 
 APP_MACOS_DIR="$APP_STAGE/Contents/MacOS"
 if [[ ! -d "$APP_MACOS_DIR" ]]; then
