@@ -103,20 +103,7 @@ require_cmd ditto
 require_cmd wails3
 
 if [[ -z "$VERSION" ]]; then
-  VERSION="$(python3 - "$ROOT_DIR/build/config.yml" <<'PY'
-import re
-import sys
-
-path = sys.argv[1]
-with open(path, "r", encoding="utf-8") as f:
-    text = f.read()
-match = re.search(r'(?m)^\s{2}version:\s*["\']?([^"\'\r\n]+)', text)
-version = (match.group(1).strip() if match else "")
-if not version:
-    raise SystemExit("info.version missing in build/config.yml")
-print(version)
-PY
-)"
+  VERSION="$(python3 -c 'import sys; from pathlib import Path; lines = Path(sys.argv[1]).read_text(encoding="utf-8").splitlines(); line = next((line for line in lines if line.startswith("  version:")), ""); sys.exit("info.version missing in build/config.yml") if not line else print(line.split(":", 1)[1].strip().strip(chr(34)).strip(chr(39)))' "$ROOT_DIR/build/config.yml")"
 fi
 
 TARGET="darwin-$ARCH"
@@ -129,64 +116,15 @@ STAGE_DIR="$STAGING_ROOT/$TARGET"
 APP_STAGE="$STAGE_DIR/Trace Browser.app"
 
 find_built_app_bundle() {
-  python3 - "$APP_BIN_DIR" <<'PY'
-from pathlib import Path
-import sys
-
-root = Path(sys.argv[1])
-if not root.is_dir():
-    sys.exit(0)
-
-candidates = [p for p in root.iterdir() if p.is_dir() and p.suffix == ".app"]
-if not candidates:
-    sys.exit(0)
-
-candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-print(candidates[0])
-PY
+  python3 -c 'from pathlib import Path; import sys; root = Path(sys.argv[1]); candidates = [] if not root.is_dir() else [p for p in root.iterdir() if p.is_dir() and p.suffix == ".app"]; candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True); print(candidates[0] if candidates else "")' "$APP_BIN_DIR"
 }
 
 manifest_has_target() {
-  python3 - "$ROOT_DIR/publish/runtime-manifest.json" "$TARGET" <<'PY'
-import json
-import sys
-
-manifest_path = sys.argv[1]
-target = sys.argv[2]
-
-with open(manifest_path, "r", encoding="utf-8") as f:
-    data = json.load(f)
-
-for item in data.get("files", []):
-    if target in (item.get("targets") or []):
-        print("yes")
-        raise SystemExit(0)
-
-raise SystemExit(1)
-PY
+  python3 -c 'import json, sys; data = json.load(open(sys.argv[1], encoding="utf-8")); target = sys.argv[2]; ok = any(target in (item.get("targets") or []) for item in data.get("files", [])); print("yes") if ok else None; sys.exit(0 if ok else 1)' "$ROOT_DIR/publish/runtime-manifest.json" "$TARGET"
 }
 
 runtime_entries_for_target() {
-  python3 - "$ROOT_DIR/publish/runtime-manifest.json" "$TARGET" <<'PY'
-import json
-import sys
-
-manifest_path = sys.argv[1]
-target = sys.argv[2]
-
-with open(manifest_path, "r", encoding="utf-8") as f:
-    data = json.load(f)
-
-found = False
-for item in data.get("files", []):
-    if target in (item.get("targets") or []):
-        rel = str(item.get("path", "")).strip()
-        if rel:
-            print(rel)
-            found = True
-
-raise SystemExit(0 if found else 1)
-PY
+  python3 -c 'import json, sys; data = json.load(open(sys.argv[1], encoding="utf-8")); target = sys.argv[2]; entries = [str(item.get("path", "")).strip() for item in data.get("files", []) if target in (item.get("targets") or []) and str(item.get("path", "")).strip()]; print("\n".join(entries)); sys.exit(0 if entries else 1)' "$ROOT_DIR/publish/runtime-manifest.json" "$TARGET"
 }
 
 assert_runtime_files_for_target() {
