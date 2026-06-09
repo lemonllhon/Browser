@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -197,5 +198,30 @@ logging:
 
 	if cfg.Logging.FilePath != "data/logs/app.log" {
 		t.Fatalf("legacy 根目录日志路径未迁移: got=%q", cfg.Logging.FilePath)
+	}
+}
+
+func TestDefaultFingerprintPlatformForOS(t *testing.T) {
+	cases := map[string]string{
+		"windows": "windows",
+		"linux":   "linux",
+		"darwin":  "mac",
+		"unknown": "windows",
+	}
+	for goos, want := range cases {
+		if got := defaultFingerprintPlatformForOS(goos); got != want {
+			t.Fatalf("defaultFingerprintPlatformForOS(%q)=%q, want %q", goos, got, want)
+		}
+	}
+}
+
+func TestDefaultConfigUsesCurrentOSFingerprintPlatform(t *testing.T) {
+	want := "--fingerprint-platform=" + defaultFingerprintPlatformForOS(runtime.GOOS)
+	cfg := DefaultConfig()
+	if len(cfg.Browser.DefaultFingerprintArgs) < 2 {
+		t.Fatalf("DefaultFingerprintArgs too short: %#v", cfg.Browser.DefaultFingerprintArgs)
+	}
+	if got := cfg.Browser.DefaultFingerprintArgs[1]; got != want {
+		t.Fatalf("DefaultFingerprintArgs platform=%q, want %q", got, want)
 	}
 }

@@ -1,0 +1,285 @@
+name: Publish macOS Packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Package version. Empty means read build/config.yml info.version."
+        required: false
+        default: ""
+      release_tag:
+        description: "Release tag to upload assets to. Empty means v<version> for manual runs."
+        required: false
+        default: ""
+      arch:
+        description: "macOS architecture to build."
+        required: true
+        type: choice
+        default: "arm64"
+        options:
+          - arm64
+          - amd64
+          - all
+      environment:
+        description: "GitHub Environment for approvals and scoped PUBLIC_RELEASE_TOKEN/PUBLIC_RELEASE_REPOSITORY."
+        required: true
+        type: choice
+        default: "staging"
+        options:
+          - staging
+          - production
+  push:
+    tags:
+      - "v*"
+      - "mac-v*"
+  release:
+    types:
+      - published
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-macos-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build macOS ${{ matrix.arch }}
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.arch == 'all' || inputs.arch == matrix.arch }}
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'production' }}
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: amd64
+            runner: macos-15-intel
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Configure npm retry policy
+        run: |
+          npm config set fetch-retries 5
+          npm config set fetch-retry-factor 2
+          npm config set fetch-retry-mintimeout 20000
+          npm config set fetch-retry-maxtimeout 120000
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha.96
+
+      - name: Add Go bin to PATH
+        run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Show tool versions
+        run: |
+          go version
+          node --version
+          npm --version
+          wails3 version
+          uname -a
+
+      - name: Resolve version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_EVENT_TAG: ${{ github.event.release.tag_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          input_version="$(printf '%s' "${INPUT_VERSION:-}" | xargs)"
+          input_release_tag="$(printf '%s' "${INPUT_RELEASE_TAG:-}" | xargs)"
+          release_event_tag="$(printf '%s' "${RELEASE_EVENT_TAG:-}" | xargs)"
+          ref_type="$(printf '%s' "${REF_TYPE:-}" | xargs)"
+          ref_name="$(printf '%s' "${REF_NAME:-}" | xargs)"
+
+          tag=""
+          if [ -n "$release_event_tag" ]; then
+            tag="$release_event_tag"
+          elif [ "$ref_type" = "tag" ]; then
+            tag="$ref_name"
+          elif [ -n "$input_release_tag" ]; then
+            tag="$input_release_tag"
+          fi
+
+          if [ -n "$input_version" ]; then
+            version="$input_version"
+          elif [ -n "$tag" ]; then
+            version="$tag"
+            version="${version#mac/}"
+            version="${version#mac-}"
+            version="${version#v}"
+            version="${version#V}"
+            version="${version%-mac}"
+          else
+            version="$(python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          text = Path("build/config.yml").read_text(encoding="utf-8")
+          match = re.search(r'(?m)^\s{2}version:\s*["\']?([^"\'\r\n]+)', text)
+          if not match:
+              raise SystemExit("Cannot resolve info.version from build/config.yml")
+          print(match.group(1).strip())
+          PY
+          )"
+          fi
+
+          version="$(printf '%s' "$version" | xargs)"
+          if [[ "$version" =~ ^0\.0\.0\.([0-9]+)$ ]]; then
+            version="0.0.${BASH_REMATCH[1]}"
+          elif [[ "$version" =~ ^0\.([0-9])([0-9]+)$ ]]; then
+            version="0.${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+          elif [[ "$version" =~ ^[0-9]+\.[0-9]+$ ]]; then
+            version="${version}.0"
+          fi
+
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid version: $version"
+            exit 1
+          fi
+
+          if [ -z "$tag" ]; then
+            tag="v$version"
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Version: $version"
+          echo "Release tag: $tag"
+
+      - name: Sync Wails3 product version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          path = Path("build/config.yml")
+          version = os.environ["VERSION"].strip()
+          text = path.read_text(encoding="utf-8")
+          pattern = r'(?m)^(\s{2}version:\s*["\']?)([^"\'\r\n]+)(["\']?)\s*$'
+          match = re.search(pattern, text)
+          if not match:
+              raise SystemExit("Cannot resolve info.version from build/config.yml")
+          updated = re.sub(pattern, rf"\g<1>{version}\g<3>", text, count=1)
+          path.write_text(updated, encoding="utf-8")
+          print(f"build/config.yml info.version: {match.group(2).strip()} -> {version}")
+          PY
+
+      - name: Download Go modules
+        env:
+          GOPROXY: https://proxy.golang.org,direct
+        run: go mod download
+
+      - name: Verify Darwin runtime binaries
+        run: bash tools/runtime/verify-runtime.sh darwin-${{ matrix.arch }}
+
+      - name: Run focused compatibility tests
+        run: go test ./backend/internal/config ./backend/internal/apppath ./backend/internal/proxy
+
+      - name: Build macOS package
+        env:
+          GOPROXY: https://proxy.golang.org,direct
+          TRACE_BROWSER_VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: bash publish/mac/publish-mac.sh --arch ${{ matrix.arch }} --version "${VERSION}"
+
+      - name: Generate macOS checksum
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          zip_path="publish/output/TraceBrowser-${VERSION}-macos-${{ matrix.arch }}.zip"
+          test -f "$zip_path"
+          checksum_path="publish/output/TraceBrowser-${VERSION}-macos-${{ matrix.arch }}.sha256.txt"
+          shasum -a 256 "$zip_path" | sed 's#publish/output/##' > "$checksum_path"
+          cat "$checksum_path"
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: trace-browser-macos-${{ matrix.arch }}-${{ steps.version.outputs.version }}
+          if-no-files-found: error
+          path: |
+            publish/output/TraceBrowser-*-macos-${{ matrix.arch }}.zip
+            publish/output/TraceBrowser-*-macos-${{ matrix.arch }}.sha256.txt
+
+      - name: Checkout public release repository
+        if: ${{ vars.PUBLIC_RELEASE_REPOSITORY != '' }}
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.PUBLIC_RELEASE_REPOSITORY }}
+          token: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
+          path: public-release-repo
+
+      - name: Resolve public release target
+        id: public_release_target
+        if: ${{ vars.PUBLIC_RELEASE_REPOSITORY != '' }}
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/public-release-repo"
+
+          branch="$(git branch --show-current)"
+          if [ -z "$branch" ]; then
+            branch="$(git symbolic-ref --short refs/remotes/origin/HEAD | sed 's#^origin/##')"
+          fi
+          if [ -z "$branch" ]; then
+            echo "::error::Cannot resolve default branch for public release repository"
+            exit 1
+          fi
+
+          echo "target_commitish=$branch" >> "$GITHUB_OUTPUT"
+          echo "Public release target branch: $branch"
+
+      - name: Upload macOS packages to current repository release
+        if: ${{ vars.PUBLIC_RELEASE_REPOSITORY == '' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Trace Browser ${{ steps.version.outputs.version }}
+          fail_on_unmatched_files: true
+          files: |
+            publish/output/TraceBrowser-*-macos-${{ matrix.arch }}.zip
+            publish/output/TraceBrowser-*-macos-${{ matrix.arch }}.sha256.txt
+
+      - name: Upload macOS packages to public release repository
+        if: ${{ vars.PUBLIC_RELEASE_REPOSITORY != '' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: ${{ vars.PUBLIC_RELEASE_REPOSITORY }}
+          token: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ steps.public_release_target.outputs.target_commitish }}
+          name: Trace Browser ${{ steps.version.outputs.version }}
+          fail_on_unmatched_files: true
+          files: |
+            publish/output/TraceBrowser-*-macos-${{ matrix.arch }}.zip
+            publish/output/TraceBrowser-*-macos-${{ matrix.arch }}.sha256.txt

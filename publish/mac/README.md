@@ -24,6 +24,29 @@ For the first iteration, `arm64` is the recommended target.
 
 This is a plan document only. It does not mean macOS packaging is already implemented.
 
+## GitHub Actions Build
+
+The macOS build workflow is available at:
+
+- `.github/workflows/publish-macos.yml`
+
+It can be triggered manually from GitHub Actions, or by pushing either a normal release tag or a macOS-only test tag:
+
+```bash
+git tag v0.0.87
+git push origin v0.0.87
+
+git tag mac-v0.0.87
+git push origin mac-v0.0.87
+```
+
+The workflow builds native packages on matching GitHub-hosted macOS runners:
+
+- `arm64` on `macos-15`
+- `amd64` on `macos-15-intel`
+
+This matches the current `publish-mac.sh` guard that requires the host architecture to match the requested target architecture.
+
 ## Current Status
 
 The repository already has:
@@ -52,11 +75,13 @@ The repository now includes the first macOS writable-state implementation for ap
 
 The current initial macOS packaging scaffold intentionally places helper binaries and seed files under:
 
+- `Trace Browser.app/Contents/MacOS/bin/darwin-arm64`
+- `Trace Browser.app/Contents/MacOS/bin/darwin-amd64`
 - `Trace Browser.app/Contents/MacOS/bin`
 - `Trace Browser.app/Contents/MacOS/config.yaml`
 - `Trace Browser.app/Contents/MacOS/chrome/README.md`
 
-This is not the prettiest final bundle layout, but it matches the current runtime path resolution and avoids a larger refactor in Phase 1.
+This is not the prettiest final bundle layout, but it matches the current runtime path resolution and avoids a larger refactor in Phase 1. The flat `bin/` copy is kept as a compatibility fallback, while the platform-specific directory is the primary runtime lookup path.
 
 After the first internal build is stable, the bundle layout can be reviewed and moved toward `Contents/Resources` if needed.
 
@@ -185,7 +210,7 @@ Recommended responsibilities:
 2. verify target arch (`arm64` first)
 3. install frontend dependencies
 4. build frontend
-5. run `wails3 build -platform darwin/arm64`
+5. run the native Wails3 build on a matching macOS host (`wails3 build`)
 6. place runtime binaries into the app bundle
 7. optionally archive to `.zip`
 8. optionally sign and notarize when environment variables are provided

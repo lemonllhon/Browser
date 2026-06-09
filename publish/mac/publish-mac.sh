@@ -257,7 +257,7 @@ if [[ "$SKIP_BUILD" -ne 1 ]]; then
   echo "[3/4] Building macOS app bundle with Wails3..."
   (
     cd "$ROOT_DIR"
-    TRACE_BROWSER_VERSION="$VERSION" VERSION="$VERSION" wails3 build -s -platform "darwin/$ARCH" -o trace-browser
+    TRACE_BROWSER_VERSION="$VERSION" VERSION="$VERSION" wails3 build
   )
 else
   echo "[WARN] skipping build step"
@@ -281,6 +281,7 @@ if [[ ! -d "$APP_MACOS_DIR" ]]; then
 fi
 
 mkdir -p "$APP_MACOS_DIR/bin"
+copy_runtime_files_for_target "$APP_MACOS_DIR/bin/$TARGET"
 copy_runtime_files_for_target "$APP_MACOS_DIR/bin"
 cp "$CONFIG_INIT_SRC" "$APP_MACOS_DIR/config.yaml"
 

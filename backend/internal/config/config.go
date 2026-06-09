@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -398,6 +399,19 @@ func isLegacyDefaultLogPath(path string) bool {
 	return strings.EqualFold(filepath.ToSlash(strings.TrimSpace(path)), "logs/app.log")
 }
 
+func defaultFingerprintPlatformForOS(goos string) string {
+	switch strings.ToLower(strings.TrimSpace(goos)) {
+	case "darwin":
+		return "mac"
+	case "linux":
+		return "linux"
+	case "windows":
+		return "windows"
+	default:
+		return "windows"
+	}
+}
+
 // DefaultConfig 返回默认配置
 func DefaultConfig() *Config {
 	return &Config{
@@ -424,7 +438,7 @@ func DefaultConfig() *Config {
 		},
 		Browser: BrowserConfig{
 			UserDataRoot:           "data",
-			DefaultFingerprintArgs: []string{"--fingerprint-brand=Chrome", "--fingerprint-platform=windows"},
+			DefaultFingerprintArgs: []string{"--fingerprint-brand=Chrome", "--fingerprint-platform=" + defaultFingerprintPlatformForOS(goruntime.GOOS)},
 			DefaultLaunchArgs:      []string{"--disable-sync", "--no-first-run"},
 			DefaultProxy:           "",
 			StartReadyTimeoutMs:    3000,

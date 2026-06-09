@@ -2,9 +2,14 @@ const header = document.querySelector('[data-header]');
 const nav = document.querySelector('[data-nav]');
 const navToggle = document.querySelector('[data-nav-toggle]');
 const navLinks = Array.from(document.querySelectorAll('.site-nav a'));
+const navTargets = navLinks.map(link => {
+  const id = link.getAttribute('href')?.replace('#', '');
+  return { id, link, section: id ? document.getElementById(id) : null };
+});
 const revealItems = Array.from(document.querySelectorAll('.reveal'));
 const carousel = document.querySelector('[data-gallery-carousel]');
 const AUTOPLAY_MS = 5600;
+let scrollTicking = false;
 
 function updateHeaderState() {
   if (!header) return;
@@ -21,18 +26,26 @@ function setActiveLink() {
   const fromTop = window.scrollY + 130;
   let activeId = '';
 
-  for (const link of navLinks) {
-    const id = link.getAttribute('href')?.replace('#', '');
-    const section = id ? document.getElementById(id) : null;
+  for (const { id, section } of navTargets) {
     if (section && section.offsetTop <= fromTop) {
       activeId = id;
     }
   }
 
-  for (const link of navLinks) {
-    const id = link.getAttribute('href')?.replace('#', '');
+  for (const { id, link } of navTargets) {
     link.classList.toggle('is-active', Boolean(id && id === activeId));
   }
+}
+
+function scheduleScrollWork() {
+  if (scrollTicking) return;
+  scrollTicking = true;
+
+  window.requestAnimationFrame(() => {
+    updateHeaderState();
+    setActiveLink();
+    scrollTicking = false;
+  });
 }
 
 if (navToggle && nav) {
@@ -57,7 +70,7 @@ if ('IntersectionObserver' in window) {
         }
       }
     },
-    { threshold: 0.14 }
+    { rootMargin: '0px 0px -10% 0px', threshold: 0.12 }
   );
 
   for (const item of revealItems) {
@@ -92,6 +105,8 @@ function setupGalleryCarousel() {
   }));
   let activeIndex = 0;
   let timer = 0;
+  let carouselVisible = !('IntersectionObserver' in window);
+  let userPaused = false;
 
   function restartProgress() {
     if (!progress || reduceMotion) return;
@@ -135,46 +150,74 @@ function setupGalleryCarousel() {
   }
 
   function startAutoplay() {
-    if (reduceMotion || timer) return;
+    if (reduceMotion || timer || userPaused || !carouselVisible) return;
     restartProgress();
     timer = window.setInterval(() => {
       setSlide(activeIndex + 1);
     }, AUTOPLAY_MS);
   }
 
+  function syncAutoplay() {
+    if (carouselVisible && !userPaused) {
+      startAutoplay();
+    } else {
+      stopAutoplay();
+    }
+  }
+
   previous?.addEventListener('click', () => {
     stopAutoplay();
     setSlide(activeIndex - 1);
-    startAutoplay();
+    syncAutoplay();
   });
 
   next?.addEventListener('click', () => {
     stopAutoplay();
     setSlide(activeIndex + 1);
-    startAutoplay();
+    syncAutoplay();
   });
 
   thumbs.forEach((thumb, index) => {
     thumb.addEventListener('click', () => {
       stopAutoplay();
       setSlide(index);
-      startAutoplay();
+      syncAutoplay();
     });
   });
 
-  carousel.addEventListener('mouseenter', stopAutoplay);
-  carousel.addEventListener('mouseleave', startAutoplay);
-  carousel.addEventListener('focusin', stopAutoplay);
-  carousel.addEventListener('focusout', startAutoplay);
+  carousel.addEventListener('mouseenter', () => {
+    userPaused = true;
+    stopAutoplay();
+  });
+  carousel.addEventListener('mouseleave', () => {
+    userPaused = false;
+    syncAutoplay();
+  });
+  carousel.addEventListener('focusin', () => {
+    userPaused = true;
+    stopAutoplay();
+  });
+  carousel.addEventListener('focusout', () => {
+    userPaused = false;
+    syncAutoplay();
+  });
+
+  if ('IntersectionObserver' in window) {
+    const carouselObserver = new IntersectionObserver(
+      entries => {
+        carouselVisible = entries.some(entry => entry.isIntersecting);
+        syncAutoplay();
+      },
+      { threshold: 0.16 }
+    );
+    carouselObserver.observe(carousel);
+  }
 
   setActiveThumb(activeIndex);
-  startAutoplay();
+  syncAutoplay();
 }
 
-window.addEventListener('scroll', () => {
-  updateHeaderState();
-  setActiveLink();
-}, { passive: true });
+window.addEventListener('scroll', scheduleScrollWork, { passive: true });
 
 updateHeaderState();
 setActiveLink();
