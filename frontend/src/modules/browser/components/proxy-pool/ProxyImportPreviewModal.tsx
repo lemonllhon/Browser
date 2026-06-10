@@ -92,7 +92,7 @@ export function ProxyImportPreviewModal({
         {importMode === 'clash' && dnsServers.trim() && (
           <p className="text-xs text-[var(--color-text-muted)] bg-[var(--color-bg-secondary)] px-3 py-2 rounded">已配置批量 DNS，将应用到以下所有代理</p>
         )}
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(240px,1fr)_150px_150px_150px] gap-2">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(260px,1fr)_170px_170px_170px] gap-2">
           <Input
             value={keyword}
             onChange={e => onKeywordChange(e.target.value)}
@@ -115,13 +115,13 @@ export function ProxyImportPreviewModal({
           />
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="secondary" onClick={onTestAll} loading={testingAll} disabled={testableCount === 0}>检测延迟</Button>
-          <Button size="sm" variant="secondary" onClick={onCheckIPHealth} loading={checkingAllIPHealth} disabled={testableCount === 0}>检测IP健康</Button>
-          <Button size="sm" variant="ghost" onClick={onSelectOnlyFiltered} disabled={filteredPreviewList.length === 0}>只选择当前筛选</Button>
-          <Button size="sm" variant="ghost" onClick={onSelectAll} disabled={previewList.length === 0}>全选</Button>
-          <Button size="sm" variant="ghost" onClick={onClearSelection} disabled={selectedCount === 0}>清空选择</Button>
-          <Button size="sm" variant="secondary" onClick={onKeepFiltered} disabled={!hasActiveFilter || filteredPreviewList.length === 0}>只保留筛选</Button>
-          <Button size="sm" variant="danger" onClick={onRemoveFiltered} disabled={filteredPreviewList.length === 0}>删除筛选</Button>
+          <Button size="sm" variant="secondary" className="shrink-0" onClick={onTestAll} loading={testingAll} disabled={testableCount === 0}>检测延迟</Button>
+          <Button size="sm" variant="secondary" className="shrink-0" onClick={onCheckIPHealth} loading={checkingAllIPHealth} disabled={testableCount === 0}>检测IP健康</Button>
+          <Button size="sm" variant="ghost" className="shrink-0" onClick={onSelectOnlyFiltered} disabled={filteredPreviewList.length === 0}>只选择当前筛选</Button>
+          <Button size="sm" variant="ghost" className="shrink-0" onClick={onSelectAll} disabled={previewList.length === 0}>全选</Button>
+          <Button size="sm" variant="ghost" className="shrink-0" onClick={onClearSelection} disabled={selectedCount === 0}>清空选择</Button>
+          <Button size="sm" variant="secondary" className="shrink-0" onClick={onKeepFiltered} disabled={!hasActiveFilter || filteredPreviewList.length === 0}>只保留筛选</Button>
+          <Button size="sm" variant="danger" className="shrink-0" onClick={onRemoveFiltered} disabled={filteredPreviewList.length === 0}>删除筛选</Button>
         </div>
         <p className="text-xs text-[var(--color-text-muted)]">
           共 {previewList.length} 条，当前显示 {filteredPreviewList.length} 条，已选择 {selectedCount} 条，已删除 {removedCount} 条。确认导入只会导入已选择的代理。

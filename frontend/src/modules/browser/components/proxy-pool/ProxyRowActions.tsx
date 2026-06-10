@@ -29,11 +29,12 @@ export function ProxyRowActions({
   const hasSource = !!record.sourceId && !!record.sourceUrl
 
   return (
-    <div className="flex gap-2">
+    <div className="flex flex-nowrap justify-end gap-1">
       {hasSource && (
         <Button
           size="sm"
           variant="secondary"
+          className="shrink-0"
           onClick={(e) => { e.stopPropagation(); onRefreshSource(record.sourceId) }}
           loading={refreshingSource}
         >
@@ -42,24 +43,28 @@ export function ProxyRowActions({
       )}
       <Button
         size="sm" variant="ghost"
+        className="shrink-0"
         onClick={(e) => { e.stopPropagation(); onTest(record) }}
         loading={latencyValue === -1}
         disabled={record.proxyConfig === 'direct://'}
       >测速</Button>
       <Button
         size="sm" variant="ghost"
+        className="shrink-0"
         onClick={(e) => { e.stopPropagation(); onCheckIPHealth(record) }}
         loading={checkingIPHealth}
         disabled={record.proxyConfig === 'direct://'}
       >IP健康</Button>
       <Button
         size="sm" variant="ghost"
+        className="shrink-0"
         disabled={isBuiltin}
         title={isBuiltin ? '内置代理不可编辑' : undefined}
         onClick={(e) => { e.stopPropagation(); if (!isBuiltin) onEdit(record) }}
       >编辑</Button>
       <Button
         size="sm" variant="danger"
+        className="shrink-0"
         disabled={isBuiltin}
         title={isBuiltin ? '内置代理不可删除' : undefined}
         onClick={(e) => { e.stopPropagation(); if (!isBuiltin) onDelete(record.proxyId) }}

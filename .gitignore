@@ -75,6 +75,7 @@ docs/*
 !docs/wails3-upgrade-plan.md
 !docs/optimization-roadmap.md
 !docs/cpu-gpu-multiwindow-optimization-plan.md
+!docs/macos-release-process.md
 DEPLOYMENT_GUIDE.md
 plan.md
 pic/

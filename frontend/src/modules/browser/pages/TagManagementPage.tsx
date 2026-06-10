@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Plus, Tag, Trash2, X } from 'lucide-react'
-import { Badge, Button, Card, toast } from '../../../shared/components'
+import { Badge, Button, Card, Select, toast } from '../../../shared/components'
 import type { BrowserProfile } from '../types'
 import { batchRemoveProfileTags, batchSetProfileTags, renameBrowserTag } from '../api'
 import { resolveActionErrorMessage } from '../utils/actionErrors'
@@ -180,14 +180,15 @@ function ActionBar({ selectedCount, allTags, onAddTags, onRemoveTags, onClear }:
         {/* 移除标签 */}
         {allTags.length > 0 && (
           <div className="flex items-center gap-1">
-            <select
+            <Select
               value={removeTag}
               onChange={e => setRemoveTag(e.target.value)}
-              className="px-2 py-1 text-xs rounded border border-[var(--color-border)] bg-[var(--color-bg-input)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
-            >
-              <option value="">选择要移除的标签</option>
-              {allTags.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
+              className="h-8 w-40 text-xs"
+              options={[
+                { value: '', label: '选择要移除的标签' },
+                ...allTags.map(t => ({ value: t, label: t })),
+              ]}
+            />
             <Button size="sm" variant="secondary" onClick={() => { if (removeTag) { onRemoveTags([removeTag]); setRemoveTag('') } }} disabled={!removeTag}>
               <Trash2 className="w-3.5 h-3.5" />移除
             </Button>

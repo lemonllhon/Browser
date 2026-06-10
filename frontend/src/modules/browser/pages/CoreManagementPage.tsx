@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { Download, Edit2, FolderOpen, RefreshCw, Settings, XCircle } from 'lucide-react'
-import { Badge, Button, Card, ConfirmModal, FormItem, Input, Modal, Table, Textarea, toast } from '../../../shared/components'
+import { Badge, Button, Card, ConfirmModal, FormItem, Input, Modal, Select, Table, Textarea, toast } from '../../../shared/components'
 import type { TableColumn } from '../../../shared/components/Table'
 import type { BrowserCore, BrowserCoreInput, BrowserCoreValidateResult, BrowserSettings, BrowserCoreExtended, BrowserProxy } from '../types'
 import { saveBrowserCore, deleteBrowserCore, setDefaultBrowserCore, validateBrowserCorePath, openCorePath, saveBrowserSettings, fetchCoreExtendedInfo, scanBrowserCores, BrowserCoreDownload, onBrowserCoreDownloadProgress, cancelBrowserCoreDownload, renameBrowserCorePath } from '../api'
@@ -1030,7 +1030,7 @@ export function CoreManagementPage() {
           </FormItem>
 
           <FormItem label="下载代理设置">
-            <select
+            <Select
               value={downloadForm.proxyMode}
               onChange={e => {
                 const mode = e.target.value
@@ -1040,29 +1040,26 @@ export function CoreManagementPage() {
                   proxyId: mode === 'custom' && proxies.length > 0 ? proxies[0].proxyId : ''
                 }))
               }}
-              className="w-full h-9 px-3 rounded-md border border-[var(--color-border-default)] bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] text-sm focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] focus:border-[var(--color-accent)]"
               disabled={downloadFormLocked}
-            >
-              <option value="system">跟随系统全局代理</option>
-              <option value="direct">直连模式 (不使用代理)</option>
-              {proxies.length > 0 && <option value="custom">指定应用代理配置...</option>}
-            </select>
+              options={[
+                { value: 'system', label: '跟随系统全局代理' },
+                { value: 'direct', label: '直连模式 (不使用代理)' },
+                ...(proxies.length > 0 ? [{ value: 'custom', label: '指定应用代理配置...' }] : []),
+              ]}
+            />
           </FormItem>
 
           {downloadForm.proxyMode === 'custom' && (
             <FormItem label="选择代理池节点" required>
-              <select
+              <Select
                 value={downloadForm.proxyId}
                 onChange={e => setDownloadForm(prev => ({ ...prev, proxyId: e.target.value }))}
-                className="w-full h-9 px-3 rounded-md border border-[var(--color-border-default)] bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] text-sm focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] focus:border-[var(--color-accent)]"
                 disabled={downloadFormLocked}
-              >
-                {proxies.map(p => (
-                  <option key={p.proxyId} value={p.proxyId}>
-                    {p.proxyName} ({p.proxyConfig})
-                  </option>
-                ))}
-              </select>
+                options={proxies.map(p => ({
+                  value: p.proxyId,
+                  label: `${p.proxyName} (${p.proxyConfig})`,
+                }))}
+              />
             </FormItem>
           )}
 

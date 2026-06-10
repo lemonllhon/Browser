@@ -60,7 +60,7 @@ export function Select({ error, options, className, ...props }: SelectProps) {
   return (
     <select
       className={clsx(
-        'block h-9 px-3 text-sm',
+        'block h-9 pl-3 pr-8 text-sm leading-none',
         'bg-[var(--color-bg-surface)] text-[var(--color-text-primary)]',
         'border border-[var(--color-border-default)] rounded-lg',
         'focus:outline-none focus:border-[var(--color-border-strong)] focus:ring-1 focus:ring-[var(--color-border-strong)]',
@@ -121,7 +121,7 @@ export function Switch({ checked, onChange, disabled }: SwitchProps) {
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={clsx(
-        'relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-150',
+        'relative inline-flex h-5 w-9 shrink-0 items-center overflow-hidden rounded-full p-0.5 transition-colors duration-150',
         'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2',
         checked ? 'bg-[var(--color-accent)]' : 'bg-[var(--color-border-strong)]',
         disabled && 'opacity-50 cursor-not-allowed'
@@ -129,8 +129,8 @@ export function Switch({ checked, onChange, disabled }: SwitchProps) {
     >
       <span
         className={clsx(
-          'inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-150',
-          checked ? 'translate-x-4' : 'translate-x-0.5'
+          'inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-150 will-change-transform',
+          checked ? 'translate-x-4' : 'translate-x-0'
         )}
       />
     </button>

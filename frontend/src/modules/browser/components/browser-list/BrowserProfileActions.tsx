@@ -59,17 +59,18 @@ export function BrowserProfileActions({
   const compact = mode === 'table'
   const iconClass = compact ? 'w-3.5 h-3.5' : 'w-4 h-4 mr-1.5'
   const iconOnlyClass = compact ? 'w-3.5 h-3.5' : 'w-4 h-4'
-  const ghostClass = compact ? undefined : 'px-3'
+  const actionClass = compact ? 'h-8 w-8 px-0 shrink-0' : 'shrink-0'
+  const ghostClass = compact ? actionClass : 'px-3 shrink-0'
 
   return (
     <div className={compact ? 'flex justify-end gap-1' : 'flex items-center gap-1 flex-wrap'}>
       {record.running ? (
-        <Button size="sm" variant="secondary" onClick={() => onStop(record.profileId)} title={disabledBySync ? '同步状态下无法修改主控窗口' : (isStopping ? '停止中' : '停止')} loading={isStopping} disabled={disabledBySync}>
+        <Button size="sm" variant="secondary" className={actionClass} onClick={() => onStop(record.profileId)} title={disabledBySync ? '同步状态下无法修改主控窗口' : (isStopping ? '停止中' : '停止')} loading={isStopping} disabled={disabledBySync}>
           {!isStopping && <Square className={iconClass} />}
           {!compact && (isStopping ? '停止中' : '停止')}
         </Button>
       ) : (
-        <Button size="sm" onClick={() => onStart(record.profileId)} title={disabledBySync ? '同步状态下无法修改主控窗口' : (isStarting ? '启动中' : '启动')} loading={isStarting} disabled={disabledBySync}>
+        <Button size="sm" className={actionClass} onClick={() => onStart(record.profileId)} title={disabledBySync ? '同步状态下无法修改主控窗口' : (isStarting ? '启动中' : '启动')} loading={isStarting} disabled={disabledBySync}>
           {!isStarting && <Play className={`${iconClass} fill-current`} />}
           {!compact && (isStarting ? '启动中' : '启动')}
         </Button>
@@ -107,15 +108,15 @@ export function BrowserProfileActions({
         onClick={() => onClearCookies(record)}
         aria-label={record.running ? '清空全部 Cookie' : '清空用户数据'}
         title={clearCookieTitle}
-        className={compact ? undefined : 'px-3 text-red-500 hover:text-red-600 hover:bg-red-50'}
+        className={compact ? actionClass : 'px-3 shrink-0 text-red-500 hover:text-red-600 hover:bg-red-50'}
         loading={isClearingCookies}
         disabled={!canClearCookies || isExportingCookies || (isBusy && !isClearingCookies)}
       >
         {!isClearingCookies && <Eraser className={`${iconOnlyClass} text-red-500`} />}
       </Button>
-      <Link to={`/browser/edit/${record.profileId}`}><Button size="sm" variant="ghost" title={disabledBySync ? '同步状态下无法修改主控窗口' : '配置'} className={ghostClass} disabled={disabledBySync || isBusy}><Settings className={iconClass} />{!compact && '配置'}</Button></Link>
+      <Link to={`/browser/edit/${record.profileId}`} className={compact ? 'shrink-0' : undefined}><Button size="sm" variant="ghost" title={disabledBySync ? '同步状态下无法修改主控窗口' : '配置'} className={ghostClass} disabled={disabledBySync || isBusy}><Settings className={iconClass} />{!compact && '配置'}</Button></Link>
       <Button size="sm" variant="ghost" onClick={() => onCopy(record)} title="克隆" className={ghostClass} disabled={isBusy}><Copy className={iconClass} />{!compact && '克隆'}</Button>
-      <Button size="sm" variant="ghost" onClick={() => onDelete(record.profileId)} title={disabledBySync ? '同步状态下无法修改主控窗口' : '删除'} className={compact ? undefined : 'px-3 text-red-500 hover:text-red-600 hover:bg-red-50'} disabled={disabledBySync || isBusy}><Trash2 className={`${iconClass} text-red-500`} />{!compact && '删除'}</Button>
+      <Button size="sm" variant="ghost" onClick={() => onDelete(record.profileId)} title={disabledBySync ? '同步状态下无法修改主控窗口' : '删除'} className={compact ? actionClass : 'px-3 shrink-0 text-red-500 hover:text-red-600 hover:bg-red-50'} disabled={disabledBySync || isBusy}><Trash2 className={`${iconClass} text-red-500`} />{!compact && '删除'}</Button>
     </div>
   )
 }

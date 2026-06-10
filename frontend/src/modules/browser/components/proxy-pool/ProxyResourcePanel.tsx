@@ -1,4 +1,4 @@
-import { Button, Card, Input, Switch, Table } from '../../../../shared/components'
+import { Button, Card, Input, Select, Switch, Table } from '../../../../shared/components'
 import type { SortOrder, TableColumn } from '../../../../shared/components/Table'
 import type { URLImportSourceMeta } from '../../utils/proxySourceMeta'
 import type { ProxyDisplayInfo } from '../../utils/proxyDisplay'
@@ -108,34 +108,35 @@ export function ProxyResourcePanel({
       )}
       {resourceView === 'proxies' && (
         <>
-          <div className="flex items-center gap-3 mb-4">
+          <div className="flex flex-wrap items-center gap-3 mb-4">
             <Input
               value={filterKeyword}
               onChange={e => onFilterKeywordChange(e.target.value)}
               placeholder="搜索名称或服务器..."
-              style={{ width: '220px' }}
+              className="w-[220px]"
             />
-            <select
+            <Select
               value={filterProtocol}
               onChange={e => onFilterProtocolChange(e.target.value)}
-              className="px-3 py-1.5 text-sm rounded-md border border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-[var(--color-text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
-            >
-              {protocolOptions.map(p => (
-                <option key={p} value={p}>{p === 'all' ? '全部协议' : p.toUpperCase()}</option>
-              ))}
-            </select>
-            <select
+              className="w-36 bg-[var(--color-bg-secondary)]"
+              options={protocolOptions.map(p => ({
+                value: p,
+                label: p === 'all' ? '全部协议' : p.toUpperCase(),
+              }))}
+            />
+            <Select
               value={filterGroup}
               onChange={e => onFilterGroupChange(e.target.value)}
-              className="px-3 py-1.5 text-sm rounded-md border border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-[var(--color-text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
-            >
-              <option value="all">全部分组</option>
-              {groups.map(g => <option key={g} value={g}>{g}</option>)}
-            </select>
+              className="w-40 bg-[var(--color-bg-secondary)]"
+              options={[
+                { value: 'all', label: '全部分组' },
+                ...groups.map(g => ({ value: g, label: g })),
+              ]}
+            />
             {(filterProtocol !== 'all' || filterKeyword || filterGroup !== 'all') && (
               <Button size="sm" variant="ghost" onClick={onClearFilters}>清除筛选</Button>
             )}
-            <div className="flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2 py-1.5">
+            <div className="flex shrink-0 items-center gap-2 rounded-md border border-[var(--color-border-default)] bg-[var(--color-bg-secondary)] px-2 py-1.5">
               <span className="text-xs text-[var(--color-text-muted)]">全局自动刷新</span>
               <Switch
                 checked={globalAutoRefreshEnabled}

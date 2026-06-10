@@ -31,26 +31,28 @@ export function ProxyPoolHeader({
   onToggleColumn,
 }: ProxyPoolHeaderProps) {
   return (
-    <div className="flex items-center justify-between">
+    <div className="flex flex-wrap items-center justify-between gap-3">
       <div>
         <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">代理资源中心</h1>
         <p className="text-sm text-[var(--color-text-muted)] mt-1">统一管理订阅、YAML 节点与 HTTP / HTTPS / SOCKS5 批量导入</p>
       </div>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap justify-end gap-2">
         <Button
           size="sm"
           variant="secondary"
+          className="shrink-0"
           onClick={onRefreshAllSources}
           loading={refreshingAllSources}
           disabled={!hasURLImportSources}
         >
           刷新订阅
         </Button>
-        <Button size="sm" variant="secondary" onClick={onCheckAllIPHealth} loading={checkingAllIPHealth} disabled={filteredCount === 0}>检测IP健康</Button>
-        <Button size="sm" variant="secondary" onClick={onTestAll} loading={testingAll} disabled={filteredCount === 0}>测试全部</Button>
+        <Button size="sm" variant="secondary" className="shrink-0" onClick={onCheckAllIPHealth} loading={checkingAllIPHealth} disabled={filteredCount === 0}>检测IP健康</Button>
+        <Button size="sm" variant="secondary" className="shrink-0" onClick={onTestAll} loading={testingAll} disabled={filteredCount === 0}>测试全部</Button>
         <Button
           size="sm"
           variant="danger"
+          className="shrink-0"
           onClick={onDeleteTimeout}
           disabled={timeoutCount === 0}
           title="删除除直连和本地代理之外，最近测速结果为超时的节点"

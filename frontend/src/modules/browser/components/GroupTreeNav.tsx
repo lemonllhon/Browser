@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { ChevronRight, ChevronDown, Folder, FolderOpen, Plus, Pencil, Trash2, FolderInput } from 'lucide-react'
+import { Select } from '../../../shared/components'
 import type { BrowserGroupWithCount, BrowserGroupInput } from '../types'
 import { createGroup, updateGroup, deleteGroup } from '../api'
 
@@ -118,8 +119,8 @@ export function GroupTreeNav({ groups, selectedGroupId, onSelectGroup, onRefresh
     return (
       <div key={node.groupId}>
         <div
-          className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer rounded hover:bg-gray-100 dark:hover:bg-gray-700 ${
-            isSelected ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : ''
+          className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer rounded transition-colors hover:bg-[var(--color-bg-hover)] ${
+            isSelected ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)] font-medium' : 'text-[var(--color-text-secondary)]'
           }`}
           style={{ paddingLeft: `${node.level * 16 + 12}px` }}
           onClick={() => onSelectGroup(node.groupId)}
@@ -127,7 +128,7 @@ export function GroupTreeNav({ groups, selectedGroupId, onSelectGroup, onRefresh
         >
           {hasChildren ? (
             <button
-              className="p-0 hover:bg-gray-200 dark:hover:bg-gray-600 rounded shrink-0"
+              className="p-0 rounded shrink-0 text-[var(--color-text-muted)] hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)]"
               onClick={(e) => { e.stopPropagation(); toggleExpand(node.groupId) }}
             >
               {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
@@ -139,7 +140,7 @@ export function GroupTreeNav({ groups, selectedGroupId, onSelectGroup, onRefresh
             <Folder className="w-4 h-4 text-yellow-500 shrink-0" />
           )}
           <span className="flex-1 truncate text-sm">{node.groupName}</span>
-          <span className="text-xs text-gray-400">{node.instanceCount}</span>
+          <span className="text-xs text-[var(--color-text-muted)]">{node.instanceCount}</span>
         </div>
         {isExpanded && node.children.map(child => renderNode(child))}
       </div>
@@ -147,11 +148,11 @@ export function GroupTreeNav({ groups, selectedGroupId, onSelectGroup, onRefresh
   }
 
   return (
-    <div className="w-48 border-r border-gray-200 dark:border-gray-700 flex flex-col h-full">
-      <div className="p-2 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-        <span className="text-sm font-medium">分组</span>
+    <div className="w-48 border-r border-[var(--color-border)] bg-[var(--color-bg-surface)] flex flex-col h-full">
+      <div className="p-2 border-b border-[var(--color-border)] flex items-center justify-between">
+        <span className="text-sm font-medium text-[var(--color-text-primary)]">分组</span>
         <button
-          className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+          className="p-1 rounded text-[var(--color-text-muted)] hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)]"
           onClick={() => { setCreateParentId(''); setShowCreateModal(true) }}
           title="新建分组"
         >
@@ -162,30 +163,30 @@ export function GroupTreeNav({ groups, selectedGroupId, onSelectGroup, onRefresh
       <div className="flex-1 overflow-y-auto py-1">
         {/* 全部 */}
         <div
-          className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer rounded mx-1 hover:bg-gray-100 dark:hover:bg-gray-700 ${
-            selectedGroupId === null ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : ''
+          className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer rounded mx-1 transition-colors hover:bg-[var(--color-bg-hover)] ${
+            selectedGroupId === null ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)] font-medium' : 'text-[var(--color-text-secondary)]'
           }`}
           onClick={() => onSelectGroup(null)}
         >
-          <Folder className="w-4 h-4 text-gray-400" />
+          <Folder className="w-4 h-4 text-[var(--color-text-muted)]" />
           <span className="flex-1 text-sm">全部</span>
         </div>
 
         {/* 未分组 */}
         <div
-          className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer rounded mx-1 hover:bg-gray-100 dark:hover:bg-gray-700 ${
-            selectedGroupId === '__ungrouped__' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : ''
+          className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer rounded mx-1 transition-colors hover:bg-[var(--color-bg-hover)] ${
+            selectedGroupId === '__ungrouped__' ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)] font-medium' : 'text-[var(--color-text-secondary)]'
           }`}
           onClick={() => onSelectGroup('__ungrouped__')}
         >
-          <FolderInput className="w-4 h-4 text-gray-400" />
+          <FolderInput className="w-4 h-4 text-[var(--color-text-muted)]" />
           <span className="flex-1 text-sm">未分组</span>
         </div>
 
         {/* 分组树 */}
         {tree.length > 0 && (
           <div className="mt-2 mx-1">
-            <div className="px-2 py-1 text-xs font-medium text-gray-400 uppercase tracking-wider">我的分组</div>
+            <div className="px-2 py-1 text-xs font-medium text-[var(--color-text-muted)] uppercase tracking-wider">我的分组</div>
             {tree.map(node => renderNode(node))}
           </div>
         )}
@@ -194,33 +195,32 @@ export function GroupTreeNav({ groups, selectedGroupId, onSelectGroup, onRefresh
       {/* 创建分组弹窗 */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowCreateModal(false)}>
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 w-80" onClick={e => e.stopPropagation()}>
-            <h3 className="text-lg font-medium mb-3">新建分组</h3>
+          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] rounded-lg p-4 w-80 shadow-lg" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-medium mb-3 text-[var(--color-text-primary)]">新建分组</h3>
             <input
               type="text"
-              className="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600"
+              className="w-full h-9 px-3 text-sm rounded-lg border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-border-strong)] focus:ring-1 focus:ring-[var(--color-border-strong)]"
               placeholder="分组名称"
               value={newGroupName}
               onChange={e => setNewGroupName(e.target.value)}
               autoFocus
             />
             {groups.length > 0 && (
-              <select
-                className="w-full mt-2 px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600"
+              <Select
+                className="w-full mt-2"
                 value={createParentId}
                 onChange={e => setCreateParentId(e.target.value)}
-              >
-                <option value="">根级分组</option>
-                {groups.map(g => (
-                  <option key={g.groupId} value={g.groupId}>{g.groupName}</option>
-                ))}
-              </select>
+                options={[
+                  { value: '', label: '根级分组' },
+                  ...groups.map(g => ({ value: g.groupId, label: g.groupName })),
+                ]}
+              />
             )}
             <div className="flex justify-end gap-2 mt-4">
-              <button className="px-3 py-1.5 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700" onClick={() => setShowCreateModal(false)}>
+              <button className="h-8 px-3 text-sm rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-muted)]" onClick={() => setShowCreateModal(false)}>
                 取消
               </button>
-              <button className="px-3 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600" onClick={handleCreate}>
+              <button className="h-8 px-3 text-sm rounded-lg bg-[var(--color-accent)] text-[var(--color-text-inverse)] hover:opacity-90" onClick={handleCreate}>
                 创建
               </button>
             </div>
@@ -231,21 +231,21 @@ export function GroupTreeNav({ groups, selectedGroupId, onSelectGroup, onRefresh
       {/* 重命名弹窗 */}
       {editingGroup && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setEditingGroup(null)}>
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 w-80" onClick={e => e.stopPropagation()}>
-            <h3 className="text-lg font-medium mb-3">重命名分组</h3>
+          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] rounded-lg p-4 w-80 shadow-lg" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-medium mb-3 text-[var(--color-text-primary)]">重命名分组</h3>
             <input
               type="text"
-              className="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600"
+              className="w-full h-9 px-3 text-sm rounded-lg border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-border-strong)] focus:ring-1 focus:ring-[var(--color-border-strong)]"
               placeholder="分组名称"
               value={newGroupName}
               onChange={e => setNewGroupName(e.target.value)}
               autoFocus
             />
             <div className="flex justify-end gap-2 mt-4">
-              <button className="px-3 py-1.5 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700" onClick={() => setEditingGroup(null)}>
+              <button className="h-8 px-3 text-sm rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-muted)]" onClick={() => setEditingGroup(null)}>
                 取消
               </button>
-              <button className="px-3 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600" onClick={handleRename}>
+              <button className="h-8 px-3 text-sm rounded-lg bg-[var(--color-accent)] text-[var(--color-text-inverse)] hover:opacity-90" onClick={handleRename}>
                 保存
               </button>
             </div>
@@ -256,18 +256,18 @@ export function GroupTreeNav({ groups, selectedGroupId, onSelectGroup, onRefresh
       {/* 右键菜单 */}
       {contextMenu && (
         <div
-          className="fixed bg-white dark:bg-gray-800 border dark:border-gray-700 rounded shadow-lg py-1 z-50"
+          className="fixed bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] rounded shadow-lg py-1 z-50"
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={() => setContextMenu(null)}
         >
           <button
-            className="w-full px-4 py-1.5 text-sm text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+            className="w-full px-4 py-1.5 text-sm text-left text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] flex items-center gap-2"
             onClick={() => { setCreateParentId(contextMenu.group.groupId); setShowCreateModal(true) }}
           >
             <Plus className="w-4 h-4" /> 新建子分组
           </button>
           <button
-            className="w-full px-4 py-1.5 text-sm text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+            className="w-full px-4 py-1.5 text-sm text-left text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] flex items-center gap-2"
             onClick={() => { setNewGroupName(contextMenu.group.groupName); setEditingGroup(contextMenu.group) }}
           >
             <Pencil className="w-4 h-4" /> 重命名

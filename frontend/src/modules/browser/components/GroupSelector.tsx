@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { Select } from '../../../shared/components'
 import type { BrowserGroup } from '../types'
 
 interface GroupSelectorProps {
@@ -44,17 +45,17 @@ export function GroupSelector({ groups, value, onChange, placeholder = '选择�
   const flatGroups = useMemo(() => flattenGroups(groups), [groups])
 
   return (
-    <select
-      className={`px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600 ${className}`}
+    <Select
       value={value}
       onChange={e => onChange(e.target.value)}
-    >
-      <option value="">{placeholder}</option>
-      {flatGroups.map(g => (
-        <option key={g.groupId} value={g.groupId}>
-          {'　'.repeat(g.level)}{g.groupName}
-        </option>
-      ))}
-    </select>
+      className={className}
+      options={[
+        { value: '', label: placeholder },
+        ...flatGroups.map(g => ({
+          value: g.groupId,
+          label: `${'　'.repeat(g.level)}${g.groupName}`,
+        })),
+      ]}
+    />
   )
 }
