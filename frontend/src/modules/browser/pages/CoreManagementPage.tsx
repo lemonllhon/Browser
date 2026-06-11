@@ -4,7 +4,7 @@ import { Badge, Button, Card, ConfirmModal, FormItem, Input, Modal, Select, Tabl
 import type { TableColumn } from '../../../shared/components/Table'
 import type { BrowserCore, BrowserCoreInput, BrowserCoreValidateResult, BrowserSettings, BrowserCoreExtended, BrowserProxy } from '../types'
 import { saveBrowserCore, deleteBrowserCore, setDefaultBrowserCore, validateBrowserCorePath, openCorePath, saveBrowserSettings, fetchCoreExtendedInfo, scanBrowserCores, BrowserCoreDownload, onBrowserCoreDownloadProgress, cancelBrowserCoreDownload, renameBrowserCorePath } from '../api'
-import { onRuntimeEvent, openExternalURL } from '../../../shared/backend/runtime'
+import { getRuntimeEnvironment, onRuntimeEvent, openExternalURL } from '../../../shared/backend/runtime'
 import { resolveActionErrorMessage } from '../utils/actionErrors'
 import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
 import { useSingleFlightCallback } from '../hooks/useSingleFlightCallback'
@@ -22,6 +22,8 @@ interface CoreDisplayInfo {
 }
 
 type CoreDownloadSource = 'github' | 'custom'
+type CoreRuntimePlatform = 'windows' | 'darwin' | 'linux' | 'unknown'
+type CoreAssetPackageKind = 'zip' | 'tar.xz' | 'appimage' | 'dmg' | 'unknown'
 
 type CoreDownloadProgressInfo = {
   phase: string
@@ -38,6 +40,8 @@ interface GithubCoreAsset {
   url: string
   size: number
   updatedAt: string
+  platform: CoreRuntimePlatform
+  packageKind: CoreAssetPackageKind
 }
 
 type GithubReleasePayload = {
@@ -58,6 +62,67 @@ type GithubAssetPayload = {
 const FINGERPRINT_CHROMIUM_RELEASES_API = 'https://api.github.com/repos/adryfish/fingerprint-chromium/releases'
 const FINGERPRINT_CHROMIUM_RELEASES_PAGE = 'https://github.com/adryfish/fingerprint-chromium/releases'
 const CORE_DOWNLOAD_TERMINAL_PHASES = new Set(['done', 'error', 'cancelled'])
+const SUPPORTED_CORE_ASSET_PATTERN = /\.(zip|tar\.xz|txz|appimage|dmg)$/i
+
+const CORE_PLATFORM_LABELS: Record<CoreRuntimePlatform, string> = {
+  windows: 'Windows',
+  darwin: 'macOS',
+  linux: 'Linux',
+  unknown: '当前平台',
+}
+
+const normalizeCoreRuntimePlatform = (value: string): CoreRuntimePlatform => {
+  const text = String(value || '').trim().toLowerCase()
+  if (text === 'darwin' || text === 'mac' || text === 'macos' || text === 'osx') return 'darwin'
+  if (text === 'windows' || text === 'win32' || text === 'win') return 'windows'
+  if (text === 'linux') return 'linux'
+  return 'unknown'
+}
+
+const detectBrowserRuntimePlatform = (): CoreRuntimePlatform => {
+  const platform = normalizeCoreRuntimePlatform(window.navigator?.platform || '')
+  if (platform !== 'unknown') return platform
+  const userAgent = String(window.navigator?.userAgent || '').toLowerCase()
+  if (userAgent.includes('mac')) return 'darwin'
+  if (userAgent.includes('win')) return 'windows'
+  if (userAgent.includes('linux')) return 'linux'
+  return 'unknown'
+}
+
+const detectCoreAssetPackageKind = (assetName: string): CoreAssetPackageKind => {
+  const lower = String(assetName || '').toLowerCase()
+  if (lower.endsWith('.tar.xz') || lower.endsWith('.txz')) return 'tar.xz'
+  if (lower.endsWith('.appimage')) return 'appimage'
+  if (lower.endsWith('.dmg')) return 'dmg'
+  if (lower.endsWith('.zip')) return 'zip'
+  return 'unknown'
+}
+
+const detectCoreAssetPlatform = (assetName: string, packageKind: CoreAssetPackageKind): CoreRuntimePlatform => {
+  const lower = String(assetName || '').toLowerCase()
+  if (packageKind === 'dmg' || /(^|[._-])(macos|mac|darwin)([._-]|$)/i.test(lower)) return 'darwin'
+  if (packageKind === 'appimage' || packageKind === 'tar.xz' || /(^|[._-])linux([._-]|$)/i.test(lower)) return 'linux'
+  if (/(^|[._-])(windows|win32|win64|win|installer_x64)([._-]|$)/i.test(lower)) return 'windows'
+  if (packageKind === 'zip') return 'windows'
+  return 'unknown'
+}
+
+const isCoreAssetSupportedOnPlatform = (asset: Pick<GithubCoreAsset, 'platform' | 'packageKind'>, platform: CoreRuntimePlatform) => {
+  if (platform === 'unknown') return asset.packageKind !== 'unknown'
+  if (asset.platform !== platform) return false
+  if (platform === 'windows') return asset.packageKind === 'zip'
+  if (platform === 'darwin') return asset.packageKind === 'dmg'
+  if (platform === 'linux') return asset.packageKind === 'tar.xz' || asset.packageKind === 'appimage'
+  return false
+}
+
+const coreAssetPlatformPreference = (asset: Pick<GithubCoreAsset, 'packageKind'>, platform: CoreRuntimePlatform) => {
+  if (platform === 'linux') return asset.packageKind === 'tar.xz' ? 0 : asset.packageKind === 'appimage' ? 1 : 9
+  if (platform === 'darwin') return asset.packageKind === 'dmg' ? 0 : 9
+  if (platform === 'windows') return asset.packageKind === 'zip' ? 0 : 9
+  return 0
+}
+
 
 type BrowserSettingsField = keyof BrowserSettings
 
@@ -96,7 +161,7 @@ const formatAssetSize = (bytes: number) => {
 
 const deriveCoreNameFromAsset = (asset: GithubCoreAsset) => {
   const base = asset.assetName
-    .replace(/\.(zip|7z|tar\.gz|tgz)$/i, '')
+    .replace(/\.(zip|tar\.xz|txz|appimage|dmg)$/i, '')
     .replace(/[^\w.-]+/g, '-')
     .replace(/^-+|-+$/g, '')
   return base || asset.tagName || 'chrome-core'
@@ -144,6 +209,7 @@ export function CoreManagementPage() {
   // 内核下载
   const [downloadModalOpen, setDownloadModalOpen] = useState(false)
   const [downloadForm, setDownloadForm] = useState({ name: '', url: '', proxyMode: 'system', proxyId: '', source: 'github' as CoreDownloadSource, selectedAssetUrl: '' })
+  const [runtimePlatform, setRuntimePlatform] = useState<CoreRuntimePlatform>(() => detectBrowserRuntimePlatform())
   const [downloadProgress, setDownloadProgress] = useState<CoreDownloadProgressInfo | null>(null)
   const [downloadStarting, setDownloadStarting] = useState(false)
   const [downloadCancelling, setDownloadCancelling] = useState(false)
@@ -157,6 +223,20 @@ export function CoreManagementPage() {
   const refreshCoreData = useSingleFlightCallback(() => loadData())
   const refreshDownloadProxies = useSingleFlightCallback(() => loadDownloadProxies())
   const sharedData = useBrowserSharedData(['cores', 'settings', 'proxies'])
+
+  useEffect(() => {
+    let cancelled = false
+    void getRuntimeEnvironment().then(env => {
+      if (cancelled) return
+      const platform = normalizeCoreRuntimePlatform(env.platform || '')
+      if (platform !== 'unknown') {
+        setRuntimePlatform(platform)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     void refreshCoreData()
@@ -308,6 +388,15 @@ export function CoreManagementPage() {
     }
   }, [sharedData.loaded.proxies, sharedData.proxies])
 
+  useEffect(() => {
+    setGithubAssets([])
+    setGithubError('')
+    setDownloadForm(prev => {
+      if (prev.source !== 'github') return prev
+      return { ...prev, selectedAssetUrl: '', url: '', name: '' }
+    })
+  }, [runtimePlatform])
+
   // 防抖验证路径
   const validatePath = useCallback(async (path: string) => {
     if (!path.trim()) {
@@ -345,16 +434,18 @@ export function CoreManagementPage() {
       }
       const releases = await response.json()
       const releaseItems = Array.isArray(releases) ? releases as GithubReleasePayload[] : []
-      const assets: GithubCoreAsset[] = []
-      releaseItems.forEach(release => {
+      const assets: (GithubCoreAsset & { releaseIndex: number; assetIndex: number })[] = []
+      releaseItems.forEach((release, releaseIndex) => {
         const releaseName = String(release.name || release.tag_name || '未命名版本')
         const tagName = String(release.tag_name || '')
         const assetItems = Array.isArray(release.assets) ? release.assets as GithubAssetPayload[] : []
-        assetItems.forEach(asset => {
+        assetItems.forEach((asset, assetIndex) => {
           const assetName = String(asset.name || '')
           const url = String(asset.browser_download_url || '')
-          if (!assetName || !url || /\.(zip|7z|tar\.gz|tgz)$/i.test(assetName) === false) return
-          assets.push({
+          if (!assetName || !url || SUPPORTED_CORE_ASSET_PATTERN.test(assetName) === false) return
+          const packageKind = detectCoreAssetPackageKind(assetName)
+          const platform = detectCoreAssetPlatform(assetName, packageKind)
+          const item = {
             id: Number(asset.id || assets.length + 1),
             releaseName,
             tagName,
@@ -362,20 +453,45 @@ export function CoreManagementPage() {
             url,
             size: Number(asset.size || 0),
             updatedAt: String(asset.updated_at || release.published_at || ''),
-          })
+            platform,
+            packageKind,
+            releaseIndex,
+            assetIndex,
+          }
+          if (!isCoreAssetSupportedOnPlatform(item, runtimePlatform)) return
+          assets.push(item)
         })
       })
-      setGithubAssets(assets)
-      if (assets.length === 0) {
-        setGithubError('未找到可下载的压缩包资产')
+      assets.sort((a, b) => {
+        if (a.releaseIndex !== b.releaseIndex) return a.releaseIndex - b.releaseIndex
+        const packageOrder = coreAssetPlatformPreference(a, runtimePlatform) - coreAssetPlatformPreference(b, runtimePlatform)
+        if (packageOrder !== 0) return packageOrder
+        return a.assetIndex - b.assetIndex
+      })
+      const visibleAssets: GithubCoreAsset[] = assets.map(({ releaseIndex: _releaseIndex, assetIndex: _assetIndex, ...asset }) => asset)
+      setGithubAssets(visibleAssets)
+      if (visibleAssets.length === 0) {
+        setGithubError(`未找到适用于 ${CORE_PLATFORM_LABELS[runtimePlatform]} 的内核包`)
+        return
       }
+      setDownloadForm(prev => {
+        if (prev.source !== 'github') return prev
+        if (visibleAssets.some(item => item.url === prev.selectedAssetUrl)) return prev
+        const selected = visibleAssets[0]
+        return {
+          ...prev,
+          selectedAssetUrl: selected.url,
+          url: selected.url,
+          name: deriveCoreNameFromAsset(selected),
+        }
+      })
     } catch (error: unknown) {
       setGithubError(resolveActionErrorMessage(error, '获取 GitHub 版本失败'))
       setGithubAssets([])
     } finally {
       setGithubLoading(false)
     }
-  }, [])
+  }, [runtimePlatform])
 
   useEffect(() => {
     if (downloadModalOpen && downloadForm.source === 'github' && githubAssets.length === 0 && !githubLoading && !githubError) {
@@ -953,7 +1069,8 @@ export function CoreManagementPage() {
               <div className="flex items-center justify-between gap-3 mb-3">
                 <div>
                   <p className="text-sm font-medium text-[var(--color-text-primary)]">fingerprint-chromium Releases</p>
-                  <p className="text-xs text-[var(--color-text-muted)] mt-0.5">从 GitHub Releases 读取可下载压缩包，选择后会自动回填名称和地址</p>
+                  <p className="text-xs text-[var(--color-text-muted)] mt-0.5">自动筛选当前平台可用的内核包，选择后会自动回填名称和地址</p>
+                  <p className="text-xs text-[var(--color-text-muted)] mt-0.5">当前平台：{CORE_PLATFORM_LABELS[runtimePlatform]}</p>
                 </div>
                 <div className="flex gap-2 shrink-0">
                   <Button size="sm" variant="ghost" onClick={loadGithubCoreAssets} loading={githubLoading} disabled={downloadFormLocked}>
@@ -992,7 +1109,7 @@ export function CoreManagementPage() {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-3">
                           <span className="text-sm font-medium text-[var(--color-text-primary)] truncate">{asset.assetName}</span>
-                          <span className="text-xs text-[var(--color-text-muted)] shrink-0">{formatAssetSize(asset.size)}</span>
+                          <span className="text-xs text-[var(--color-text-muted)] shrink-0">{asset.packageKind} · {formatAssetSize(asset.size)}</span>
                         </div>
                         <div className="mt-1 text-xs text-[var(--color-text-muted)] truncate">
                           {asset.releaseName}{asset.tagName ? ` / ${asset.tagName}` : ''}
@@ -1017,15 +1134,15 @@ export function CoreManagementPage() {
             />
             <p className="text-xs text-[var(--color-text-muted)] mt-1">该名称将同时作为数据存放的子文件夹名。</p>
           </FormItem>
-          <FormItem label={downloadForm.source === 'github' ? '下载地址（已从版本选择回填，也可手动微调）' : '下载地址（ZIP）'} required>
+          <FormItem label={downloadForm.source === 'github' ? '下载地址（已从版本选择回填，也可手动微调）' : '下载地址（支持 ZIP / tar.xz / AppImage / DMG）'} required>
             <Input
               value={downloadForm.url}
               onChange={e => setDownloadForm(prev => ({ ...prev, url: e.target.value }))}
-              placeholder="https://github.com/.../release.zip"
+              placeholder="https://github.com/.../release.zip 或 .tar.xz / .AppImage / .dmg"
               disabled={downloadFormLocked}
             />
             {downloadForm.source === 'custom' && (
-              <p className="text-xs text-[var(--color-text-muted)] mt-1">可填写你自己构建、内部镜像或其他来源的 ZIP 内核压缩包下载地址。</p>
+              <p className="text-xs text-[var(--color-text-muted)] mt-1">可填写你自己构建、内部镜像或其他来源的内核包下载地址，支持 ZIP / tar.xz / AppImage / DMG。</p>
             )}
           </FormItem>
 

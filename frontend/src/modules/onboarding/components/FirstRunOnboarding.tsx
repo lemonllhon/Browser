@@ -414,7 +414,7 @@ const FIRST_RUN_ONBOARDING_STEPS: OnboardingStep[] = [
     icon: <Download className="h-4 w-4" />,
     section: '内核管理',
     title: '下载内核',
-    description: '下载内核用于从 GitHub Releases 或自定义 ZIP 地址拉取 fingerprint-chromium，并在完成后注册到内核列表。',
+    description: '下载内核用于从 GitHub Releases 自动选择当前平台的 fingerprint-chromium 包，或从自定义地址拉取内核，并在完成后注册到内核列表。',
     routePath: '/browser/cores',
     bullets: ['可选择官方 Releases 资产', '可配置下载代理', '下载完成后可重命名内核目录'],
   },

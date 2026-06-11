@@ -192,7 +192,7 @@ function CoreScene() {
 function CoreToolsScene({ activeStepId }: { activeStepId?: string }) {
   return (
     <div className="onboarding-stage-scene grid grid-cols-1 gap-3 p-8 sm:grid-cols-3">
-      <ToolTile icon={<Download className="h-5 w-5" />} title="下载内核" detail="从 Releases 或自定义地址下载 ZIP 内核。" active={activeStepId === 'core-download'} />
+      <ToolTile icon={<Download className="h-5 w-5" />} title="下载内核" detail="从 Releases 或自定义地址下载对应平台内核。" active={activeStepId === 'core-download'} />
       <ToolTile icon={<Search className="h-5 w-5" />} title="扫描内核" detail="扫描 chrome 目录并自动注册可用内核。" active={activeStepId === 'core-scan'} delay="onboarding-delay-1" />
       <ToolTile icon={<Plus className="h-5 w-5" />} title="新增内核" detail="手动登记已有 chrome.exe 路径。" active={activeStepId === 'core-add'} delay="onboarding-delay-2" />
       <div className="col-span-full rounded-xl border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-4">
