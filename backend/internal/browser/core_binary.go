@@ -13,7 +13,7 @@ func CoreExecutableCandidates() []string {
 	case "windows":
 		return []string{"chrome.exe"}
 	case "linux":
-		return []string{"chrome", "chrome-bin", "chrome.exe"}
+		return []string{"chrome", "chrome-bin", "chrome.AppImage", "*.AppImage", "chrome.exe"}
 	case "darwin":
 		return []string{
 			"Google Chrome.app/Contents/MacOS/Google Chrome",
@@ -39,6 +39,15 @@ func FindCoreExecutable(baseDir string) (string, string, bool) {
 	}
 	for _, candidate := range CoreExecutableCandidates() {
 		p := filepath.Join(baseDir, filepath.FromSlash(candidate))
+		if strings.ContainsAny(candidate, "*?[") {
+			matches, _ := filepath.Glob(p)
+			for _, match := range matches {
+				if info, err := os.Stat(match); err == nil && !info.IsDir() {
+					return match, candidate, true
+				}
+			}
+			continue
+		}
 		if _, err := os.Stat(p); err == nil {
 			return p, candidate, true
 		}
@@ -55,6 +64,12 @@ func findDirectCoreExecutable(path string) (string, string, bool) {
 	normalized := filepath.ToSlash(filepath.Clean(path))
 	for _, candidate := range CoreExecutableCandidates() {
 		candidatePath := filepath.ToSlash(candidate)
+		if strings.ContainsAny(candidate, "*?[") {
+			if matched, _ := filepath.Match(filepath.Base(candidatePath), filepath.Base(normalized)); matched {
+				return path, candidate, true
+			}
+			continue
+		}
 		if strings.HasSuffix(normalized, candidatePath) || filepath.Base(normalized) == filepath.Base(candidatePath) {
 			return path, candidate, true
 		}

@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -144,7 +146,7 @@ func (m *Manager) DownloadAndExtractCore(ctx context.Context, coreName string, t
 		Transport: transport,
 	}
 
-	tempFile, err := os.CreateTemp(chromeDir, "download_*.zip")
+	tempFile, err := os.CreateTemp(chromeDir, "download_*"+coreDownloadTempSuffix(targetUrl))
 	if err != nil {
 		sendEvent("error", 0, "创建临时文件失败: "+err.Error())
 		return
@@ -169,11 +171,11 @@ func (m *Manager) DownloadAndExtractCore(ctx context.Context, coreName string, t
 	}
 
 	tempFile.Close() // 解压前先关闭写句柄
-	sendEvent("extracting", 0, "下载完成，正在准备解压文件...")
+	sendEvent("extracting", 0, "下载完成，正在准备安装文件...")
 	log.Info("内核下载完成", logger.F("url", targetUrl), logger.F("temp", tempFilePath), logger.F("cost", time.Since(t).String()))
 
-	// 3. 执行解压，并剥离顶层文件夹
-	if err := extractZipAndStripRoot(ctx, tempFilePath, targetDir, func(p int, msg string) {
+	// 3. 按平台包类型安装，并在需要时剥离顶层文件夹
+	if err := installDownloadedCorePackage(ctx, tempFilePath, targetUrl, targetDir, func(p int, msg string) {
 		sendEvent("extracting", p, msg)
 	}); err != nil {
 		os.RemoveAll(targetDir) // 删除不完整的解压文件
@@ -181,8 +183,8 @@ func (m *Manager) DownloadAndExtractCore(ctx context.Context, coreName string, t
 			sendCancelled("解压已中断，已清理未完成文件")
 			return
 		}
-		sendEvent("error", 0, "解压失败: "+err.Error())
-		log.Error("内核解压失败", logger.F("temp", tempFilePath), logger.F("target", targetDir), logger.F("error", err.Error()))
+		sendEvent("error", 0, "安装内核失败: "+err.Error())
+		log.Error("内核安装失败", logger.F("temp", tempFilePath), logger.F("target", targetDir), logger.F("error", err.Error()))
 		return
 	}
 
@@ -203,8 +205,8 @@ func (m *Manager) DownloadAndExtractCore(ctx context.Context, coreName string, t
 		log.Info("内核下载配置入库成功", logger.F("core_name", coreName), logger.F("core_path", corePath))
 	} else {
 		os.RemoveAll(targetDir) // 删除不正确的解压内容
-		sendEvent("error", 0, fmt.Sprintf("解压后未找到浏览器可执行文件（候选：%s），请检查压缩包内容！", strings.Join(CoreExecutableCandidates(), ", ")))
-		log.Error("内核下载包内容无效", logger.F("target", targetDir), logger.F("candidates", strings.Join(CoreExecutableCandidates(), ",")))
+		sendEvent("error", 0, fmt.Sprintf("安装后未找到浏览器可执行文件（候选：%s），请检查下载包内容！", strings.Join(CoreExecutableCandidates(), ", ")))
+		log.Error("内核安装内容无效", logger.F("target", targetDir), logger.F("candidates", strings.Join(CoreExecutableCandidates(), ",")))
 	}
 }
 
@@ -222,6 +224,65 @@ func describeCoreDownloadProxy(proxyConfig string) string {
 	default:
 		return "custom"
 	}
+}
+
+func coreDownloadTempSuffix(targetURL string) string {
+	lower := strings.ToLower(strings.TrimSpace(targetURL))
+	if u, err := url.Parse(lower); err == nil && u.Path != "" {
+		lower = u.Path
+	}
+	switch {
+	case strings.HasSuffix(lower, ".tar.xz") || strings.HasSuffix(lower, ".txz"):
+		return ".tar.xz"
+	case strings.HasSuffix(lower, ".appimage"):
+		return ".AppImage"
+	case strings.HasSuffix(lower, ".dmg"):
+		return ".dmg"
+	case strings.HasSuffix(lower, ".zip"):
+		return ".zip"
+	default:
+		return ".download"
+	}
+}
+
+func installDownloadedCorePackage(ctx context.Context, packagePath, sourceURL, dest string, progressCb func(int, string)) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	kind := detectCorePackageKind(packagePath, sourceURL)
+	switch kind {
+	case "zip":
+		return extractZipAndStripRoot(ctx, packagePath, dest, progressCb)
+	case "tar.xz":
+		return extractTarXZAndStripRoot(ctx, packagePath, dest, progressCb)
+	case "appimage":
+		return installAppImageCore(ctx, packagePath, sourceURL, dest, progressCb)
+	case "dmg":
+		return installDMGCore(ctx, packagePath, dest, progressCb)
+	default:
+		return fmt.Errorf("不支持的内核包格式：%s（当前平台建议 Windows 使用 .zip，Linux 使用 .tar.xz 或 .AppImage，macOS 使用 .dmg）", filepath.Base(sourceURL))
+	}
+}
+
+func detectCorePackageKind(packagePath, sourceURL string) string {
+	name := strings.ToLower(strings.TrimSpace(sourceURL))
+	if u, err := url.Parse(name); err == nil && u.Path != "" {
+		name = u.Path
+	}
+	if name == "" {
+		name = packagePath
+	}
+	switch {
+	case strings.HasSuffix(name, ".zip"):
+		return "zip"
+	case strings.HasSuffix(name, ".tar.xz") || strings.HasSuffix(name, ".txz"):
+		return "tar.xz"
+	case strings.HasSuffix(name, ".appimage"):
+		return "appimage"
+	case strings.HasSuffix(name, ".dmg"):
+		return "dmg"
+	}
+	return ""
 }
 
 // extractZipAndStripRoot 解压 ZIP 包，如果其所有文件全被同一个根目录包裹，则剥离这层根目录解压至 dest
@@ -325,6 +386,226 @@ func extractZipAndStripRoot(ctx context.Context, zipPath, dest string, progressC
 
 	progressCb(100, "解压完成！")
 	return nil
+}
+
+func extractTarXZAndStripRoot(ctx context.Context, archivePath, dest string, progressCb func(int, string)) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	listCmd := exec.CommandContext(ctx, "tar", "-tJf", archivePath)
+	listOutput, err := listCmd.Output()
+	if err != nil {
+		return fmt.Errorf("读取 tar.xz 文件列表失败: %w", err)
+	}
+	entries := strings.FieldsFunc(string(listOutput), func(r rune) bool { return r == '\n' || r == '\r' })
+	if len(entries) == 0 {
+		return fmt.Errorf("空的压缩包")
+	}
+	rootPrefix, hasCommonRoot := archiveCommonRoot(entries)
+	if err := validateTarExtractionEntries(entries, rootPrefix, hasCommonRoot); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dest, 0755); err != nil {
+		return err
+	}
+	progressCb(0, "正在解压 tar.xz 内核包...")
+	args := []string{"-xJf", archivePath, "-C", dest}
+	if hasCommonRoot && rootPrefix != "" {
+		args = append(args, "--strip-components=1")
+	}
+	cmd := exec.CommandContext(ctx, "tar", args...)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("解压 tar.xz 失败: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	progressCb(100, "解压完成！")
+	return nil
+}
+
+func validateTarExtractionEntries(entries []string, rootPrefix string, hasCommonRoot bool) error {
+	for _, entry := range entries {
+		name := filepath.ToSlash(strings.TrimSpace(entry))
+		if hasCommonRoot {
+			if name == rootPrefix || name == strings.TrimSuffix(rootPrefix, "/") {
+				continue
+			}
+			name = strings.TrimPrefix(name, rootPrefix)
+		}
+		if name == "" || name == "/" {
+			continue
+		}
+		if filepath.IsAbs(name) || strings.HasPrefix(name, "../") || strings.Contains(name, "/../") || name == ".." {
+			return fmt.Errorf("非法文件路径: %s", entry)
+		}
+	}
+	return nil
+}
+
+func archiveCommonRoot(entries []string) (string, bool) {
+	var rootPrefix string
+	for _, entry := range entries {
+		name := filepath.ToSlash(strings.TrimSpace(entry))
+		parts := strings.SplitN(name, "/", 2)
+		if len(parts) == 0 || parts[0] == "" {
+			continue
+		}
+		if rootPrefix == "" {
+			rootPrefix = parts[0] + "/"
+			continue
+		}
+		if !strings.HasPrefix(name, rootPrefix) && name != strings.TrimSuffix(rootPrefix, "/") {
+			return "", false
+		}
+	}
+	return rootPrefix, rootPrefix != ""
+}
+
+func installAppImageCore(ctx context.Context, packagePath, sourceURL, dest string, progressCb func(int, string)) error {
+	if runtime.GOOS != "linux" {
+		return fmt.Errorf("AppImage 仅支持在 Linux 版本中作为内核直接安装；当前平台请下载对应平台的内核包")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dest, 0755); err != nil {
+		return err
+	}
+	name := corePackageBaseName(sourceURL)
+	if !strings.HasSuffix(strings.ToLower(name), ".appimage") {
+		name = "chrome.AppImage"
+	}
+	outPath := filepath.Join(dest, name)
+	progressCb(0, "正在安装 AppImage 内核...")
+	if err := copyFile(ctx, packagePath, outPath, 0755); err != nil {
+		return err
+	}
+	progressCb(100, "AppImage 内核安装完成！")
+	return nil
+}
+
+func installDMGCore(ctx context.Context, dmgPath, dest string, progressCb func(int, string)) error {
+	if runtime.GOOS != "darwin" {
+		return fmt.Errorf("DMG 只能在 macOS 版本中挂载安装；Linux 请使用 .tar.xz 或 .AppImage，Windows 请使用 .zip")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	mountDir, err := os.MkdirTemp("", "browser-core-dmg-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(mountDir)
+
+	progressCb(0, "正在挂载 DMG...")
+	attach := exec.CommandContext(ctx, "hdiutil", "attach", dmgPath, "-nobrowse", "-readonly", "-mountpoint", mountDir)
+	if output, err := attach.CombinedOutput(); err != nil {
+		return fmt.Errorf("挂载 DMG 失败: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	defer exec.Command("hdiutil", "detach", mountDir, "-quiet").Run()
+
+	appPath, err := findFirstAppBundle(mountDir)
+	if err != nil {
+		return err
+	}
+	progressCb(35, "正在复制 macOS .app 内核...")
+	if err := os.MkdirAll(dest, 0755); err != nil {
+		return err
+	}
+	if err := copyDir(ctx, appPath, filepath.Join(dest, filepath.Base(appPath))); err != nil {
+		return err
+	}
+	progressCb(100, "DMG 内核安装完成！")
+	return nil
+}
+
+func findFirstAppBundle(root string) (string, error) {
+	var found string
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if found != "" {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() && strings.HasSuffix(strings.ToLower(d.Name()), ".app") {
+			if _, _, ok := findAppBundleExecutable(path); ok {
+				found = path
+				return filepath.SkipDir
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	if found == "" {
+		return "", fmt.Errorf("DMG 中未找到可用的 Chromium .app")
+	}
+	return found, nil
+}
+
+func copyDir(ctx context.Context, src, dst string) error {
+	return filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		outPath := filepath.Join(dst, rel)
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			linkTarget, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
+				return err
+			}
+			return os.Symlink(linkTarget, outPath)
+		}
+		if d.IsDir() {
+			return os.MkdirAll(outPath, info.Mode())
+		}
+		return copyFile(ctx, path, outPath, info.Mode())
+	})
+}
+
+func copyFile(ctx context.Context, src, dst string, mode os.FileMode) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return err
+	}
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(&coreDownloadWriter{ctx: ctx, writeFunc: out.Write}, in)
+	closeErr := out.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	return closeErr
+}
+
+func corePackageBaseName(sourceURL string) string {
+	if u, err := url.Parse(strings.TrimSpace(sourceURL)); err == nil && u.Path != "" {
+		return filepath.Base(u.Path)
+	}
+	return filepath.Base(sourceURL)
 }
 
 func copyZipFileWithContext(ctx context.Context, dst io.Writer, src io.Reader) error {
